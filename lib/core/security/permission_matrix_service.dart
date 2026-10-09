@@ -162,6 +162,16 @@ class PermissionMatrixService extends ChangeNotifier {
       defaultSales: false,
     ),
     PermissionItem(
+      key: 'page.support',
+      title: 'Support & Help Desk Page',
+      description: 'Access role-based support page to report issues and view resolution status (/support).',
+      category: PermissionCategory.pages,
+      relatedRoute: '/support',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
       key: 'page.library',
       title: 'Shared Property Libraries Page',
       description: 'Access rental, resale, and service agent community database libraries (/library).',

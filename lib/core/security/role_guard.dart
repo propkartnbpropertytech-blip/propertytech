@@ -76,6 +76,8 @@ class RoleGuard {
     '/builders',
     '/profile',
     '/messages',
+    '/support',
+    '/admin/support',
     '/bin',
     '/settings',
     '/settings/audit-logs',

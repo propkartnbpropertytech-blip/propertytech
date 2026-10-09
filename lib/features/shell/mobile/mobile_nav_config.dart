@@ -237,6 +237,18 @@ class MobileNavConfig {
       icon: Icons.delete_outline_rounded,
       route: '/bin',
     );
+    const support = MobileMoreEntry(
+      id: 'support',
+      label: 'Support & Help',
+      icon: Icons.support_agent_rounded,
+      route: '/support',
+    );
+    const adminSupport = MobileMoreEntry(
+      id: 'admin_support',
+      label: 'Issue Management',
+      icon: Icons.admin_panel_settings_outlined,
+      route: '/admin/support',
+    );
 
     if (RoleGuard.isTelecaller(role)) {
       sections = const [
@@ -256,7 +268,7 @@ class MobileNavConfig {
           library,
           messages,
         ]),
-        MobileMoreSection(title: 'Account', entries: [profile, settings, bin]),
+        MobileMoreSection(title: 'Account', entries: [profile, support, settings, bin]),
       ];
     } else if (RoleGuard.isAdmin(role)) {
       sections = [
@@ -308,7 +320,9 @@ class MobileNavConfig {
               route: '/reports/leads/super-admin-metrics',
             ),
         ]),
-        const MobileMoreSection(title: 'Workspace', entries: [
+        MobileMoreSection(title: 'Workspace', entries: [
+          support,
+          if (RoleGuard.isSuperAdmin(role)) adminSupport,
           library,
           bin,
           MobileMoreEntry(
@@ -331,7 +345,7 @@ class MobileNavConfig {
     } else {
       sections = const [
         MobileMoreSection(title: 'Work', entries: [library, messages]),
-        MobileMoreSection(title: 'Account', entries: [profile, settings, bin]),
+        MobileMoreSection(title: 'Account', entries: [profile, support, settings, bin]),
       ];
     }
 

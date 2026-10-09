@@ -56,6 +56,8 @@ import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
 import '../../features/team_messages/screens/team_messages_screen.dart';
+import '../../features/support/screens/support_screen.dart';
+import '../../features/support/screens/super_admin_support_dashboard_screen.dart';
 import 'audit_route_observer.dart';
 
 
@@ -444,6 +446,22 @@ class AppRouter {
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const TeamMessagesScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/support',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: SupportScreen(
+                initialPageKey: state.uri.queryParameters['pageKey'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/support',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const SuperAdminSupportDashboardScreen(),
             ),
           ),
           GoRoute(

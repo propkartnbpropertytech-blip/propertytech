@@ -235,6 +235,23 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         isActive: currentPath.startsWith('/settings/audit-logs'),
                       ),
                     if (widget.userRole.isEmpty ||
+                        RoleGuard.canViewPage(widget.userRole, '/support'))
+                      _buildNavItem(
+                        context,
+                        title: 'Support & Help',
+                        icon: Icons.support_agent_rounded,
+                        route: '/support',
+                        isActive: currentPath == '/support',
+                      ),
+                    if (RoleGuard.isSuperAdmin(widget.userRole))
+                      _buildNavItem(
+                        context,
+                        title: 'Issue Management',
+                        icon: Icons.admin_panel_settings_outlined,
+                        route: '/admin/support',
+                        isActive: currentPath.startsWith('/admin/support'),
+                      ),
+                    if (widget.userRole.isEmpty ||
                         RoleGuard.canViewPage(widget.userRole, '/bin'))
                       _buildNavItem(
                         context,
