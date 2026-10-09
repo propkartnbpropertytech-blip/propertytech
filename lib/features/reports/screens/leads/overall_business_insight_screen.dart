@@ -1,8 +1,15 @@
+/// ============================================================================
+/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
+/// All Business Insights & Operational KPI metrics on this screen MUST adhere
+/// to the Master KPI Rulebook: `lib/core/constants/kpi_rulebook.dart` and `docs/KPIs.docx`.
+/// ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/constants/kpi_rulebook.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../../core/design_system/mobile/mobile.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../../bloc/reports_bloc.dart';
@@ -19,6 +26,9 @@ import '../../widgets/report_export_menu.dart';
 import '../../widgets/business_insight_drilldowns.dart';
 import '../../widgets/campaign_kpi_drilldowns.dart';
 import '../../widgets/leads_page_kpi_drilldowns.dart';
+import '../../widgets/operational_kpi_breakdown_section.dart';
+import '../../../dashboard/bloc/dashboard_bloc.dart';
+import '../../../dashboard/models/kpi_models.dart' hide TelecallerSummaryItem;
 
 enum BusinessInsightView {
   main,
@@ -68,6 +78,15 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
   TelecallerSummaryItem? _selectedTelecaller;
   ReportKpiType _selectedLeadsPageKpi = ReportKpiType.leadsNotStarted;
 
+  @override
+  void initState() {
+    super.initState();
+    final dState = context.read<DashboardBloc>().state;
+    if (dState is! DashboardLoadedState) {
+      context.read<DashboardBloc>().add(LoadDashboard());
+    }
+  }
+
   BusinessInsightSummary _resolveSummary(ReportOverallData data) {
     if (data.insightSummary != null) {
       return data.insightSummary!;
@@ -85,11 +104,10 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
       body: BlocConsumer<ReportsBloc, ReportsState>(
         listener: (context, state) {
           if (state is ReportsError && state.previousData != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.message),
-                backgroundColor: const Color(0xFFDC2626),
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: state.message,
+              isSuccess: false,
             );
           }
         },
@@ -589,6 +607,27 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
                   ),
                 );
               }).toList(),
+            );
+          },
+        ),
+        const SizedBox(height: CRMSpacing.xl),
+        const Divider(height: 1),
+        const SizedBox(height: CRMSpacing.l),
+
+        // SECTION 3: OPERATIONAL KPIS & PIPELINE BREAKDOWN (Inventory Sourcing, Manual Leads, Sales Pipeline, Qualified Leads)
+        BlocBuilder<DashboardBloc, DashboardState>(
+          builder: (context, dState) {
+            final kpis = (dState is DashboardLoadedState)
+                ? dState.kpis
+                : (dState is DashboardRefreshing ? dState.kpis : null);
+            final kpiFilters = (dState is DashboardLoadedState)
+                ? dState.kpiFilters
+                : (dState is DashboardRefreshing ? dState.kpiFilters : const KpiFilterParams());
+
+            return OperationalKpiBreakdownSection(
+              kpis: kpis,
+              kpiFilters: kpiFilters,
+              onRefresh: () => context.read<DashboardBloc>().add(RefreshDashboard()),
             );
           },
         ),

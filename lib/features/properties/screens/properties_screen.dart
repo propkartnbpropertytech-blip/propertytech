@@ -30,6 +30,7 @@ import '../bloc/properties_bloc.dart';
 import '../models/property_model.dart';
 import '../repository/properties_repository.dart';
 import 'add_edit_property_screen.dart';
+import '../widgets/property_kpi_summary_bar.dart';
 import '../../../core/utils/currency.dart';
 import '../../../core/utils/budget_formatter.dart';
 import '../../../core/api/dio_client.dart';
@@ -3026,7 +3027,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       decoration: BoxDecoration(
                         color: CRMColors.backgroundOf(context),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 1.0),
+                        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6), width: 1.0),
                       ),
                       child: Row(
                         children: [
@@ -3044,7 +3045,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 ),
                 const SizedBox(height: CRMSpacing.l),
 
-                // 2. Statistics Row (Overflow Fixed Layout)
+                // 2. Statistics Row (High-Density KPIs & Category Tabs)
                 _buildStatisticsRow(rawLoadedList),
                 const SizedBox(height: CRMSpacing.l),
 
@@ -3452,246 +3453,21 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             );
             return;
           }
-          _showAddEditPropertyDialog(context, metadata!);
+          _showAddEditPropertyDialog(context, metadata);
         },
       ),
     );
   }
 
   Widget _buildStatisticsRow(List<PropertyModel> properties) {
-    final filteredByMyAdded = properties.where((p) {
-      if (!_myAddedOnly) return true;
-      final authState = context.read<AuthBloc>().state;
-      if (authState is Authenticated) {
-        return p.createdBy == authState.user.id;
-      }
-      return false;
-    }).toList();
-
-    final filteredByStatus = filteredByMyAdded.where((p) {
-      return _selectedStatusFilter == null ||
-          (p.propertyStatusName ?? '').toLowerCase() == _selectedStatusFilter!.toLowerCase();
-    }).toList();
-
-    final filteredByListingTab = filteredByStatus.where((p) {
-      final ltName = p.listingTypeName.toLowerCase();
-      if (_activeListingTab == 'Rent') {
-        return ltName.contains('rent');
-      } else {
-        return ltName.contains('sale') ||
-            ltName.contains('resale') ||
-            !ltName.contains('rent');
-      }
-    }).toList();
-
-    final filteredByListingAndCategory = filteredByListingTab
-        .where(_matchesActiveCategory)
-        .where(_matchesPropertyDateFilter)
-        .toList();
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
-
-    final double cardWidth = isMobile
-        ? math.max(0.0, screenWidth - (CRMSpacing.m * 2) - CRMSpacing.m) / 2
-        : 180.0;
-    final double chartCardWidth = isMobile
-        ? (screenWidth - (CRMSpacing.m * 2))
-        : 260.0;
-    final double cardHeight = isMobile ? 132.0 : 148.0;
-
-    final List<Widget> widgets = [];
-    Widget? mobileKpiCard;
-    String mobileChartTitle = '';
-    List<ChartSector> mobileSectors = [];
-
-    if (_activeCategoryTab == 'Residential') {
-      final statusCount = filteredByListingAndCategory.length;
-      final kpi = CRMKPICard(
-        title: '${_selectedStatusFilter ?? "Inventory"} listings',
-        value: '$statusCount',
-        icon: Icons.bolt_rounded,
-        iconColor: CRMColors.terracotta,
-        backgroundColor: CRMColors.kpiSage,
-      );
-      widgets.add(SizedBox(
-        width: cardWidth,
-        height: cardHeight,
-        child: kpi,
-      ));
-      mobileKpiCard = kpi;
-      mobileChartTitle = 'BHK Distribution';
-
-      final List<ChartSector> bhkSectors = [];
-      final colors = [
-        CRMColors.info,
-        CRMColors.success,
-        CRMColors.warning,
-        CRMColors.danger,
-        CRMColors.primaryOf(context),
-      ];
-      for (int bhk = 1; bhk <= 5; bhk++) {
-        final count = filteredByListingAndCategory
-            .where((p) =>
-                ((p.configurationName != null &&
-                        p.configurationName!.toLowerCase().startsWith('$bhk bhk')) ||
-                    (p.configurationName == null && p.bedrooms == bhk)))
-            .length;
-        if (count > 0) {
-          bhkSectors.add(ChartSector(
-            label: '$bhk BHK',
-            value: count.toDouble(),
-            color: colors[(bhk - 1) % colors.length],
-          ));
-        }
-      }
-      widgets.add(SizedBox(
-        width: chartCardWidth,
-        height: cardHeight,
-        child: CRMChartCard(
-          title: 'BHK Distribution',
-          sectors: bhkSectors,
-        ),
-      ));
-      mobileSectors = bhkSectors;
-    } else if (_activeCategoryTab == 'Commercial') {
-      final statusCount = filteredByListingAndCategory.length;
-      final kpi = CRMKPICard(
-        title: 'Commercial (${_selectedStatusFilter ?? "Inventory"})',
-        value: '$statusCount',
-        icon: Icons.business_center_outlined,
-        iconColor: CRMColors.terracotta,
-        backgroundColor: CRMColors.kpiTerracotta,
-      );
-      widgets.add(SizedBox(
-        width: cardWidth,
-        height: cardHeight,
-        child: kpi,
-      ));
-      mobileKpiCard = kpi;
-      mobileChartTitle = 'Property Types';
-
-      final Map<String, int> typeCounts = {};
-      for (final p in filteredByListingAndCategory) {
-        final typeName = p.propertyTypeName;
-        if (typeName.isNotEmpty && typeName != 'N/A') {
-          typeCounts[typeName] = (typeCounts[typeName] ?? 0) + 1;
-        }
-      }
-      final List<ChartSector> typeSectors = [];
-      final typeColors = [
-        CRMColors.primaryOf(context),
-        CRMColors.info,
-        CRMColors.success,
-        CRMColors.warning,
-        CRMColors.danger,
-      ];
-      int index = 0;
-      typeCounts.forEach((name, count) {
-        if (count > 0) {
-          typeSectors.add(ChartSector(
-            label: name,
-            value: count.toDouble(),
-            color: typeColors[index % typeColors.length],
-          ));
-          index++;
-        }
-      });
-      widgets.add(SizedBox(
-        width: chartCardWidth,
-        height: cardHeight,
-        child: CRMChartCard(
-          title: 'Property Types',
-          sectors: typeSectors,
-        ),
-      ));
-      mobileSectors = typeSectors;
-    } else if (_activeCategoryTab == 'Industrial') {
-      final statusCount = filteredByListingAndCategory.length;
-      final kpi = CRMKPICard(
-        title: 'Industrial (${_selectedStatusFilter ?? "Inventory"})',
-        value: '$statusCount',
-        icon: Icons.factory_outlined,
-        iconColor: CRMColors.text,
-        backgroundColor: CRMColors.kpiSand,
-      );
-      widgets.add(SizedBox(
-        width: cardWidth,
-        height: cardHeight,
-        child: kpi,
-      ));
-      mobileKpiCard = kpi;
-      mobileChartTitle = 'Industrial Subcategories';
-
-      final warehouses = filteredByListingAndCategory.where((p) => p.categoryName.toLowerCase().contains('warehouse') || p.title.toLowerCase().contains('warehouse') || (p.description != null && p.description!.toLowerCase().contains('warehouse'))).toList();
-      final factories = filteredByListingAndCategory.where((p) => p.categoryName.toLowerCase().contains('factory') || p.categoryName.toLowerCase().contains('industrial') || p.title.toLowerCase().contains('factory') || (p.description != null && p.description!.toLowerCase().contains('factory'))).toList();
-      final otherCount = statusCount - (warehouses.length + factories.length);
-
-      final indSectors = <ChartSector>[];
-      if (warehouses.isNotEmpty) {
-        indSectors.add(ChartSector(label: 'Warehouses', value: warehouses.length.toDouble(), color: CRMColors.warning));
-      }
-      if (factories.isNotEmpty) {
-        indSectors.add(ChartSector(label: 'Factories', value: factories.length.toDouble(), color: CRMColors.danger));
-      }
-      if (otherCount > 0) {
-        indSectors.add(ChartSector(label: 'Sheds & Yards', value: otherCount.toDouble(), color: CRMColors.info));
-      }
-
-      widgets.add(SizedBox(
-        width: chartCardWidth,
-        height: cardHeight,
-        child: CRMChartCard(
-          title: 'Industrial Subcategories',
-          sectors: indSectors,
-        ),
-      ));
-      mobileSectors = indSectors;
-    } else if (_activeCategoryTab == 'Land & Plot') {
-      final statusCount = filteredByListingAndCategory.length;
-      final kpi = CRMKPICard(
-        title: 'Land & Plots (${_selectedStatusFilter ?? "Inventory"})',
-        value: '$statusCount',
-        icon: Icons.landscape_outlined,
-        iconColor: CRMColors.terracotta,
-        backgroundColor: CRMColors.kpiPlum,
-      );
-      widgets.add(SizedBox(
-        width: cardWidth,
-        height: cardHeight,
-        child: kpi,
-      ));
-      mobileKpiCard = kpi;
-      mobileChartTitle = 'Zoning & Land Usage';
-
-      final resPlots = filteredByListingAndCategory.where((p) => p.title.toLowerCase().contains('resident') || (p.description != null && p.description!.toLowerCase().contains('resident'))).toList();
-      final comLand = filteredByListingAndCategory.where((p) => p.title.toLowerCase().contains('commercial') || (p.description != null && p.description!.toLowerCase().contains('commercial'))).toList();
-      final otherLand = statusCount - (resPlots.length + comLand.length);
-
-      final landSectors = <ChartSector>[];
-      if (resPlots.isNotEmpty) {
-        landSectors.add(ChartSector(label: 'Residential Plots', value: resPlots.length.toDouble(), color: CRMColors.success));
-      }
-      if (comLand.isNotEmpty) {
-        landSectors.add(ChartSector(label: 'Commercial Land', value: comLand.length.toDouble(), color: CRMColors.info));
-      }
-      if (otherLand > 0) {
-        landSectors.add(ChartSector(label: 'Other Land', value: otherLand.toDouble(), color: CRMColors.warning));
-      }
-
-      widgets.add(SizedBox(
-        width: chartCardWidth,
-        height: cardHeight,
-        child: CRMChartCard(
-          title: 'Zoning & Land Usage',
-          sectors: landSectors,
-        ),
-      ));
-      mobileSectors = landSectors;
-    }
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final role = currentUser?.role?.toLowerCase() ?? '';
+    final isSalesOrTelecaller = role == 'sales' || role == 'telecaller';
 
     final categories = ['Residential', 'Commercial', 'Industrial', 'Land & Plot'];
     final categorySelector = Container(
-      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+      margin: const EdgeInsets.only(top: CRMSpacing.m),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -3730,36 +3506,30 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       ),
     );
 
-    if (isMobile && mobileKpiCard != null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xs),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            categorySelector,
-            _MobileStatisticsSection(
-              kpiCard: mobileKpiCard,
-              chartTitle: mobileChartTitle,
-              sectors: mobileSectors,
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PropertyKpiSummaryBar(
+          properties: properties,
+          activeListingTab: _activeListingTab,
+          onListingTabChanged: (tab) {
+            setState(() {
+              _activeListingTab = tab;
+              _currentPage = 0;
+            });
+          },
+          myAddedOnly: _myAddedOnly,
+          onToggleMyAdded: () {
+            setState(() {
+              _myAddedOnly = !_myAddedOnly;
+              _currentPage = 0;
+            });
+          },
+          currentUserId: currentUser?.id,
+          isSalesOrTelecaller: isSalesOrTelecaller,
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xs),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          categorySelector,
-          Wrap(
-            spacing: CRMSpacing.m,
-            runSpacing: CRMSpacing.m,
-            children: widgets,
-          ),
-        ],
-      ),
+        categorySelector,
+      ],
     );
   }
 
@@ -4326,6 +4096,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     return _buildSearchFiltersCard(metadata, rawLoadedList, currentUserId);
   }
 
+
+
   Widget _buildPropertyListingTabButton(String label) {
     final isSelected = _activeListingTab == label;
     final accent =
@@ -4450,65 +4222,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Widget _buildCategoryDropdown(List<LookupItem> categories) {
-    final Map<String, LookupItem> uniqueCats = {};
-    for (final c in categories) {
-      if (c.id.isNotEmpty && !uniqueCats.containsKey(c.id)) {
-        uniqueCats[c.id] = c;
-      }
-    }
-    final List<LookupItem> catList = uniqueCats.values.toList();
-    final bool hasValue = _selectedCategory == null || uniqueCats.containsKey(_selectedCategory);
-    final String? safeCategory = hasValue ? _selectedCategory : null;
 
-    return Container(
-      width: 180,
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
-      decoration: BoxDecoration(
-        color: CRMColors.backgroundOf(context),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-        border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 1.0),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String?>(
-          value: safeCategory,
-          hint: Text(
-            'All Category',
-            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
-          ),
-          items: [
-            DropdownMenuItem<String?>(
-              value: null,
-              child: Text(
-                'All Category',
-                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
-              ),
-            ),
-            ...catList.map((c) {
-              return DropdownMenuItem<String?>(
-                value: c.id,
-                child: Text(
-                  c.name,
-                  style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
-                ),
-              );
-            }),
-          ],
-          onChanged: (String? val) {
-            setState(() {
-              _selectedCategory = val;
-              _selectedConfigurations.clear();
-              _currentPage = 0;
-            });
-            _loadProperties();
-          },
-          icon: Icon(Icons.arrow_drop_down, color: CRMColors.textSecondaryOf(context)),
-          dropdownColor: CRMColors.cardBgOf(context),
-        ),
-      ),
-    );
-  }
 
   void _clearFilters() {
     setState(() {
@@ -4738,43 +4452,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Widget _buildVerificationDropdown(double width) {
-    return SizedBox(
-      width: width,
-      child: DropdownButtonFormField<bool?>(
-        value: _selectedVerification,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: 'Verification',
-          filled: true,
-          fillColor: CRMColors.backgroundOf(context),
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: CRMSpacing.m, vertical: CRMSpacing.s),
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-              borderSide: BorderSide.none),
-        ),
-        items: const [
-          DropdownMenuItem<bool?>(
-              value: null,
-              child: Text('All Verification', overflow: TextOverflow.ellipsis)),
-          DropdownMenuItem<bool?>(
-              value: true,
-              child: Text('Verified', overflow: TextOverflow.ellipsis)),
-          DropdownMenuItem<bool?>(
-              value: false,
-              child: Text('Unverified', overflow: TextOverflow.ellipsis)),
-        ],
-        onChanged: (val) {
-          setState(() {
-            _selectedVerification = val;
-            _currentPage = 0;
-          });
-          _loadProperties();
-        },
-      ),
-    );
-  }
+
 
   Widget _buildPagination(int totalItems, int totalPages, int currentPage) {
     final from = currentPage * _pageSize + 1;
@@ -5511,7 +5189,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           ),
           width: isMobile ? screenWidth - 24 : screenWidth * 0.95,
           height: MediaQuery.of(context).size.height * 0.95,
-          constraints: const BoxConstraints(maxWidth: 800, maxHeight: 750),
+          constraints: const BoxConstraints(maxWidth: 1040, maxHeight: 880),
           clipBehavior: Clip.antiAlias,
           child: BlocProvider.value(
             value: propertiesBloc,
@@ -5541,13 +5219,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         'price': p.price,
       },
     );
-    final bool isMobile = MediaQuery.of(context).size.width < 600;
-    if (kIsWeb && !isMobile && !forceInAppDrawer) {
-      final String url = '${Uri.base.origin}/properties/${p.id}';
-      launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
-    } else {
-      showCRMPropertyDrawer(context, p);
-    }
+    showCRMPropertyDrawer(context, p);
   }
 
   String _getBhkColumnHeader(PropertyMetadataModel? metadata) {
@@ -6272,9 +5944,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Wrap(
-                spacing: 12,
+                spacing: 8,
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
@@ -7254,215 +6926,6 @@ class _MobilePropertyImageCarouselState extends State<_MobilePropertyImageCarous
               ),
             ),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MobileStatisticsSection extends StatefulWidget {
-  final Widget kpiCard;
-  final String chartTitle;
-  final List<ChartSector> sectors;
-
-  const _MobileStatisticsSection({
-    Key? key,
-    required this.kpiCard,
-    required this.chartTitle,
-    required this.sectors,
-  }) : super(key: key);
-
-  @override
-  State<_MobileStatisticsSection> createState() => _MobileStatisticsSectionState();
-}
-
-class _MobileStatisticsSectionState extends State<_MobileStatisticsSection> {
-  bool _isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    const double cardHeight = 105.0;
-
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bgColor = CRMColors.cardBgOf(context);
-
-    final sectorsToShow = widget.sectors.isNotEmpty
-        ? widget.sectors
-        : [ChartSector(label: 'No Listings', value: 1.0, color: Colors.grey.shade400)];
-
-    final total = sectorsToShow.fold<double>(0, (s, e) => s + e.value);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: cardHeight,
-                child: widget.kpiCard,
-              ),
-            ),
-            const SizedBox(width: CRMSpacing.s),
-            Expanded(
-              child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _isExpanded = !_isExpanded;
-                });
-              },
-              child: Container(
-                height: cardHeight,
-                decoration: BoxDecoration(
-                  color: CRMColors.cardBgOf(context),
-                  borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                  border: Border.all(
-                    color: CRMColors.borderOf(context),
-                    width: 1,
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.s, vertical: CRMSpacing.xs),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 52,
-                      height: 52,
-                      child: CustomPaint(
-                        painter: DonutChart3DPainter(
-                          sectors: sectorsToShow,
-                          backgroundColor: bgColor,
-                          animationValue: 1.0,
-                          isDark: isDark,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            widget.chartTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: CRMColors.textOf(context),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        Icon(
-                          _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                          size: 14,
-                          color: CRMColors.primaryOf(context),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            ),
-          ],
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          child: _isExpanded
-              ? Container(
-                  margin: const EdgeInsets.only(top: CRMSpacing.m),
-                  padding: const EdgeInsets.all(CRMSpacing.m),
-                  decoration: BoxDecoration(
-                    color: CRMColors.cardBgOf(context),
-                    borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                    border: Border.all(
-                      color: CRMColors.borderOf(context),
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${widget.chartTitle} Details',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: CRMSpacing.s),
-                      Column(
-                        children: List.generate(sectorsToShow.length, (i) {
-                          final s = sectorsToShow[i];
-                          final pct = total > 0 ? s.value / total : 0.0;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: CRMSpacing.xs),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: s.color,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            s.label,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
-                                            ),
-                                          ),
-                                          Text(
-                                            '${s.value.toInt()}',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 3),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(2),
-                                        child: SizedBox(
-                                          height: 3,
-                                          child: LinearProgressIndicator(
-                                            value: pct,
-                                            backgroundColor: (isDark ? Colors.white10 : Colors.black12),
-                                            valueColor: AlwaysStoppedAnimation<Color>(s.color),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ),
-                    ],
-                  ),
-                )
-              : const SizedBox.shrink(),
         ),
       ],
     );

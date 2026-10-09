@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
 
 enum ReportDomain {
@@ -40,6 +41,7 @@ class ReportsSubshellNav extends StatelessWidget {
     final isDark = ThemeManager().isDarkMode;
     final isProperties = currentPath.startsWith('/reports/properties');
     final activeDomain = isProperties ? ReportDomain.properties : ReportDomain.leads;
+    final isAdmin = RoleGuard.isAdmin(RoleGuard.currentUser?.role);
 
     return Container(
       decoration: BoxDecoration(
@@ -116,14 +118,15 @@ class ReportsSubshellNav extends StatelessWidget {
                     isFunctional: false,
                     badgeText: 'Stage 2',
                   ),
-                  _buildSubTab(
-                    context,
-                    title: 'Lead Metrics',
-                    icon: Icons.tune_rounded,
-                    route: '/reports/leads/metrics',
-                    isActive: currentPath.contains('/metrics'),
-                    isFunctional: true,
-                  ),
+                  if (isAdmin)
+                    _buildSubTab(
+                      context,
+                      title: 'Lead Metrics',
+                      icon: Icons.tune_rounded,
+                      route: '/reports/leads/metrics',
+                      isActive: currentPath.contains('/metrics'),
+                      isFunctional: true,
+                    ),
                 ],
               ),
             )

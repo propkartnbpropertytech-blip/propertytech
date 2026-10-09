@@ -4,6 +4,7 @@ import '../../../core/theme/theme_manager.dart';
 class StatCard extends StatefulWidget {
   final String title;
   final String value;
+  final String? subtitle;
   final IconData icon;
   final Color accentColor;
   final VoidCallback? onTap;
@@ -13,11 +14,13 @@ class StatCard extends StatefulWidget {
     super.key,
     required this.title,
     required this.value,
+    this.subtitle,
     required this.icon,
     required this.accentColor,
     this.onTap,
     this.isCompact = false,
   });
+
 
   @override
   State<StatCard> createState() => _StatCardState();
@@ -126,11 +129,26 @@ class _StatCardState extends State<StatCard> {
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
+                          if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.subtitle!,
+                              style: TextStyle(
+                                color: isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B),
+                                fontSize: compact ? 10 : 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ],
                       ),
                     ),
 
-                    const SizedBox(width: 4),
+                    SizedBox(width: compact ? 4 : 6),
 
                     // Circular tinted icon background
                     Container(

@@ -10,6 +10,7 @@ import 'package:propkart/features/auth/bloc/auth_bloc.dart';
 import 'package:propkart/features/auth/models/user_model.dart';
 import 'package:propkart/features/users/bloc/users_bloc.dart';
 import 'package:propkart/features/sales/bloc/sales_dashboard_bloc.dart';
+import 'package:propkart/features/sales/screens/sales_dashboard_screen.dart';
 import 'package:propkart/features/requirements/bloc/requirements_bloc.dart';
 import 'package:propkart/features/requirements/models/requirement_model.dart';
 import 'package:propkart/features/requirements/screens/requirements_screen.dart';

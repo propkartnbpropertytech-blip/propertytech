@@ -26,6 +26,7 @@ dependencies:
   share_plus: ^12.0.2
   intl: ^0.19.0
   crypto: ^3.0.3
+  http_parser: ^4.1.2
   isar: ^3.1.0+1
   isar_flutter_libs: ^3.1.0+1
   path_provider: ^2.1.2
@@ -74,6 +75,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - "assets/Luxury Gold NB Monogram Since 1946.png"
     - assets/branding/
     - assets/images/
     - assets/legal/

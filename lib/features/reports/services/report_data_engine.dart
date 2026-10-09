@@ -511,12 +511,17 @@ class ReportDataEngine {
     final List<TeamMemberRanking> salesRankings = [];
     int sRank = 1;
     for (final u in salesUsers) {
-      final uLeads = filteredLeads.where((l) => l.assignedTo == u.id || l.assigneeName == u.fullName).toList();
-      final uContacted = uLeads.where((l) => _isContacted(l)).length;
-      final uQualified = uLeads.where((l) => _isQualified(l)).length;
-      final uVisits = uLeads.where((l) => _isVisitScheduled(l) || _isVisitDone(l)).length;
-      final uWon = uLeads.where((l) => _isWon(l)).length;
-      final uConv = uLeads.isEmpty ? 0.0 : (uWon / uLeads.length * 100);
+      final uAssigned = filteredLeads.where((l) => l.assignedTo == u.id || l.assigneeName == u.fullName).toList();
+      final uCreated = filteredLeads.where((l) => l.createdBy == u.id || l.creatorName == u.fullName).toList();
+      final uTotalUnique = filteredLeads.where((l) =>
+          l.assignedTo == u.id || l.assigneeName == u.fullName ||
+          l.createdBy == u.id || l.creatorName == u.fullName).toList();
+
+      final uContacted = uTotalUnique.where((l) => _isContacted(l)).length;
+      final uQualified = uTotalUnique.where((l) => _isQualified(l)).length;
+      final uVisits = uTotalUnique.where((l) => _isVisitScheduled(l) || _isVisitDone(l)).length;
+      final uWon = uTotalUnique.where((l) => _isWon(l)).length;
+      final uConv = uTotalUnique.isEmpty ? 0.0 : (uWon / uTotalUnique.length * 100);
 
       salesRankings.add(
         TeamMemberRanking(
@@ -524,7 +529,9 @@ class ReportDataEngine {
           userId: u.id,
           userName: u.fullName.isNotEmpty ? u.fullName : u.email,
           role: 'Sales',
-          leadsCount: uLeads.length,
+          leadsCount: uTotalUnique.length,
+          assignedCount: uAssigned.length,
+          selfAddedCount: uCreated.length,
           contactedCount: uContacted,
           qualifiedCount: uQualified,
           siteVisitsCount: uVisits,

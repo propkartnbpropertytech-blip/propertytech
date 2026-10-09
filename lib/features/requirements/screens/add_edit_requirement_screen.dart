@@ -14,9 +14,10 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
-import '../../settings/screens/location_config_screen.dart';
 import 'package:dio/dio.dart';
 import '../../integration/services/integration_service.dart';
+import '../../../core/storage/local_repositories.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 
 class AddEditRequirementScreen extends StatefulWidget {
   final RequirementModel? requirement;
@@ -110,31 +111,7 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     super.dispose();
   }
 
-  Future<void> _refreshLocationMetadata() async {
-    try {
-      final service = PropertiesService();
-      final response = await service.getPropertyMetadata();
-      final data = response['data'] as Map<String, dynamic>? ?? {};
-      final meta = PropertyMetadataModel.fromJson(data['metadata'] ?? {});
-      
-      final oldAreaIds = _areas.map((a) => a.id).toSet();
-      final newAreas = meta.areas;
-      
-      setState(() {
-        _areas = newAreas;
-        
-        // Auto-select the newly created area(s)
-        final addedAreas = newAreas.where((a) => !oldAreaIds.contains(a.id)).toList();
-        for (final area in addedAreas) {
-          if (!_selectedAreaIds.contains(area.id)) {
-            _selectedAreaIds.add(area.id);
-          }
-        }
-      });
-    } catch (_) {
-      // Fail silently
-    }
-  }
+
 
   Future<void> _loadMetadata() async {
     try {
@@ -190,8 +167,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           _selectedCategoryId = req.categoryId;
           _selectedTypeId = req.propertyTypeId;
           _selectedTypeIds.addAll(req.propertyTypeIds);
-          if (_selectedTypeIds.isEmpty && req.propertyTypeId != null && req.propertyTypeId!.isNotEmpty) {
-            _selectedTypeIds.add(req.propertyTypeId!);
+          if (_selectedTypeIds.isEmpty && req.propertyTypeId.isNotEmpty) {
+            _selectedTypeIds.add(req.propertyTypeId);
           }
           _canonicalizeSelectedPropertyTypes(_getFilteredTypes());
           _selectedConfigId = req.configurationId;
@@ -209,11 +186,31 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           
           _selectedStatus = req.status;
 
-          if (req.isAllAreas) {
+          if (req.isAllAreas && _areas.isNotEmpty) {
             _selectedAreaIds.clear();
             _selectedAreaIds.addAll(_areas.map((a) => a.id));
           } else {
-            _selectedAreaIds.addAll(req.areaIds);
+            for (final id in req.areaIds) {
+              if (!_selectedAreaIds.contains(id)) {
+                _selectedAreaIds.add(id);
+              }
+            }
+            if (_selectedAreaIds.isEmpty && req.metaCustomFields?['target_area_ids'] is List) {
+              for (final id in (req.metaCustomFields!['target_area_ids'] as List)) {
+                final sId = id?.toString();
+                if (sId != null && sId.isNotEmpty && !_selectedAreaIds.contains(sId)) {
+                  _selectedAreaIds.add(sId);
+                }
+              }
+            }
+            if (_selectedAreaIds.isEmpty && req.areaNames.isNotEmpty) {
+              for (final name in req.areaNames) {
+                final matched = _areas.where((a) => a.name.toLowerCase().trim() == name.toLowerCase().trim()).firstOrNull;
+                if (matched != null && !_selectedAreaIds.contains(matched.id)) {
+                  _selectedAreaIds.add(matched.id);
+                }
+              }
+            }
           }
           _selectedLeadSource = req.leadSource;
           _referralNameController.text = req.referralName ?? '';
@@ -237,8 +234,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
 
   void _showAddAreaDialog() {
     if (_cities.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No cities available. Please add a city first.')),
+      AppStatusSnackBar.show(
+        context,
+        message: 'No cities available. Please add a city first.',
+        isSuccess: false,
       );
       return;
     }
@@ -353,8 +352,10 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                       });
                       if (mounted) Navigator.pop(ctx);
                     } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to add area: $e')),
+                      AppStatusSnackBar.show(
+                        context,
+                        message: 'Failed to add area: $e',
+                        isSuccess: false,
                       );
                     }
                   }
@@ -583,40 +584,50 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
   void _submitForm() async {
     if (_nameController.text.trim().isEmpty || _mobileController.text.trim().isEmpty) {
       _jumpToStep(0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill Customer Name and Mobile."), backgroundColor: CRMColors.danger),
+      AppStatusSnackBar.show(
+        context,
+        message: "Please fill Customer Name and Mobile.",
+        isSuccess: false,
       );
       return;
     }
 
     if (_selectedListingTypeId == null) {
       _jumpToStep(1);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select a Listing Type (Rent or Re-Sale)."), backgroundColor: CRMColors.danger),
+      AppStatusSnackBar.show(
+        context,
+        message: "Please select a Listing Type (Rent or Re-Sale).",
+        isSuccess: false,
       );
       return;
     }
 
     if (_selectedCategoryId == null || _selectedTypeId == null) {
       _jumpToStep(2);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select a Category and Property Type."), backgroundColor: CRMColors.danger),
+      AppStatusSnackBar.show(
+        context,
+        message: "Please select a Category and Property Type.",
+        isSuccess: false,
       );
       return;
     }
 
     if (_selectedAreaIds.isEmpty) {
       _jumpToStep(3);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select at least one Target Area."), backgroundColor: CRMColors.danger),
+      AppStatusSnackBar.show(
+        context,
+        message: "Please select at least one Target Area.",
+        isSuccess: false,
       );
       return;
     }
 
     if (_budgetController.text.isEmpty) {
       _jumpToStep(4);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a Target Budget."), backgroundColor: CRMColors.danger),
+      AppStatusSnackBar.show(
+        context,
+        message: "Please enter a Target Budget.",
+        isSuccess: false,
       );
       return;
     }
@@ -685,13 +696,17 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
       orElse: () => LookupItem(id: '', name: 'N/A'),
     );
 
-    final bool isAllAreasSelected = _areas.isNotEmpty && _selectedAreaIds.length >= _areas.length;
+    final bool isAllAreasSelected = _areas.length > 5 && _selectedAreaIds.length >= _areas.length;
 
     final List<String> areaNames = isAllAreasSelected
         ? ['All Areas']
         : _selectedAreaIds.map((id) {
-            final match = _areas.firstWhere((a) => a.id == id, orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''));
-            return match.name;
+            final match = _areas.where((a) => a.id == id).firstOrNull;
+            if (match != null && match.name.isNotEmpty && match.name != id) {
+              return match.name;
+            }
+            final lookupName = LookupLocalRepository.getLookupNameSync(id);
+            return (lookupName != null && lookupName.trim().isNotEmpty) ? lookupName.trim() : id;
           }).toList();
 
     final authState = context.read<AuthBloc>().state;
@@ -775,9 +790,11 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
         if (isCreatingNew) 'entry_source': 'manual',
         if (isCreatingNew && currentUser?.role != null)
           'created_by_role': currentUser!.role,
+        'target_area_ids': _selectedAreaIds,
+        'target_area_names': areaNames,
         if (_selectedAreaIds.isNotEmpty) 'match_engine_status': 'READY',
         if (isAllAreasSelected) 'is_all_areas': true,
-        if (!isAllAreasSelected && widget.requirement?.metaCustomFields?['is_all_areas'] == true) 'is_all_areas': false,
+        if (!isAllAreasSelected) 'is_all_areas': false,
       },
     );
 
@@ -1034,8 +1051,8 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     );
 
     final container = Container(
-      width: isMobile ? double.infinity : 600,
-      height: widget.isInline ? 450 : 600,
+      width: isMobile ? double.infinity : 780,
+      height: widget.isInline ? 480 : 700,
       padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.l, vertical: CRMSpacing.m),
       child: formContent,
     );
@@ -1401,10 +1418,75 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 ],
               ),
         const SizedBox(height: CRMSpacing.m),
+        if (_selectedAreaIds.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: CRMSpacing.s),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: CRMColors.backgroundOf(context),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+              border: Border.all(color: CRMColors.borderOf(context)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Selected (${_selectedAreaIds.length} localities):',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    InkWell(
+                      onTap: () => setState(() => _selectedAreaIds.clear()),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Text(
+                          'Clear All',
+                          style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 76),
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _selectedAreaIds.map((id) {
+                        final area = _areas.where((a) => a.id == id).firstOrNull;
+                        final name = area?.name ?? LookupLocalRepository.getLookupNameSync(id) ?? id;
+                        return Chip(
+                          label: Text(name, style: const TextStyle(fontSize: 11.5)),
+                          padding: EdgeInsets.zero,
+                          labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                          deleteIconColor: CRMColors.primaryOf(context),
+                          deleteIcon: const Icon(Icons.close, size: 14),
+                          onDeleted: () {
+                            setState(() {
+                              _selectedAreaIds.remove(id);
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_areaSearchQuery.isEmpty && _areas.isNotEmpty) ...[
           Builder(
             builder: (context) {
-              final bool isAllAreasSelected = _selectedAreaIds.length >= _areas.length;
+              final bool isAllAreasSelected = _areas.length > 5 && _selectedAreaIds.length >= _areas.length;
               return Container(
                 margin: const EdgeInsets.only(bottom: CRMSpacing.s),
                 decoration: BoxDecoration(
@@ -1483,7 +1565,9 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                     onChanged: (val) {
                       setState(() {
                         if (val == true) {
-                          _selectedAreaIds.add(area.id);
+                          if (!_selectedAreaIds.contains(area.id)) {
+                            _selectedAreaIds.add(area.id);
+                          }
                         } else {
                           _selectedAreaIds.remove(area.id);
                         }
@@ -1594,20 +1678,6 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
     }).toList();
     final configDisplayStr = configNames.isNotEmpty ? configNames.join(', ') : 'None';
     
-    // Completeness score mock check for review
-    double comp = 0.0;
-    if (_nameController.text.isNotEmpty) comp += 0.15;
-    if (_mobileController.text.isNotEmpty) comp += 0.15;
-    if (_selectedCategoryId != null) comp += 0.15;
-    if (_selectedTypeId != null) comp += 0.10;
-    if (_selectedConfigIds.isNotEmpty) comp += 0.10;
-    if (_selectedAreaIds.isNotEmpty) comp += 0.15;
-    if (_budgetController.text.isNotEmpty) comp += 0.20;
-
-    final readiness = (_selectedCategoryId != null && _budgetController.text.isNotEmpty && _selectedAreaIds.isNotEmpty)
-        ? (_selectedConfigIds.isNotEmpty ? 'Ready' : 'Needs Information')
-        : 'Cannot Match';
-
     final List<String> warnings = [];
     if (_selectedConfigIds.isEmpty) warnings.add("Missing Configuration");
     if (_budgetController.text.isEmpty) warnings.add("Missing Budget");

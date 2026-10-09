@@ -11,6 +11,11 @@ class RequirementsService {
     String? propertyTypeId,
     String? status,
     String? listingTypeId,
+    String? group,
+    String? userId,
+    String? salesUserId,
+    String? createdBy,
+    String? assignedTo,
     int? page,
     int? limit,
   }) async {
@@ -31,6 +36,21 @@ class RequirementsService {
       if (listingTypeId != null && listingTypeId.isNotEmpty) {
         queryParameters['listingTypeId'] = listingTypeId;
       }
+      if (group != null && group.isNotEmpty) {
+        queryParameters['group'] = group;
+      }
+      if (userId != null && userId.isNotEmpty) {
+        queryParameters['userId'] = userId;
+      }
+      if (salesUserId != null && salesUserId.isNotEmpty) {
+        queryParameters['salesUserId'] = salesUserId;
+      }
+      if (createdBy != null && createdBy.isNotEmpty) {
+        queryParameters['createdBy'] = createdBy;
+      }
+      if (assignedTo != null && assignedTo.isNotEmpty) {
+        queryParameters['assignedTo'] = assignedTo;
+      }
       if (page != null) {
         queryParameters['page'] = page;
       }
@@ -50,6 +70,21 @@ class RequirementsService {
       throw ApiException.fromDioException(e);
     } catch (e) {
       throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSalesSummary() async {
+    try {
+      final response = await _apiClient.get('/requirements/sales-summary');
+      if (response.data is Map && response.data['data'] is List) {
+        return (response.data['data'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
     }
   }
 

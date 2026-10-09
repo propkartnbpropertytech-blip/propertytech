@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../properties/models/property_model.dart';
@@ -83,14 +84,12 @@ class _PdfOptionSelectionDialogState extends State<PdfOptionSelectionDialog> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.properties.length == 1
-                  ? 'Property PDF generated & downloaded.'
-                  : 'Selected properties PDF generated & downloaded.',
-            ),
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: widget.properties.length == 1
+              ? 'Property PDF generated & downloaded.'
+              : 'Selected properties PDF generated & downloaded.',
+          isSuccess: true,
         );
       }
 
@@ -107,11 +106,10 @@ class _PdfOptionSelectionDialogState extends State<PdfOptionSelectionDialog> {
     } catch (e) {
       debugPrint('Failed to generate PDF ($style): $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to generate PDF. Please try again.'),
-            backgroundColor: CRMColors.danger,
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: 'Failed to generate PDF. Please try again.',
+          isSuccess: false,
         );
         setState(() {
           _generatingStyle = null;

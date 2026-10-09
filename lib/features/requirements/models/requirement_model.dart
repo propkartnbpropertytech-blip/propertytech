@@ -330,23 +330,74 @@ class RequirementModel {
 
     // Handle target areas
     List<String> aIds = [];
-    if (json['areaIds'] != null) {
-      aIds = List<String>.from(json['areaIds']);
-    } else if (json['area_ids'] != null) {
-      aIds = List<String>.from(json['area_ids']);
-    } else if (json['area_id'] != null) {
-      aIds = [json['area_id'].toString()];
+    List<String> aNames = [];
+
+    // 1. Direct lists from backend mapping (areaIds, area_ids, areaNames, area_names)
+    if (json['areaIds'] != null && json['areaIds'] is List) {
+      aIds = List<String>.from(json['areaIds'].map((e) => e?.toString() ?? '')).where((s) => s.isNotEmpty).toList();
+    } else if (json['area_ids'] != null && json['area_ids'] is List) {
+      aIds = List<String>.from(json['area_ids'].map((e) => e?.toString() ?? '')).where((s) => s.isNotEmpty).toList();
     }
 
-    List<String> aNames = [];
-    if (json['areaNames'] != null) {
-      aNames = List<String>.from(json['areaNames']).where((s) => s.trim().isNotEmpty).toList();
-    } else if (json['area_names'] != null) {
-      aNames = List<String>.from(json['area_names']).where((s) => s.trim().isNotEmpty).toList();
-    } else if (json['area'] != null && json['area'] is Map) {
+    if (json['areaNames'] != null && json['areaNames'] is List) {
+      aNames = List<String>.from(json['areaNames'].map((e) => e?.toString() ?? '')).where((s) => s.trim().isNotEmpty).toList();
+    } else if (json['area_names'] != null && json['area_names'] is List) {
+      aNames = List<String>.from(json['area_names'].map((e) => e?.toString() ?? '')).where((s) => s.trim().isNotEmpty).toList();
+    }
+
+    // 2. Many-to-many relationship from Supabase / PostgREST (requirement_areas)
+    if (json['requirement_areas'] != null && json['requirement_areas'] is List) {
+      for (final item in json['requirement_areas']) {
+        if (item is Map) {
+          final String? id = (item['area_id'] ?? (item['area'] is Map ? item['area']['id'] : null))?.toString();
+          if (id != null && id.isNotEmpty && !aIds.contains(id)) {
+            aIds.add(id);
+          }
+          final String? name = (item['area'] is Map ? item['area']['area_name'] : (item['area_name'] ?? item['name']))?.toString().trim();
+          if (name != null && name.isNotEmpty && !aNames.contains(name)) {
+            aNames.add(name);
+          }
+        }
+      }
+    }
+
+    // 3. Fallback to joined area object or single area_id ONLY if no requirement_areas were found
+    if (aIds.isEmpty && json['area_id'] != null && json['area_id'].toString().isNotEmpty) {
+      final sId = json['area_id'].toString();
+      if (!aIds.contains(sId)) {
+        aIds.add(sId);
+      }
+    }
+    if (aNames.isEmpty && json['area'] != null && json['area'] is Map) {
       final aName = json['area']['area_name']?.toString().trim();
-      if (aName != null && aName.isNotEmpty) {
-        aNames = [aName];
+      if (aName != null && aName.isNotEmpty && !aNames.contains(aName)) {
+        aNames.add(aName);
+      }
+    }
+
+    // 4. If aIds has IDs but aNames is lacking names, resolve from LookupLocalRepository
+    if (aIds.isNotEmpty && aNames.length < aIds.length) {
+      for (final id in aIds) {
+        final lookupName = LookupLocalRepository.getLookupNameSync(id);
+        if (lookupName != null && lookupName.trim().isNotEmpty && !aNames.contains(lookupName.trim())) {
+          aNames.add(lookupName.trim());
+        }
+      }
+    }
+
+    // 4b. Also check metaCustomFields for target_area_names / area_names
+    if (aNames.isEmpty || aNames.length < aIds.length) {
+      final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+      if (meta is Map) {
+        final metaAreaNames = meta['target_area_names'] ?? meta['area_names'];
+        if (metaAreaNames is List && metaAreaNames.isNotEmpty) {
+          for (final an in metaAreaNames) {
+            final s = an?.toString().trim();
+            if (s != null && s.isNotEmpty && !aNames.contains(s)) {
+              aNames.add(s);
+            }
+          }
+        }
       }
     }
 
@@ -831,29 +882,46 @@ class RequirementModel {
   bool get isAllAreas {
     if (areaIds.isEmpty && areaNames.isEmpty) return true;
     if (metaCustomFields != null &&
+        (metaCustomFields!['is_all_areas'] == false ||
+            metaCustomFields!['is_all_areas'] == 'false')) {
+      return false;
+    }
+    if (metaCustomFields != null &&
         (metaCustomFields!['is_all_areas'] == true ||
             metaCustomFields!['is_all_areas'] == 'true' ||
             metaCustomFields!['all_areas'] == true ||
             metaCustomFields!['all_areas'] == 'true')) {
       return true;
     }
-    if (areaNames.length >= 10 || areaIds.length >= 10) return true;
-    return areaNames.any((a) {
-      final l = a.trim().toLowerCase();
-      return l.isEmpty ||
-          l == 'all areas' ||
-          l == 'all' ||
-          l == 'any area' ||
-          l == 'any' ||
-          l == 'anywhere' ||
-          l == 'entire city' ||
-          l == 'all localities';
-    });
+    return areaNames.isNotEmpty &&
+        areaNames.every((a) {
+          final l = a.trim().toLowerCase();
+          return l == 'all areas' ||
+              l == 'all' ||
+              l == 'any area' ||
+              l == 'any' ||
+              l == 'anywhere' ||
+              l == 'entire city' ||
+              l == 'all localities';
+        });
   }
 
   String get displayAreasText {
     if (isAllAreas) return 'All Areas';
-    if (areaNames.isNotEmpty) return areaNames.join(', ');
+    if (areaNames.isNotEmpty) {
+      final specific = areaNames.where((n) {
+        final l = n.trim().toLowerCase();
+        return l.isNotEmpty &&
+            l != 'all' &&
+            l != 'all areas' &&
+            l != 'any' &&
+            l != 'any area' &&
+            l != 'anywhere';
+      }).toList();
+      if (specific.isNotEmpty) return specific.join(', ');
+      return areaNames.join(', ');
+    }
+    if (areaIds.isNotEmpty) return '${areaIds.length} areas';
     return 'All Areas';
   }
 
