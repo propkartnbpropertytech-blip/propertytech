@@ -906,13 +906,12 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
             bottomLeft: Radius.circular(isMe ? 14 : 2),
             bottomRight: Radius.circular(isMe ? 2 : 14),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: isMe
+              ? null
+              : Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  width: 0.5,
+                ),
         ),
         child: Column(
           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
