@@ -42,8 +42,10 @@ import '../widgets/stat_card.dart';
 import '../widgets/recent_properties_card.dart';
 import '../widgets/todays_schedule_card.dart';
 import '../widgets/followups_card.dart';
-import '../../requirements/screens/requirements_screen.dart';
 import '../widgets/inventory_demand_analytics_section.dart';
+import '../../requirements/screens/requirements_screen.dart';
+import '../services/dashboard_service.dart';
+import '../widgets/pipeline_funnel_bar.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -68,6 +70,76 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   bool get _isRent => ThemeManager().isRentMode;
 
+  Map<String, dynamic>? _lifecycleData;
+  bool _loadingLifecycle = false;
+  String? _lastLifecycleFilterKey;
+
+  Future<void> _fetchLifecycleBreakdown(KpiFilterParams kpiFilters) async {
+    final key = '${kpiFilters.dateFilter}_${kpiFilters.startDate}_${kpiFilters.endDate}_${kpiFilters.leadType}';
+    if (_lastLifecycleFilterKey == key || _loadingLifecycle) return;
+    _lastLifecycleFilterKey = key;
+    if (!mounted) return;
+    setState(() => _loadingLifecycle = true);
+    try {
+      final res = await DashboardService().getLifecycleBreakdown(
+        dateFilter: kpiFilters.dateFilter,
+        startDate: kpiFilters.startDate,
+        endDate: kpiFilters.endDate,
+        leadType: kpiFilters.leadType,
+      );
+      if (mounted) {
+        setState(() {
+          _lifecycleData = res;
+          _loadingLifecycle = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _lifecycleData ??= <String, dynamic>{};
+          _loadingLifecycle = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildPipelineFunnelSection(KpiFilterParams kpiFilters) {
+    final filterKey = '${kpiFilters.dateFilter}_${kpiFilters.startDate}_${kpiFilters.endDate}_${kpiFilters.leadType}';
+    if (_lastLifecycleFilterKey != filterKey && !_loadingLifecycle) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fetchLifecycleBreakdown(kpiFilters);
+      });
+    }
+
+    final stages = (_lifecycleData?['stages'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
+    final salesRoster = (_lifecycleData?['sales_roster'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
+    final total = (_lifecycleData?['total_leads'] as num?)?.toInt() ?? 0;
+    final activeSalesUsersCount =
+        (_lifecycleData?['active_sales_users_count'] as num?)?.toInt();
+
+    return PipelineFunnelBar(
+      totalLeads: total,
+      stages: stages,
+      salesRoster: salesRoster,
+      activeSalesUsersCount: activeSalesUsersCount,
+      dateFilter: kpiFilters.dateFilter,
+      isLoading: _loadingLifecycle && _lifecycleData == null,
+      onStageTap: (stageKey, stageLabel) {
+        GenericKpiDrilldownDialog.show(
+          context,
+          kpiKey: stageKey,
+          kpiLabel: stageLabel,
+          initialFilters: kpiFilters.toJson(),
+        );
+      },
+    );
+  }
 
   Future<PropertyModel?> _propertyDetailFuture(String id) {
     return _propertyDetailFutures.putIfAbsent(
@@ -255,6 +327,10 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                           // 3. Global Filter Bar (Business Type, Date, Lead Type)
                           _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
+                          const SizedBox(height: 16),
+
+                          // 3.5 Authoritative Lead Pipeline Funnel Bar
+                          _buildPipelineFunnelSection(kpiFilters),
                           const SizedBox(height: 20),
 
                           // 4. Responsive Main Content Area
@@ -474,6 +550,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       scrollable: true,
       onRefresh: () async {
         _propertyDetailFutures.clear();
+        _lastLifecycleFilterKey = null;
         context.read<DashboardBloc>().add(RefreshDashboard());
       },
       body: Column(
@@ -493,6 +570,10 @@ class _DashboardScreenState extends State<DashboardScreen>
 
           // 3. Global Filter Bar (Business Type, Date, Lead Type)
           _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
+          const SizedBox(height: 14),
+
+          // 3.5 Authoritative Lead Pipeline Funnel Bar
+          _buildPipelineFunnelSection(kpiFilters),
           const SizedBox(height: 16),
 
           // 4. Telecaller Section KPIs

@@ -13,6 +13,7 @@ import '../../../core/security/role_guard.dart';
 import '../../campaign/models/campaign_followup_model.dart';
 import '../../dashboard/widgets/stat_card.dart';
 import '../../dashboard/widgets/welcome_header.dart';
+import '../../../core/design_system/widgets/animated_count_roll.dart';
 import '../../integration/services/integration_service.dart';
 import '../../integration/models/integration_lead_model.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
@@ -1670,11 +1671,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      item.value,
+                    AnimatedCountRoll(
+                      value: item.value,
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(

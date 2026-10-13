@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../../core/design_system/widgets/animated_count_roll.dart';
 
 class StatCard extends StatefulWidget {
   final String title;
@@ -117,8 +118,8 @@ class _StatCardState extends State<StatCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            widget.value,
+                          AnimatedCountRoll(
+                            value: widget.value,
                             style: TextStyle(
                               color: isDark
                                   ? const Color(0xFFF8FAFC)
@@ -126,7 +127,6 @@ class _StatCardState extends State<StatCard> {
                               fontSize: compact ? (isVeryNarrow ? 16 : 18) : 22,
                               fontWeight: FontWeight.bold,
                               letterSpacing: -0.6,
-                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                           if (widget.subtitle != null && widget.subtitle!.isNotEmpty) ...[
