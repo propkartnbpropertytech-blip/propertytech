@@ -321,7 +321,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
             child: CustomPaint(
               painter: DashedBorderPainter(
-                color: CRMColors.primaryOf(context).withOpacity(0.4),
+                color: CRMColors.primaryOf(context).withValues(alpha: 0.4),
                 radius: CRMBorderRadius.s,
               ),
               child: Container(
@@ -388,7 +388,7 @@ class _CRMImagePickerState extends State<CRMImagePicker> {
           const SizedBox(height: CRMSpacing.m),
           LayoutBuilder(
             builder: (context, constraints) {
-              final isMobile = constraints.maxWidth < 600;
+              final isMobile = constraints.maxWidth < 480;
               final crossAxisCount = isMobile ? 1 : (constraints.maxWidth > 900 ? 4 : 3);
               final itemSpacing = CRMSpacing.s;
 

@@ -52,6 +52,7 @@ class RequirementModel {
   final String? leadQuality;
   final String? assignedTelecallerId;
   final DateTime? salesAssignedAt;
+  final String? rejectionRemark;
 
   RequirementModel({
     required this.id,
@@ -105,6 +106,7 @@ class RequirementModel {
     this.leadQuality,
     this.assignedTelecallerId,
     this.salesAssignedAt,
+    this.rejectionRemark,
   });
 
   bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
@@ -678,6 +680,7 @@ class RequirementModel {
         }
         return null;
       }(),
+      rejectionRemark: (json['rejection_remark'] ?? json['rejectionRemark'])?.toString(),
     );
   }
 
@@ -734,6 +737,8 @@ class RequirementModel {
       'assignedTelecallerId': assignedTelecallerId,
       'sales_assigned_at': salesAssignedAt?.toIso8601String(),
       'salesAssignedAt': salesAssignedAt?.toIso8601String(),
+      'rejection_remark': rejectionRemark,
+      'rejectionRemark': rejectionRemark,
     };
   }
 
@@ -799,6 +804,7 @@ class RequirementModel {
       if (metaAdName != null) 'meta_ad_name': metaAdName,
       if (metaCustomFields != null) 'meta_custom_fields': metaCustomFields,
       if (leadQuality != null) 'lead_quality': leadQuality,
+      if (rejectionRemark != null) 'rejection_remark': rejectionRemark,
     };
   }
 
@@ -1007,6 +1013,7 @@ class RequirementModel {
     Map<String, dynamic>? metaCustomFields,
     String? leadQuality,
     String? assignedTelecallerId,
+    String? rejectionRemark,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -1059,6 +1066,8 @@ class RequirementModel {
       metaCustomFields: metaCustomFields ?? this.metaCustomFields,
       leadQuality: leadQuality ?? this.leadQuality,
       assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
+      salesAssignedAt: salesAssignedAt,
+      rejectionRemark: rejectionRemark ?? this.rejectionRemark,
     );
   }
 }

@@ -18,6 +18,16 @@ class SupportCatalogFunction {
         'key': key,
         'name': name,
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SupportCatalogFunction &&
+          runtimeType == other.runtimeType &&
+          key == other.key;
+
+  @override
+  int get hashCode => key.hashCode;
 }
 
 class SupportCatalogPage {
@@ -61,6 +71,16 @@ class SupportCatalogPage {
       functions: fnList,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SupportCatalogPage &&
+          runtimeType == other.runtimeType &&
+          pageKey == other.pageKey;
+
+  @override
+  int get hashCode => pageKey.hashCode;
 }
 
 class SupportAttachment {

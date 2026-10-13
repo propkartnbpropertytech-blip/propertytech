@@ -239,7 +239,7 @@ class MobileNavConfig {
     );
     const support = MobileMoreEntry(
       id: 'support',
-      label: 'Support & Help',
+      label: 'Support',
       icon: Icons.support_agent_rounded,
       route: '/support',
     );

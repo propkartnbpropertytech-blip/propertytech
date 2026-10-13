@@ -11,7 +11,7 @@ class SupportService {
   /// Fetch pages & functions catalog based on current user role
   Future<List<SupportCatalogPage>> fetchCatalog() async {
     try {
-      final response = await DioClient.dio.get('/api/v1/support/catalog');
+      final response = await DioClient.dio.get('/support/catalog');
       if (response.data != null && response.data['success'] == true) {
         final rawList = response.data['data']['catalog'] as List? ?? [];
         return rawList
@@ -47,7 +47,7 @@ class SupportService {
       if (search != null && search.isNotEmpty) queryParams['search'] = search;
 
       final response = await DioClient.dio.get(
-        '/api/v1/support/issues',
+        '/support/issues',
         queryParameters: queryParams,
       );
 
@@ -78,7 +78,7 @@ class SupportService {
   /// Fetch support stats KPIs
   Future<SupportStats> fetchStats() async {
     try {
-      final response = await DioClient.dio.get('/api/v1/support/stats');
+      final response = await DioClient.dio.get('/support/stats');
       if (response.data != null && response.data['success'] == true) {
         final statsData = response.data['data']['stats'] as Map<String, dynamic>? ?? {};
         return SupportStats.fromJson(statsData);
@@ -95,7 +95,7 @@ class SupportService {
   /// Fetch single issue details by ID
   Future<SupportIssue?> fetchIssueById(String id) async {
     try {
-      final response = await DioClient.dio.get('/api/v1/support/issues/$id');
+      final response = await DioClient.dio.get('/support/issues/$id');
       if (response.data != null && response.data['success'] == true) {
         final issueData = response.data['data']['issue'] as Map<String, dynamic>? ?? {};
         return SupportIssue.fromJson(issueData);
@@ -121,7 +121,7 @@ class SupportService {
     List<Map<String, dynamic>> attachments = const [],
   }) async {
     final response = await DioClient.dio.post(
-      '/api/v1/support/issues',
+      '/support/issues',
       data: {
         'page_key': pageKey,
         'page_name': pageName,
@@ -156,7 +156,7 @@ class SupportService {
     if (assignedToName != null) payload['assigned_to_name'] = assignedToName;
 
     final response = await DioClient.dio.patch(
-      '/api/v1/support/issues/$id',
+      '/support/issues/$id',
       data: payload,
     );
 
@@ -174,7 +174,7 @@ class SupportService {
     bool isInternalNote = false,
   }) async {
     final response = await DioClient.dio.post(
-      '/api/v1/support/issues/$issueId/comments',
+      '/support/issues/$issueId/comments',
       data: {
         'comment': comment,
         'is_internal_note': isInternalNote,

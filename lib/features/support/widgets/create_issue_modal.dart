@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/design_system/widgets/form/crm_image_picker.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/support_issue_model.dart';
 import '../services/support_service.dart';
@@ -23,12 +25,13 @@ class CreateIssueModal extends StatefulWidget {
 class _CreateIssueModalState extends State<CreateIssueModal> {
   int _currentStep = 0;
 
+  List<SupportCatalogPage> _catalogPages = [];
   SupportCatalogPage? _selectedPage;
   SupportCatalogFunction? _selectedFunction;
   String _issueType = 'Function not working';
   String _priority = 'Medium';
   final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _attachmentUrlController = TextEditingController();
+  final List<String> _uploadedImages = [];
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -50,26 +53,123 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
   @override
   void initState() {
     super.initState();
-    if (widget.catalog.isNotEmpty) {
+    _initCatalogPages();
+  }
+
+  void _initCatalogPages() {
+    final baseList = widget.catalog.isNotEmpty ? widget.catalog : _fallbackCatalog;
+    final userRole = (RoleGuard.currentUser?.role ?? '').toLowerCase();
+    final isTelecaller = RoleGuard.isTelecaller(userRole) || userRole == 'telecaller';
+    final isSales = RoleGuard.isSales(userRole) || userRole == 'sales' || userRole == 'salesperson';
+    final isSuperAdmin = RoleGuard.isSuperAdmin(userRole);
+    final isAdmin = RoleGuard.isAdmin(userRole) || userRole == 'admin' || isSuperAdmin;
+
+    final filtered = baseList.where((page) {
+      if (isSuperAdmin) return true;
+
+      final key = page.pageKey;
+
+      if (isTelecaller) {
+        // Telecaller only sees pages accessible to Telecaller
+        const telecallerAllowed = {
+          '/dashboard',
+          '/properties',
+          '/telecaller/leads',
+          '/campaign/leads',
+          '/telecaller/callbacks',
+          '/telecaller/cnr',
+          '/requirements',
+          '/library',
+          '/messages',
+          '/profile',
+        };
+        return telecallerAllowed.contains(key);
+      }
+
+      if (isSales) {
+        // Salesperson only sees pages accessible to Salesperson
+        const salesAllowed = {
+          '/dashboard',
+          '/properties',
+          '/requirements',
+          '/library',
+          '/messages',
+          '/profile',
+        };
+        return salesAllowed.contains(key);
+      }
+
+      if (isAdmin) {
+        // Admin sees all operational pages, except Super Admin only audit logs
+        if (key == '/settings/audit-logs') return isSuperAdmin;
+        return true;
+      }
+
+      return page.allowedRoles.any((r) => r.toLowerCase() == userRole);
+    }).map((page) {
+      // Enforce function-level role permissions
+      var fns = page.functions;
+      if (!isAdmin) {
+        fns = fns.where((fn) {
+          final k = fn.key.toLowerCase();
+          if (k == 'inspection_mode') return false;
+          if (k == 'reassign_lead' || k == 'export_data') return false;
+          if (k == 'bulk_assignment' || k == 'spreadsheet_upload') return false;
+          if (k == 'archive_property') return false;
+          return true;
+        }).toList();
+      }
+
+      String customName = page.pageName;
+      if (isTelecaller && page.pageKey == '/requirements') {
+        customName = 'All Leads (Track)';
+      } else if (isSales && page.pageKey == '/dashboard') {
+        customName = 'Sales Dashboard';
+      }
+
+      return SupportCatalogPage(
+        id: page.id,
+        pageKey: page.pageKey,
+        pageName: customName,
+        category: page.category,
+        description: page.description,
+        allowedRoles: page.allowedRoles,
+        functions: fns,
+      );
+    }).toList();
+
+    // Deduplicate by pageKey so DropdownMenuItem never has duplicates
+    final seen = <String>{};
+    final unique = <SupportCatalogPage>[];
+    for (final p in filtered) {
+      if (seen.add(p.pageKey)) {
+        unique.add(p);
+      }
+    }
+    _catalogPages = unique;
+
+    if (_catalogPages.isNotEmpty) {
       if (widget.initialPageKey != null && widget.initialPageKey!.isNotEmpty) {
-        final match = widget.catalog.firstWhere(
+        final match = _catalogPages.firstWhere(
           (p) => p.pageKey == widget.initialPageKey,
-          orElse: () => widget.catalog.first,
+          orElse: () => _catalogPages.first,
         );
         _selectedPage = match;
       } else {
-        _selectedPage = widget.catalog.first;
+        _selectedPage = _catalogPages.first;
       }
       if (_selectedPage != null && _selectedPage!.functions.isNotEmpty) {
         _selectedFunction = _selectedPage!.functions.first;
       }
+    } else {
+      _selectedPage = null;
+      _selectedFunction = null;
     }
   }
 
   @override
   void dispose() {
     _descriptionController.dispose();
-    _attachmentUrlController.dispose();
     super.dispose();
   }
 
@@ -101,15 +201,14 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
     });
 
     try {
-      final attachments = <Map<String, dynamic>>[];
-      final attUrl = _attachmentUrlController.text.trim();
-      if (attUrl.isNotEmpty) {
-        attachments.add({
-          'file_name': 'Attachment Link / Screenshot',
-          'file_path': attUrl,
-          'file_type': 'image_or_link',
-        });
-      }
+      final attachments = _uploadedImages.map((url) {
+        final uriParts = url.split('/').last.split('?').first;
+        return {
+          'file_name': uriParts.isNotEmpty ? uriParts : 'Issue Screenshot',
+          'file_path': url,
+          'file_type': 'image',
+        };
+      }).toList();
 
       final issue = await SupportService.instance.createIssue(
         pageKey: _selectedPage!.pageKey,
@@ -346,7 +445,231 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
     }
   }
 
+
+  List<SupportCatalogPage> get _fallbackCatalog {
+    return const [
+      SupportCatalogPage(
+        id: 'cat-1',
+        pageKey: '/dashboard',
+        pageName: 'Executive Dashboard',
+        category: 'Overview & KPIs',
+        description: 'Main dashboard with summary KPIs, recent leads, and quick actions',
+        allowedRoles: ['Admin', 'Telecaller', 'Sales', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'kpi_cards', name: 'KPI Summary Cards (Total Leads, Interested, Site Visits, Closed)'),
+          SupportCatalogFunction(key: 'recent_activity', name: 'Recent Inquiries & Activity Feed'),
+          SupportCatalogFunction(key: 'date_filter', name: 'Date Range & Role Filter'),
+          SupportCatalogFunction(key: 'quick_actions', name: 'Quick Action Shortcuts (+ Plus Icon)'),
+          SupportCatalogFunction(key: 'kpi_drilldown', name: 'KPI Drilldown Dialogs'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-2',
+        pageKey: '/properties',
+        pageName: 'Properties Inventory',
+        category: 'Inventory',
+        description: 'Complete real estate listings directory for sale and rent',
+        allowedRoles: ['Admin', 'Telecaller', 'Sales', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'search_bar', name: 'Search & BHK / Price / Location Filters'),
+          SupportCatalogFunction(key: 'property_cards', name: 'Property Cards & Grid/Table View'),
+          SupportCatalogFunction(key: 'add_property', name: 'Add New Property Listing Form'),
+          SupportCatalogFunction(key: 'edit_property', name: 'Edit / Update Property Details'),
+          SupportCatalogFunction(key: 'share_property', name: 'Share Property (WhatsApp / PDF Link Generation)'),
+          SupportCatalogFunction(key: 'matching_requirements', name: 'Matching Buyer Requirements Drawer'),
+          SupportCatalogFunction(key: 'archive_property', name: 'Archive / Move to Bin'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-3',
+        pageKey: '/requirements',
+        pageName: 'Leads & Buyer Requirements',
+        category: 'Leads Pipeline',
+        description: 'Buyer & tenant inquiries pipeline and matchmaking table',
+        allowedRoles: ['Admin', 'Telecaller', 'Sales', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'tabs_navigation', name: 'Category Tabs (All, Property Listings, Not Interested, Followups)'),
+          SupportCatalogFunction(key: 'search_filter', name: 'Search & Status / Budget Filters'),
+          SupportCatalogFunction(key: 'add_lead', name: 'Add New Lead / Requirement Form'),
+          SupportCatalogFunction(key: 'change_status', name: 'Change Lead Status (Interested, Callback, Closed)'),
+          SupportCatalogFunction(key: 'schedule_callback', name: 'Schedule Callback Date & Time'),
+          SupportCatalogFunction(key: 'reassign_lead', name: 'Lead Re-assignment to Agent'),
+          SupportCatalogFunction(key: 'export_data', name: 'Export Requirements Data to Excel/CSV'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-4',
+        pageKey: '/telecaller/leads',
+        pageName: 'Telecaller Calling Leads',
+        category: 'Telecaller Desk',
+        description: 'Allocated calling queue for signed-in Telecaller',
+        allowedRoles: ['Telecaller', 'Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'calling_queue', name: 'Allocated Calling Leads Table'),
+          SupportCatalogFunction(key: 'record_outcome', name: 'Record Call Outcome (Interested, Callback, CNR, Wrong Lead)'),
+          SupportCatalogFunction(key: 'disposition_sheet', name: 'Call Disposition Sheet & Remarks'),
+          SupportCatalogFunction(key: 'transfer_lead', name: 'Transfer Lead to Salesperson / Peer'),
+          SupportCatalogFunction(key: 'status_toggle', name: 'Telecaller Availability Toggle (Available / On Call / Break)'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-5',
+        pageKey: '/telecaller/callbacks',
+        pageName: 'Telecaller Callbacks & Reminders',
+        category: 'Telecaller Desk',
+        description: 'Scheduled callbacks and follow-up calendar desk',
+        allowedRoles: ['Telecaller', 'Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'callbacks_list', name: 'Scheduled Callbacks List'),
+          SupportCatalogFunction(key: 'reschedule_time', name: 'Reschedule Callback Time'),
+          SupportCatalogFunction(key: 'mark_complete', name: 'Mark Callback Completed'),
+          SupportCatalogFunction(key: 'date_filters', name: 'Filter Callbacks by Date (Today, Missed, Upcoming)'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-6',
+        pageKey: '/telecaller/cnr',
+        pageName: 'Telecaller CNR / Retry Desk',
+        category: 'Telecaller Desk',
+        description: 'Queue for leads where calls could not be connected',
+        allowedRoles: ['Telecaller', 'Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'cnr_queue', name: 'CNR Leads List'),
+          SupportCatalogFunction(key: 'retry_call', name: 'Retry Call Action & Log Outcome'),
+          SupportCatalogFunction(key: 'move_not_interested', name: 'Move to Not Interested / Archive'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-7',
+        pageKey: '/admin/lead-allocation',
+        pageName: 'Lead Allocation Monitor',
+        category: 'Admin & Operations',
+        description: 'Live lead distribution monitor and telecaller shift tracker',
+        allowedRoles: ['Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'live_monitor_table', name: 'Live Telecaller Allocation Table'),
+          SupportCatalogFunction(key: 'manual_reallocation', name: 'Manual Lead Re-allocation & Batch Transfer'),
+          SupportCatalogFunction(key: 'attendance_tracker', name: 'Telecaller Shift & Attendance Tracker'),
+          SupportCatalogFunction(key: 'distribution_rules', name: 'Lead Redistribution Rules & Capacity Gauge'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-8',
+        pageKey: '/campaign/leads',
+        pageName: 'Campaign & Webhook Ingestion',
+        category: 'Integrations & Campaigns',
+        description: 'Meta Ads and portal webhook ingestion inbox table',
+        allowedRoles: ['Admin', 'Telecaller', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'webhook_inbox', name: 'Webhook Ingestion Inbox Table'),
+          SupportCatalogFunction(key: 'bulk_assignment', name: 'Single & Bulk Lead Assignment'),
+          SupportCatalogFunction(key: 'spreadsheet_upload', name: 'Spreadsheet / CSV File Upload & Field Mapping'),
+          SupportCatalogFunction(key: 'deduplication', name: 'Lead Deduplication & Quality Filter'),
+          SupportCatalogFunction(key: 'export_campaign_leads', name: 'Export Campaign Leads Data'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-9',
+        pageKey: '/campaign/connections',
+        pageName: 'Campaign Connections & API Integrations',
+        category: 'Integrations & Campaigns',
+        description: 'Meta Ads Page connection and Housing.com portal API setup',
+        allowedRoles: ['Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'meta_connection', name: 'Connect Meta Ads Page & Webhook Secret'),
+          SupportCatalogFunction(key: 'housing_connector', name: 'Housing.com API Key & Connector Setup'),
+          SupportCatalogFunction(key: 'integration_health', name: 'Integration Health Diagnostics & Logs'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-10',
+        pageKey: '/users',
+        pageName: 'Team & Staff Management',
+        category: 'Administration',
+        description: 'Employee roster, role permissions, and agent account management',
+        allowedRoles: ['Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'employee_table', name: 'Employee Directory List & Role Filters'),
+          SupportCatalogFunction(key: 'create_user', name: 'Create New Employee Account'),
+          SupportCatalogFunction(key: 'edit_user', name: 'Edit Profile, Role, & Shift Status'),
+          SupportCatalogFunction(key: 'password_reset', name: 'Password Reset & Account Lockout Control'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-11',
+        pageKey: '/reports',
+        pageName: 'Reports & Analytics',
+        category: 'Analytics',
+        description: 'Business intelligence dashboard, telecaller reports, and sales leaderboard',
+        allowedRoles: ['Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'business_insight', name: 'Overall Business Intelligence Charts'),
+          SupportCatalogFunction(key: 'telecaller_report', name: 'Telecaller Performance Metrics & Call Attempts'),
+          SupportCatalogFunction(key: 'sales_report', name: 'Sales Leaderboard & Closed Deal Analytics'),
+          SupportCatalogFunction(key: 'lead_metrics', name: 'Lead Source Metrics & Conversion Rate'),
+          SupportCatalogFunction(key: 'export_reports', name: 'Export Comprehensive PDF / Excel Reports'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-12',
+        pageKey: '/library',
+        pageName: 'Document Library',
+        category: 'Resources',
+        description: 'Agreement templates, deed documents, and service provider contact directory',
+        allowedRoles: ['Admin', 'Telecaller', 'Sales', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'rental_agreements', name: 'Rental Agreement Templates & Download'),
+          SupportCatalogFunction(key: 'resale_agreements', name: 'Resale Deed & Contract Templates'),
+          SupportCatalogFunction(key: 'service_agents', name: 'Service Agent Directory & Provider Contacts'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-13',
+        pageKey: '/settings',
+        pageName: 'Settings & Administration',
+        category: 'System Settings',
+        description: 'System audit logs, location mappings, and KPI rulebook config',
+        allowedRoles: ['Admin', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'system_config', name: 'General System Settings'),
+          SupportCatalogFunction(key: 'audit_logs', name: 'System Security Audit Logs (/settings/audit-logs)'),
+          SupportCatalogFunction(key: 'location_config', name: 'Locality & Area Mapping Config'),
+          SupportCatalogFunction(key: 'kpi_config', name: 'KPI Rulebook Engine Config'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-14',
+        pageKey: '/messages',
+        pageName: 'Team Messages & Messenger',
+        category: 'Communication',
+        description: 'Direct messaging and group discussions with team members',
+        allowedRoles: ['Admin', 'Telecaller', 'Sales', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'chat_inbox', name: 'Team Conversations Inbox List'),
+          SupportCatalogFunction(key: 'send_message', name: 'Send Message & Attachment'),
+          SupportCatalogFunction(key: 'inspection_mode', name: 'Admin Inspection Mode'),
+        ],
+      ),
+      SupportCatalogPage(
+        id: 'cat-15',
+        pageKey: '/profile',
+        pageName: 'User Profile & Security',
+        category: 'User Preferences',
+        description: 'Personal profile, role badges, and security settings',
+        allowedRoles: ['Admin', 'Telecaller', 'Sales', 'Super Admin'],
+        functions: [
+          SupportCatalogFunction(key: 'profile_info', name: 'View Account Info & Role Badges'),
+          SupportCatalogFunction(key: 'change_password', name: 'Change Password Form'),
+        ],
+      ),
+    ];
+  }
+
   Widget _buildStep1PageSelection(bool isDark, Color primaryColor) {
+    final selectedKey = _catalogPages.any((p) => p.pageKey == _selectedPage?.pageKey)
+        ? _selectedPage?.pageKey
+        : (_catalogPages.isNotEmpty ? _catalogPages.first.pageKey : null);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -368,13 +691,13 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
             border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
           ),
           child: DropdownButtonHideUnderline(
-            child: DropdownButton<SupportCatalogPage>(
-              value: _selectedPage,
+            child: DropdownButton<String>(
+              value: selectedKey,
               isExpanded: true,
               dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-              items: widget.catalog.map((page) {
-                return DropdownMenuItem<SupportCatalogPage>(
-                  value: page,
+              items: _catalogPages.map((page) {
+                return DropdownMenuItem<String>(
+                  value: page.pageKey,
                   child: Row(
                     children: [
                       Icon(Icons.article_outlined, size: 18, color: primaryColor),
@@ -400,7 +723,14 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
                   ),
                 );
               }).toList(),
-              onChanged: _onPageChanged,
+              onChanged: (key) {
+                if (key == null) return;
+                final match = _catalogPages.firstWhere(
+                  (p) => p.pageKey == key,
+                  orElse: () => _catalogPages.first,
+                );
+                _onPageChanged(match);
+              },
             ),
           ),
         ),
@@ -429,6 +759,10 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
             ),
           ),
         ],
+        const SizedBox(height: 18),
+
+        // Optional Screenshot & Image Upload (Moved to Step 1 of the form)
+        _buildAttachmentSection(isDark, primaryColor),
       ],
     );
   }
@@ -578,22 +912,36 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
-        const SizedBox(height: 14),
-
-        // Optional Screenshot / Attachment Link
-        TextField(
-          controller: _attachmentUrlController,
-          style: TextStyle(fontSize: 12.5, color: isDark ? Colors.white : const Color(0xFF0F172A)),
-          decoration: InputDecoration(
-            labelText: 'Screenshot / Image Link (Optional)',
-            hintText: 'https://...',
-            prefixIcon: const Icon(Icons.link_rounded, size: 18),
-            filled: true,
-            fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        ),
       ],
+    );
+  }
+
+  Widget _buildAttachmentSection(bool isDark, Color primaryColor) {
+    return CRMImagePicker(
+      imageUrls: _uploadedImages,
+      onImageAdded: (url) {
+        setState(() {
+          _uploadedImages.add(url);
+        });
+      },
+      onImageRemoved: (index) {
+        setState(() {
+          _uploadedImages.removeAt(index);
+        });
+      },
+      onImageReplaced: (index, url) {
+        setState(() {
+          _uploadedImages[index] = url;
+        });
+      },
+      onImagesReordered: (newUrls) {
+        setState(() {
+          _uploadedImages.clear();
+          _uploadedImages.addAll(newUrls);
+        });
+      },
+      maxImages: 3,
+      uploadEndpoint: '/properties/upload-media',
     );
   }
 

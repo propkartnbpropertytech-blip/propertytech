@@ -1207,17 +1207,17 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
             _buildDropdown(
               label: 'Pipeline Status Stage *',
               value: _selectedStatus,
-              items: const [
-                DropdownMenuItem(value: "New", child: Text("New")),
-                DropdownMenuItem(value: "Not Started", child: Text("Not Started")),
-                DropdownMenuItem(value: "Call Attempted", child: Text("Call Attempted")),
-                DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
-                DropdownMenuItem(value: "Interested", child: Text("Interested")),
-                DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
-                DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
-                DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
-                DropdownMenuItem(value: "Won", child: Text("Won")),
-                DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
+              items: [
+                const DropdownMenuItem(value: "New", child: Text("New")),
+                if (_selectedStatus == "Not Started" || _selectedStatus == "Call Attempted")
+                  DropdownMenuItem(value: _selectedStatus, child: Text(_selectedStatus)),
+                const DropdownMenuItem(value: "Follow-up", child: Text("Follow-up")),
+                const DropdownMenuItem(value: "Interested", child: Text("Interested")),
+                const DropdownMenuItem(value: "Site Visit", child: Text("Site Visit Sche.")),
+                const DropdownMenuItem(value: "Site Visit Done", child: Text("Site Visit Done")),
+                const DropdownMenuItem(value: "Negotiation", child: Text("Negotiation")),
+                const DropdownMenuItem(value: "Won", child: Text("Won")),
+                const DropdownMenuItem(value: "Rejected", child: Text("Rejected")),
               ],
               onChanged: (val) {
                 if (val != null && _validateStatusTransition(val)) {

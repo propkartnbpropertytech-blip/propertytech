@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'local_repositories.dart';
 import 'isar_collections.dart';
 import '../../features/properties/models/property_model.dart';
 import '../../features/requirements/models/requirement_model.dart';
@@ -233,12 +234,16 @@ extension RequirementLocalExtensions on RequirementLocal {
       leadSource: leadSource,
       referralName: referralName,
       nextFollowupDate: nextFollowupDate,
+      rejectionRemark: RequirementLocalRepository.getRejectionRemark(id),
     );
   }
 }
 
 extension RequirementModelExtensions on RequirementModel {
   RequirementLocal toLocal() {
+    if (rejectionRemark != null && rejectionRemark!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberRejectionRemark(id, rejectionRemark);
+    }
     return RequirementLocal()
       ..id = id
       ..clientName = clientName

@@ -1590,7 +1590,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
   }
 
-  void _changeStatus(RequirementModel req, String newStatus) async {
+  void _changeStatus(RequirementModel req, String newStatus, {String? rejectionRemark}) async {
     _removeNotesPopover();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
@@ -1752,7 +1752,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       );
     } else {
       NotificationCenter.removeNotificationsForClient(req.clientName);
-      final updatedReq = baseReq.copyWith(status: newStatus);
+      final updatedReq = baseReq.copyWith(
+        status: newStatus,
+        rejectionRemark: rejectionRemark,
+      );
+      if (rejectionRemark != null && rejectionRemark.trim().isNotEmpty) {
+        RequirementLocalRepository.rememberRejectionRemark(updatedReq.id, rejectionRemark);
+      }
       _patchCachedRequirement(updatedReq);
       context.read<RequirementsBloc>().add(
         PatchRequirementStatusEvent(updatedReq),
@@ -1762,10 +1768,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   void _patchCachedRequirement(RequirementModel updated) {
     RequirementLocalRepository.rememberMetaCustomFields(updated.id, updated.metaCustomFields);
+    if (updated.rejectionRemark != null && updated.rejectionRemark!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberRejectionRemark(updated.id, updated.rejectionRemark);
+    }
     _localRequirementOverrides[updated.id] = updated;
-    _cachedRequirements = _withLocalRequirementOverrides(
-      _cachedRequirements.map((r) => r.id == updated.id ? updated : r).toList(),
-    );
+    final exists = _cachedRequirements.any((r) => r.id == updated.id);
+    if (exists) {
+      _cachedRequirements = _cachedRequirements.map((r) => r.id == updated.id ? updated : r).toList();
+    } else {
+      _cachedRequirements = [updated, ..._cachedRequirements];
+    }
     if (mounted) {
       setState(() {
         _refreshFollowupsFuture();
@@ -1782,10 +1794,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       final remoteHandled = r.metaCustomFields?['handled_by_sales'];
       final localReassign = local.metaCustomFields?['reassigned_by'];
       final remoteReassign = r.metaCustomFields?['reassigned_by'];
+      final localRemark = local.rejectionRemark ?? RequirementLocalRepository.getRejectionRemark(local.id);
+      final remoteRemark = r.rejectionRemark ?? RequirementLocalRepository.getRejectionRemark(r.id);
+      final bool remarkMatches = (localRemark == null || localRemark.trim().isEmpty) ||
+          (remoteRemark != null && remoteRemark.trim() == localRemark.trim());
       if (local.status == r.status &&
           local.assignedTo == r.assignedTo &&
           localHandled == remoteHandled &&
-          localReassign == remoteReassign) {
+          localReassign == remoteReassign &&
+          remarkMatches) {
         _localRequirementOverrides.remove(r.id);
         return r;
       }
@@ -2223,7 +2240,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       } else if (_activeMainTab == 'Rejected') {
         if (!_isLeadRejected(r)) return false;
       } else if (_activeMainTab == 'Leads') {
-        if (_isLeadRejected(r)) return false;
+        if (_selectedStatus != 'Rejected' && _isLeadRejected(r)) return false;
         if (_isLeadWon(r) || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
           if (_selectedStatus != 'Won') return false;
         }
@@ -2237,6 +2254,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           mappedStatus == 'Won') return false;
 
       final matchesStatus = isWonTab
+          ? true
+          : _activeMainTab == 'Rejected'
           ? true
           : viewAllRejected
           ? true
@@ -2639,6 +2658,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           setState(() {
             _activeMainTab = (label == 'My Won' ? 'Won' : label);
             _currentPage = 1;
+            if (_activeMainTab == 'Rejected' || _activeMainTab == 'Won' || _activeMainTab == 'My Won') {
+              _selectedStatus = 'All';
+            }
           });
         }
       },
@@ -5383,7 +5405,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       'Already rented',
       'Want Ready-To-Move',
       'Negotiation Failed',
-      'Others',
+      'Other',
     ];
 
     _rejectionOverlayEntry = OverlayEntry(
@@ -5413,12 +5435,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: reasons.map((reason) {
-                  final bool isSelected = req.status == 'Rejected ($reason)';
+                  final bool isSelected = req.status == 'Rejected ($reason)' ||
+                      (reason == 'Other' && (req.status == 'Rejected (Others)' || req.status == 'Rejected (Other)'));
                   return InkWell(
                     onTap: () {
                       _removeRejectionOverlay();
-                      Navigator.of(context, rootNavigator: true).maybePop();
-                      _changeStatus(req, 'Rejected ($reason)');
+                      Navigator.of(context).maybePop();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        if (reason.toLowerCase().contains('other')) {
+                          _showRejectionRemarkDialog(context, req, reason);
+                        } else {
+                          _changeStatus(req, 'Rejected ($reason)');
+                        }
+                      });
                     },
                     hoverColor: CRMColors.backgroundOf(context),
                     child: Padding(
@@ -5453,6 +5483,330 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     overlay.insert(_rejectionOverlayEntry!);
+  }
+
+  void _showRejectionRemarkDialog(BuildContext context, RequirementModel req, String reason) {
+    final TextEditingController remarkController = TextEditingController();
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final isDark = Theme.of(ctx).brightness == Brightness.dark;
+            final bool hasText = remarkController.text.trim().isNotEmpty;
+
+            return Dialog(
+              backgroundColor: CRMColors.cardBgOf(ctx),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.danger.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.cancel_outlined,
+                                  color: CRMColors.danger,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Rejection Remark',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: CRMColors.textOf(ctx),
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            onPressed: isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white10 : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CRMColors.borderOf(ctx).withValues(alpha: 0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.person_outline_rounded, size: 16, color: CRMColors.textSecondaryOf(ctx)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${req.clientName} (${req.clientMobile})',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: CRMColors.textOf(ctx),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Why is this client being rejected? *',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: CRMColors.textOf(ctx),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.black12 : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: CRMColors.borderOf(ctx).withValues(alpha: 0.6),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: TextField(
+                          controller: remarkController,
+                          autofocus: true,
+                          maxLines: 4,
+                          minLines: 3,
+                          onChanged: (_) => setDialogState(() {}),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: CRMColors.textOf(ctx),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Enter rejection reason / remarks...',
+                            hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: CRMColors.textSecondaryOf(ctx).withValues(alpha: 0.6),
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: CRMColors.textSecondaryOf(ctx),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: CRMColors.danger,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: (isSubmitting || !hasText)
+                                ? null
+                                : () async {
+                                    final String remark = remarkController.text.trim();
+                                    if (remark.isEmpty) return;
+                                    setDialogState(() => isSubmitting = true);
+                                    Navigator.of(dialogContext).pop();
+                                    _changeStatus(req, 'Rejected ($reason)', rejectionRemark: remark);
+                                  },
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Confirm Rejection',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showRejectedNoteDialog(BuildContext context, RequirementModel req) {
+    final note = req.rejectionRemark ?? RequirementLocalRepository.getRejectionRemark(req.id) ?? '';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: CRMColors.cardBgOf(context),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: CRMColors.danger.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.note_alt_rounded,
+                              color: CRMColors.danger,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Rejected Note',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: CRMColors.textOf(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_outline_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${req.clientName} (${req.clientMobile})',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: CRMColors.textOf(context),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Rejection Reason Remark:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(minHeight: 80, maxHeight: 240),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.black26 : const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isDark ? Colors.white12 : const Color(0xFFFDBA74).withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Text(
+                        note.isNotEmpty ? note : 'No remark specified.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.5,
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CRMColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   OverlayEntry? _callAttemptedOverlayEntry;
@@ -5554,6 +5908,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   Future<void> _showMobileRejectionPicker(RequirementModel req) async {
+    return _showRejectionPicker(req);
+  }
+
+  Future<void> _showRejectionPicker(RequirementModel req) async {
     if (!mounted) return;
     final List<String> reasons = [
       'Not Answering',
@@ -5564,66 +5922,211 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       'Already rented',
       'Want Ready-To-Move',
       'Negotiation Failed',
-      'Others',
+      'Other',
     ];
 
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (bottomSheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final isDesktop = MediaQuery.of(context).size.width > 600;
+
+    String? selected;
+    if (isDesktop) {
+      selected = await showDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+          return Dialog(
+            backgroundColor: CRMColors.cardBgOf(dialogContext),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Select Rejection Reason',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: CRMColors.danger.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.cancel_outlined,
+                                color: CRMColors.danger,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Select Rejection Reason',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: CRMColors.textOf(dialogContext),
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20),
-                      onPressed: () => Navigator.of(bottomSheetContext).pop(),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white10 : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: CRMColors.borderOf(dialogContext).withValues(alpha: 0.5)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_outline_rounded, size: 16, color: CRMColors.textSecondaryOf(dialogContext)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${req.clientName} (${req.clientMobile})',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: CRMColors.textOf(dialogContext),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 380),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: reasons.map((reason) {
+                            final isSelected = req.status == 'Rejected ($reason)' ||
+                                (reason == 'Other' && (req.status == 'Rejected (Others)' || req.status == 'Rejected (Other)'));
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => Navigator.of(dialogContext).pop('Rejected ($reason)'),
+                              hoverColor: CRMColors.backgroundOf(dialogContext),
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 2.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? CRMColors.danger.withValues(alpha: 0.08)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? CRMColors.danger.withValues(alpha: 0.4)
+                                        : CRMColors.borderOf(dialogContext).withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      reason,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                        color: isSelected ? CRMColors.danger : CRMColors.textOf(dialogContext),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      const Icon(Icons.check_circle_rounded, size: 16, color: CRMColors.danger)
+                                    else
+                                      Icon(Icons.arrow_forward_ios_rounded, size: 12, color: CRMColors.textSecondaryOf(dialogContext).withValues(alpha: 0.5)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: reasons.length,
-                  itemBuilder: (ctx, idx) {
-                    final reason = reasons[idx];
-                    final isSelected = req.status == 'Rejected ($reason)';
-                    return ListTile(
-                      title: Text(
-                        reason,
-                        style: TextStyle(
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected ? CRMColors.danger : null,
-                        ),
+            ),
+          );
+        },
+      );
+    } else {
+      selected = await showModalBottomSheet<String>(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (bottomSheetContext) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Select Rejection Reason',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                      trailing: isSelected ? const Icon(Icons.check, color: CRMColors.danger) : null,
-                      onTap: () => Navigator.of(bottomSheetContext).pop('Rejected ($reason)'),
-                    );
-                  },
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => Navigator.of(bottomSheetContext).pop(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+                const Divider(height: 1),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: reasons.length,
+                    itemBuilder: (ctx, idx) {
+                      final reason = reasons[idx];
+                      final isSelected = req.status == 'Rejected ($reason)' ||
+                          (reason == 'Other' && (req.status == 'Rejected (Others)' || req.status == 'Rejected (Other)'));
+                      return ListTile(
+                        title: Text(
+                          reason,
+                          style: TextStyle(
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            color: isSelected ? CRMColors.danger : null,
+                          ),
+                        ),
+                        trailing: isSelected ? const Icon(Icons.check, color: CRMColors.danger) : null,
+                        onTap: () => Navigator.of(bottomSheetContext).pop('Rejected ($reason)'),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    }
 
     if (selected != null) {
-      _changeStatus(req, selected);
+      if (selected.toLowerCase().contains('other')) {
+        _showRejectionRemarkDialog(context, req, 'Other');
+      } else {
+        _changeStatus(req, selected);
+      }
     }
   }
 
@@ -5859,17 +6362,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _removeCallAttemptedOverlay();
         },
         onSelected: (String newStatus) {
+          _removeRejectionOverlay();
+          _removeCallAttemptedOverlay();
           if (newStatus == 'Rejected') {
-            if (_rejectionOverlayEntry == null) {
-              _showMobileRejectionPicker(req);
-            }
+            _showRejectionPicker(req);
           } else if (newStatus == 'Call Attempted') {
-            if (_callAttemptedOverlayEntry == null) {
-              _showMobileCallAttemptedPicker(req);
-            }
+            _showMobileCallAttemptedPicker(req);
           } else {
-            _removeRejectionOverlay();
-            _removeCallAttemptedOverlay();
             _changeStatus(req, newStatus);
           }
         },
@@ -5877,61 +6376,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           return [
             _buildStatusMenuItem('New', 'New', currentStatus),
             _buildStatusMenuItem('Assigned', 'Assigned', currentStatus, color: const Color(0xFF0F766E)),
-            _buildStatusMenuItem('Not Started', 'Not Started', currentStatus),
-            PopupMenuItem<String>(
-              value: 'Call Attempted',
-              child: Builder(
-                builder: (itemContext) {
-                  return StatefulBuilder(
-                    builder: (context, setItemState) {
-                      final bool isOpen = _callAttemptedOverlayEntry != null;
-                      final bool isCallAttemptedActive = currentStatus.startsWith('Call Attempted') || currentStatus.startsWith('Call attempted');
-                      return MouseRegion(
-                        onEnter: (_) {
-                          _removeRejectionOverlay();
-                          setItemState(() {});
-                          _showCallAttemptedOverlayAtContext(itemContext, req);
-                        },
-                        onExit: (_) {
-                          setItemState(() {});
-                        },
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  isOpen ? '>  ' : '<  ',
-                                  style: const TextStyle(
-                                    color: Color(0xFF0288D1),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                Text(
-                                  'Call Attempted',
-                                  style: TextStyle(
-                                    color: CRMColors.textOf(context),
-                                    fontWeight: isCallAttemptedActive ? FontWeight.bold : FontWeight.normal,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (isCallAttemptedActive)
-                              const Icon(
-                                Icons.check_rounded,
-                                size: 16,
-                                color: Color(0xFF5C6BC0),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
             _buildStatusMenuItem(followupValue, followupLabel, currentStatus),
             _buildStatusMenuItem('Interested', 'Interested', currentStatus),
             _buildStatusMenuItem('Site Visit', 'Site Visit Sche.', currentStatus),
@@ -6524,12 +6968,50 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final bool isClosed = _isLeadClosedOrTerminal(req);
 
     final statusWidget = _buildStatusControl(req, currentUser, compact: compact);
+    final String? remarkNote = req.rejectionRemark ?? RequirementLocalRepository.getRejectionRemark(req.id);
+    final bool isRejectedOtherWithNote = (_activeMainTab == 'Rejected' || _isLeadRejected(req)) &&
+        remarkNote != null &&
+        remarkNote.trim().isNotEmpty;
+
     final statusWithNotes = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         statusWidget,
-        if (!isClosed) ...[
+        if (isRejectedOtherWithNote) ...[
+          const SizedBox(height: 4),
+          InkWell(
+            onTap: () => _showRejectedNoteDialog(context, req),
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: CRMColors.danger.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: CRMColors.danger.withValues(alpha: 0.4), width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.note_alt_outlined,
+                    size: compact ? 11 : 12,
+                    color: CRMColors.danger,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Rejected Note',
+                    style: TextStyle(
+                      fontSize: compact ? 10.5 : 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: CRMColors.danger,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ] else if (!isClosed) ...[
           const SizedBox(height: 4),
           Builder(
             builder: (btnContext) {
@@ -6683,7 +7165,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             } else if (_activeMainTab == 'Rejected') {
               if (!_isLeadRejected(r)) return false;
             } else if (_activeMainTab == 'Leads') {
-              if (_isLeadRejected(r)) return false;
+              if (_selectedStatus != 'Rejected' && _isLeadRejected(r)) return false;
               if (_isLeadWon(r) || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
                 if (_selectedStatus != 'Won') return false;
               }
@@ -6705,6 +7187,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 mappedStatus == 'Won') return false;
 
             final matchesStatus = isWonTab
+                ? true
+                : _activeMainTab == 'Rejected'
                 ? true
                 : viewAllRejected
                 ? true
@@ -8955,6 +9439,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       onTap: () {
         setState(() {
           _activeMainTab = label;
+          _currentPage = 1;
+          if (label == 'Rejected' || label == 'Won' || label == 'My Won') {
+            _selectedStatus = 'All';
+          }
         });
         // Won / My Won needs an unfiltered status fetch so Won rows are present.
         if (label == 'My Won' ||
@@ -9460,8 +9948,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _showEditFollowupDialog(context, f);
         } else if (status == 'Re-scheduled') {
           _openFollowupStepper(req, 'Site Visit Scheduled');
-        } else if (status == 'Interested' || status.startsWith('Rejected')) {
+        } else if (status == 'Interested') {
           _changeStatus(req, status);
+        } else if (status.startsWith('Rejected')) {
+          if (status == 'Rejected') {
+            _showRejectionPicker(req);
+          } else if (status.toLowerCase().contains('other')) {
+            _showRejectionRemarkDialog(context, req, 'Other');
+          } else {
+            _changeStatus(req, status);
+          }
         } else {
           _openFollowupStepper(req, status);
         }
@@ -11661,6 +12157,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         'max_budget': req.maxBudget,
       },
     );
+    showCRMRequirementDrawer(context, req);
   }
 }
 
@@ -14266,6 +14763,8 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
     return [
       _buildDetailRow("Listing Type", getListingTypeLabel(req), Icons.sell_outlined),
       _buildDetailRow("Status", displayStatusLabel(req.status), Icons.flag_outlined),
+      if (req.rejectionRemark != null && req.rejectionRemark!.trim().isNotEmpty)
+        _buildDetailRow("Rejection Note", req.rejectionRemark!.trim(), Icons.note_alt_outlined),
       if (isManuallyAddedByCurrentUser)
         _buildDetailRow("Lead Type", "Manually Added", Icons.person_add_alt_1_rounded),
       _buildDetailRow("Assigned To", assignee, Icons.person_outline_rounded),
@@ -14838,7 +15337,7 @@ class _FollowupActionButton extends StatelessWidget {
         'Already rented',
         'Want Ready-To-Move',
         'Negotiation Failed',
-        'Others',
+        'Other',
       ];
 
       rejectionOverlay = OverlayEntry(
@@ -14871,8 +15370,10 @@ class _FollowupActionButton extends StatelessWidget {
                     return InkWell(
                       onTap: () {
                         removeRejectionOverlay();
-                        Navigator.of(context, rootNavigator: true).maybePop();
-                        onSelect(reqModel, 'Rejected ($reason)');
+                        Navigator.of(context).maybePop();
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          onSelect(reqModel, 'Rejected ($reason)');
+                        });
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -15138,7 +15639,7 @@ class _FollowupActionButton extends StatelessWidget {
             ],
     ).then((val) {
       removeRejectionOverlay();
-      if (val != null && val != 'Rejected') {
+      if (val != null) {
         onSelect(reqModel, val);
       }
     });

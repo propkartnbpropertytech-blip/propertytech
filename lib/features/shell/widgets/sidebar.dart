@@ -238,7 +238,7 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         RoleGuard.canViewPage(widget.userRole, '/support'))
                       _buildNavItem(
                         context,
-                        title: 'Support & Help',
+                        title: 'Support',
                         icon: Icons.support_agent_rounded,
                         route: '/support',
                         isActive: currentPath == '/support',
