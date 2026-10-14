@@ -27,7 +27,6 @@ class PropertyKpiSummaryBar extends StatelessWidget {
     final now = DateTime.now();
     final sevenDaysAgo = now.subtract(const Duration(days: 7));
 
-    int totalAvailable = 0;
     int rentCount = 0;
     int resaleCount = 0;
     int newThisWeek = 0;
@@ -35,15 +34,16 @@ class PropertyKpiSummaryBar extends StatelessWidget {
     int myAddedCount = 0;
 
     for (final p in properties) {
-      final statusLower = (p.propertyStatusName).toLowerCase();
-      final ltLower = p.listingTypeName.toLowerCase();
+      final statusLower = (p.propertyStatusName).trim().toLowerCase();
+      final ltLower = p.listingTypeName.trim().toLowerCase();
+      final isAvailable = statusLower == 'available' || statusLower.isEmpty;
+      final isRental = ltLower.contains('rent');
+      final isResale = ltLower.contains('sale') || ltLower.contains('resale') || !isRental;
 
-      if (statusLower == 'available' || statusLower.isEmpty) {
-        totalAvailable++;
-      }
-      if (ltLower.contains('rent')) {
+      if (isAvailable && isRental) {
         rentCount++;
-      } else {
+      }
+      if (isAvailable && isResale) {
         resaleCount++;
       }
 
@@ -59,6 +59,8 @@ class PropertyKpiSummaryBar extends StatelessWidget {
         myAddedCount++;
       }
     }
+
+    final totalAvailable = rentCount + resaleCount;
 
     final screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600;
@@ -148,7 +150,6 @@ class PropertyKpiSummaryBar extends StatelessWidget {
     // Desktop: 5 or 6 columns
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cols = cards.length;
         const spacing = 12.0;
         return Row(
           children: cards.map((c) {

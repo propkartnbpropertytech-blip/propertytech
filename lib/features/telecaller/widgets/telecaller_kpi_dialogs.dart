@@ -455,9 +455,23 @@ class _TelecallerKpiLeadsDialogState extends State<TelecallerKpiLeadsDialog> {
         final parsed = rawLeads
             .map((e) => LeadListItem.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
+
+        final seen = <String>{};
+        final uniqueLeads = <LeadListItem>[];
+        for (final l in parsed) {
+          final digits = l.phone.replaceAll(RegExp(r'\D'), '');
+          final phoneKey = digits.length >= 10
+              ? digits.substring(digits.length - 10)
+              : (l.phone.trim().isNotEmpty ? l.phone.trim() : l.id);
+          final key = '${phoneKey}_${l.leadType.trim().toLowerCase()}';
+          if (seen.add(key)) {
+            uniqueLeads.add(l);
+          }
+        }
+
         setState(() {
-          _leads = parsed;
-          _total = (res['total'] as num?)?.toInt() ?? 0;
+          _leads = uniqueLeads;
+          _total = (res['total'] as num?)?.toInt() ?? uniqueLeads.length;
           _loading = false;
         });
       }
@@ -2268,8 +2282,50 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
     super.dispose();
   }
 
+  bool _matchesDateFilter(DateTime? date) {
+    if (date == null) return false;
+    final filter = widget.dateFilter.trim().toLowerCase();
+    final now = DateTime.now();
+    final local = date.toLocal();
+
+    if (filter == 'today') {
+      return local.year == now.year && local.month == now.month && local.day == now.day;
+    } else if (filter == 'weekly') {
+      final startOf7Days = DateTime(now.year, now.month, now.day - 6);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'monthly' || filter == 'this month') {
+      final startOf30Days = DateTime(now.year, now.month, now.day - 29);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf30Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'yearly' || filter == 'this year') {
+      final startOf365Days = DateTime(now.year, now.month, now.day - 364);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf365Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'custom' || filter == 'custom range') {
+      if (widget.startDate != null && widget.endDate != null) {
+        final s = DateTime.tryParse(widget.startDate!);
+        final e = DateTime.tryParse('${widget.endDate!} 23:59:59');
+        if (s != null && e != null) {
+          return !local.isBefore(s) && !local.isAfter(e);
+        }
+      }
+    }
+    return true;
+  }
+
   List<IntegrationLeadModel> get _allArchivedLeads {
-    return IntegrationService().leads.where((l) => _isLeadArchived(l)).toList();
+    return IntegrationService().leads.where((l) {
+      if (!_isLeadArchived(l)) return false;
+      final raw = l.rawJson;
+      final dt = l.archivedAt ??
+          l.statusUpdatedAt ??
+          (raw['archived_at'] != null ? DateTime.tryParse(raw['archived_at'].toString()) : null) ??
+          (raw['status_updated_at'] != null ? DateTime.tryParse(raw['status_updated_at'].toString()) : null) ??
+          l.telecallerAssignedAt ??
+          l.receivedAt;
+      return _matchesDateFilter(dt);
+    }).toList();
   }
 
   List<IntegrationLeadModel> get _listingArchivedLeads {

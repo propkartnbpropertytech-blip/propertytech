@@ -172,6 +172,7 @@ class ReportConfiguration extends Equatable {
     ReportKpiType.campaignFollowupLeads,
     ReportKpiType.notInterestedLeads,
     ReportKpiType.leadsAssignedToSalesPickedUp,
+    ReportKpiType.siteVisitsDone,
   ];
 
   static const List<ReportKpiType> leadsPageKpiTypes = [

@@ -670,6 +670,13 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
       case ReportKpiType.leadsAssignedToSales:
         setState(() => _currentView = BusinessInsightView.salesAssignedPickedUp);
         break;
+      case ReportKpiType.siteVisitsDone:
+      case ReportKpiType.leadsSiteVisitDone:
+        setState(() {
+          _selectedLeadsPageKpi = ReportKpiType.leadsSiteVisitDone;
+          _currentView = BusinessInsightView.leadsPageKpi;
+        });
+        break;
       default:
         showDialog(
           context: context,

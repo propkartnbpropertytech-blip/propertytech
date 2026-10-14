@@ -228,12 +228,14 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   int get _followupsKpiCount {
-    if (_followups.isEmpty) {
-      final s = _kpiSummary['follow_ups'];
-      if (s is int) return s;
-      if (s != null) return int.tryParse(s.toString()) ?? 0;
-      return 0;
+    final s = _kpiSummary['follow_ups'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
     }
+
+    if (_followups.isEmpty) return 0;
 
     final filtered = _followups.where((f) {
       // 1. Lead Type Filter
@@ -246,42 +248,53 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
       }
 
       // 2. Date Filter
-      final filter = _kpiDateFilter.trim().toLowerCase();
-      final now = DateTime.now();
-      final local = f.scheduledAt.toLocal();
-
-      if (filter == 'today') {
-        return local.year == now.year && local.month == now.month && local.day == now.day;
-      } else if (filter == 'weekly') {
-        final startOf7Days = DateTime(now.year, now.month, now.day - 6);
-        final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-        return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
-      } else if (filter == 'monthly' || filter == 'this month') {
-        return local.year == now.year && local.month == now.month;
-      } else if (filter == 'yearly' || filter == 'this year') {
-        return local.year == now.year;
-      } else if (filter == 'custom' || filter == 'custom range') {
-        if (_customStartDate != null && _customEndDate != null) {
-          final s = DateTime.tryParse(_customStartDate!);
-          final e = DateTime.tryParse('${_customEndDate!} 23:59:59');
-          if (s != null && e != null) {
-            return !local.isBefore(s) && !local.isAfter(e);
-          }
-        }
-      }
-      return true;
+      return _matchesKpiDateFilter(f.scheduledAt);
     }).toList();
 
     return filtered.length;
   }
 
-  int get _callbacksKpiCount {
-    if (_callbacks.isEmpty) {
-      final s = _kpiSummary['callbacks'];
-      if (s is int) return s;
-      if (s != null) return int.tryParse(s.toString()) ?? 0;
-      return 0;
+  bool _matchesKpiDateFilter(DateTime? date) {
+    if (date == null) return false;
+    final filter = _kpiDateFilter.trim().toLowerCase();
+    final now = DateTime.now();
+    final local = date.toLocal();
+
+    if (filter == 'today') {
+      return local.year == now.year && local.month == now.month && local.day == now.day;
+    } else if (filter == 'weekly') {
+      final startOf7Days = DateTime(now.year, now.month, now.day - 6);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'monthly' || filter == 'this month') {
+      final startOf30Days = DateTime(now.year, now.month, now.day - 29);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf30Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'yearly' || filter == 'this year') {
+      final startOf365Days = DateTime(now.year, now.month, now.day - 364);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf365Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'custom' || filter == 'custom range') {
+      if (_customStartDate != null && _customEndDate != null) {
+        final s = DateTime.tryParse(_customStartDate!);
+        final e = DateTime.tryParse('${_customEndDate!} 23:59:59');
+        if (s != null && e != null) {
+          return !local.isBefore(s) && !local.isAfter(e);
+        }
+      }
     }
+    return true;
+  }
+
+  int get _callbacksKpiCount {
+    final s = _kpiSummary['callbacks'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    if (_callbacks.isEmpty) return 0;
 
     final valid = _callbacks.where((raw) {
       if (raw is! Map) return false;
@@ -298,40 +311,51 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
 
     final filtered = valid.where((raw) {
       final isListing = queueLeadType(raw) == 'Property Listing';
-      if (_kpiLeadType == 'Listing') return isListing;
-      if (_kpiLeadType == 'Requirement') return !isListing;
-      return true;
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final scheduledStr = raw['scheduled_at']?.toString();
+      final dt = scheduledStr != null ? DateTime.tryParse(scheduledStr) : null;
+      return _matchesKpiDateFilter(dt);
     }).toList();
 
     return filtered.length;
   }
 
   int get _cnrKpiCount {
-    if (_cnrLeads.isEmpty) {
-      final s = _kpiSummary['cnr'];
-      if (s is int) return s;
-      if (s != null) return int.tryParse(s.toString()) ?? 0;
-      return 0;
+    final s = _kpiSummary['cnr'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
     }
+
+    if (_cnrLeads.isEmpty) return 0;
 
     final filtered = _cnrLeads.where((raw) {
       final isListing = queueLeadType(raw) == 'Property Listing';
-      if (_kpiLeadType == 'Listing') return isListing;
-      if (_kpiLeadType == 'Requirement') return !isListing;
-      return true;
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final actStr = raw['last_activity_at']?.toString() ??
+          (raw['raw_json'] is Map ? raw['raw_json']['status_updated_at']?.toString() : null) ??
+          raw['updated_at']?.toString() ??
+          raw['created_at']?.toString();
+      final dt = actStr != null ? DateTime.tryParse(actStr) : null;
+      return _matchesKpiDateFilter(dt);
     }).toList();
 
     return filtered.length;
   }
 
   int get _notInterestedKpiCount {
-    final leads = IntegrationService().leads;
-    if (leads.isEmpty) {
-      final s = _kpiSummary['not_interested'];
-      if (s is int) return s;
-      if (s != null) return int.tryParse(s.toString()) ?? 0;
-      return 0;
+    final s = _kpiSummary['not_interested'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
     }
+
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) return 0;
 
     final valid = leads.where((l) {
       final cs = l.campaignStatus.trim().toLowerCase();
@@ -346,9 +370,16 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
 
     final filtered = valid.where((l) {
       final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
-      if (_kpiLeadType == 'Listing') return isListing;
-      if (_kpiLeadType == 'Requirement') return !isListing;
-      return true;
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = l.notInterestedAt ??
+          l.statusUpdatedAt ??
+          (raw['not_interested_at'] != null ? DateTime.tryParse(raw['not_interested_at'].toString()) : null) ??
+          (raw['status_updated_at'] != null ? DateTime.tryParse(raw['status_updated_at'].toString()) : null) ??
+          l.telecallerAssignedAt ??
+          l.receivedAt;
+      return _matchesKpiDateFilter(dt);
     }).toList();
 
     return filtered.length;
@@ -382,40 +413,52 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   int get _openLeadsKpiCount {
-    final leads = IntegrationService().leads;
-    if (leads.isEmpty) {
-      final s = _kpiSummary['open_leads'];
-      if (s is int) return s;
-      if (s != null) return int.tryParse(s.toString()) ?? 0;
-      return 0;
+    final s = _kpiSummary['open_leads'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
     }
+
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) return 0;
 
     final valid = leads.where((l) => _isOpenUntouchedLead(l)).toList();
     final filtered = valid.where((l) {
       final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
       if (_kpiLeadType == 'Listing') return isListing;
       if (_kpiLeadType == 'Requirement') return !isListing;
-      return true;
+      final dt = l.telecallerAssignedAt ?? l.receivedAt;
+      return _matchesKpiDateFilter(dt);
     }).toList();
 
     return filtered.length;
   }
 
   int get _archivedKpiCount {
-    final leads = IntegrationService().leads;
-    if (leads.isEmpty) {
-      final s = _kpiSummary['archived'];
-      if (s is int) return s;
-      if (s != null) return int.tryParse(s.toString()) ?? 0;
-      return 0;
+    final s = _kpiSummary['archived'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
     }
+
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) return 0;
 
     final valid = leads.where((l) => _isLeadArchived(l)).toList();
     final filtered = valid.where((l) {
       final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
-      if (_kpiLeadType == 'Listing') return isListing;
-      if (_kpiLeadType == 'Requirement') return !isListing;
-      return true;
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = l.archivedAt ??
+          l.statusUpdatedAt ??
+          (raw['archived_at'] != null ? DateTime.tryParse(raw['archived_at'].toString()) : null) ??
+          (raw['status_updated_at'] != null ? DateTime.tryParse(raw['status_updated_at'].toString()) : null) ??
+          l.telecallerAssignedAt ??
+          l.receivedAt;
+      return _matchesKpiDateFilter(dt);
     }).toList();
 
     return filtered.length;

@@ -902,6 +902,10 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
     final flatNoVal = _isValidValue(property.flatNo) ? property.flatNo! : '--';
     locationItems.add(PropertyDetailItem('Flat Number', flatNoVal, Icons.tag_rounded));
 
+    if (_isValidValue(property.section)) {
+      locationItems.add(PropertyDetailItem('વિભાગ (Section)', property.section!, Icons.grid_view_rounded));
+    }
+
     if (_isValidValue(property.address)) {
       locationItems.add(PropertyDetailItem('Address', property.address, Icons.home_outlined));
     }

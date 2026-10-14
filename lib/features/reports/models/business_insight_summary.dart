@@ -475,6 +475,7 @@ class BusinessInsightSummary {
   final SourceCountBreakdown followupLeads;
   final SourceCountBreakdown notInterestedLeads;
   final AssignedToSalesSummary assignedToSalesPickedUp;
+  final int siteVisitDone;
   final LeadsPageKpisSummary leadsPageKpis;
 
   const BusinessInsightSummary({
@@ -489,6 +490,7 @@ class BusinessInsightSummary {
     this.followupLeads = const SourceCountBreakdown(total: 0, bySource: {}),
     this.notInterestedLeads = const SourceCountBreakdown(total: 0, bySource: {}),
     this.assignedToSalesPickedUp = const AssignedToSalesSummary(total: 0, byTelecaller: []),
+    this.siteVisitDone = 0,
     this.leadsPageKpis = const LeadsPageKpisSummary(),
   });
 
@@ -530,6 +532,7 @@ class BusinessInsightSummary {
         followupLeads = const SourceCountBreakdown(total: 0, bySource: {}),
         notInterestedLeads = const SourceCountBreakdown(total: 0, bySource: {}),
         assignedToSalesPickedUp = const AssignedToSalesSummary(total: 0, byTelecaller: []),
+        siteVisitDone = 0,
         leadsPageKpis = const LeadsPageKpisSummary();
 
   factory BusinessInsightSummary.fromJson(Map<String, dynamic> json) {
@@ -537,6 +540,8 @@ class BusinessInsightSummary {
     final sources = rawSources.map(
       (k, v) => MapEntry(k, SourceSummary.fromJson(v as Map<String, dynamic>? ?? {})),
     );
+    final lpkJson = json['leads_page_kpis'] as Map<String, dynamic>? ?? {};
+    final svDone = json['site_visit_done'] as int? ?? (lpkJson['site_visit_done'] as int? ?? 0);
 
     return BusinessInsightSummary(
       totalLeads: json['total_leads'] as int? ?? 0,
@@ -550,7 +555,8 @@ class BusinessInsightSummary {
       followupLeads: SourceCountBreakdown.fromJson(json['followup_leads'] as Map<String, dynamic>? ?? {}),
       notInterestedLeads: SourceCountBreakdown.fromJson(json['not_interested_leads'] as Map<String, dynamic>? ?? {}),
       assignedToSalesPickedUp: AssignedToSalesSummary.fromJson(json['assigned_to_sales_picked_up'] as Map<String, dynamic>? ?? {}),
-      leadsPageKpis: LeadsPageKpisSummary.fromJson(json['leads_page_kpis'] as Map<String, dynamic>? ?? {}),
+      siteVisitDone: svDone,
+      leadsPageKpis: LeadsPageKpisSummary.fromJson(lpkJson),
     );
   }
 }
@@ -619,7 +625,7 @@ class BusinessInsightLead {
       email: json['email'] as String? ?? '',
       source: json['source'] as String? ?? '',
       leadType: json['lead_type'] as String? ?? '',
-      stage: json['stage'] as String? ?? 'NEW',
+      stage: (json['stage']?.toString().trim().isNotEmpty == true) ? json['stage'].toString().trim() : 'Allocated',
       allocationStatus: json['allocation_status'] as String? ?? 'UNASSIGNED',
       callDisposition: json['call_disposition'] as String? ?? 'NOT_ATTEMPTED',
       rejectionReason: json['rejection_reason'] as String?,

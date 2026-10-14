@@ -97,6 +97,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         subtitle = 'Leads with upcoming or active site visits scheduled.';
         break;
       case ReportKpiType.leadsSiteVisitDone:
+      case ReportKpiType.siteVisitsDone:
         subtitle = 'Leads where site visits have been completed.';
         break;
       case ReportKpiType.leadsNegotiation:
@@ -291,6 +292,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
             l.status.trim().toLowerCase() == 'site visit' ||
             l.status.trim().toLowerCase() == 'site visit scheduled').length;
       case ReportKpiType.leadsSiteVisitDone:
+      case ReportKpiType.siteVisitsDone:
         return allLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').length;
       case ReportKpiType.leadsNegotiation:
         return allLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').length;
@@ -539,6 +541,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         break;
 
       case ReportKpiType.leadsSiteVisitDone:
+      case ReportKpiType.siteVisitsDone:
         filtered = allLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').toList();
         break;
 

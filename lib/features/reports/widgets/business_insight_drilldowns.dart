@@ -582,7 +582,9 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
         _buildDrilldownHeader(
           context: context,
           title: 'Property Listing Leads',
-          subtitle: 'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), and Webhook (${prop.bySource['webhook'] ?? 0}).',
+          subtitle: (prop.bySource['manual'] ?? 0) > 0
+              ? 'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), Webhook (${prop.bySource['webhook'] ?? 0}), and Manual (${prop.bySource['manual'] ?? 0}).'
+              : 'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), and Webhook (${prop.bySource['webhook'] ?? 0}).',
           badge: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
@@ -610,6 +612,8 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
             _buildSourceChip('Meta', 'Meta', prop.bySource['meta'] ?? 0),
             _buildSourceChip('Housing', 'Housing', prop.bySource['housing'] ?? 0),
             _buildSourceChip('Webhook', 'Webhook', prop.bySource['webhook'] ?? 0),
+            if ((prop.bySource['manual'] ?? 0) > 0)
+              _buildSourceChip('Manual', 'Manual', prop.bySource['manual'] ?? 0),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -839,7 +843,9 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
         _buildDrilldownHeader(
           context: context,
           title: 'Requirement Leads',
-          subtitle: 'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), and Webhook (${req.bySource['webhook'] ?? 0}).',
+          subtitle: (req.bySource['manual'] ?? 0) > 0
+              ? 'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), Webhook (${req.bySource['webhook'] ?? 0}), and Manual (${req.bySource['manual'] ?? 0}).'
+              : 'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), and Webhook (${req.bySource['webhook'] ?? 0}).',
           badge: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
@@ -867,6 +873,8 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
             _buildSourceChip('Meta', 'Meta', req.bySource['meta'] ?? 0),
             _buildSourceChip('Housing', 'Housing', req.bySource['housing'] ?? 0),
             _buildSourceChip('Webhook', 'Webhook', req.bySource['webhook'] ?? 0),
+            if ((req.bySource['manual'] ?? 0) > 0)
+              _buildSourceChip('Manual', 'Manual', req.bySource['manual'] ?? 0),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -2219,17 +2227,50 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
     Color fg = const Color(0xFF475569);
     String label = stage.replaceAll('_', ' ');
 
-    if (rejectionReason != null && rejectionReason.isNotEmpty) {
+    final s = stage.toLowerCase();
+    final bool isActuallyRejected = s.startsWith('reject') ||
+        (rejectionReason != null && rejectionReason.isNotEmpty && (s.contains('reject') || rejectionReason.toLowerCase().startsWith('reject')));
+
+    if (isActuallyRejected) {
       bg = const Color(0xFFDC2626).withValues(alpha: 0.12);
       fg = const Color(0xFFDC2626);
-      label = rejectionReason.replaceAll('_', ' ');
-    } else if (stage == 'WON') {
+      label = (rejectionReason != null && rejectionReason.isNotEmpty)
+          ? rejectionReason.replaceAll('_', ' ')
+          : label;
+    } else if (s.contains('won')) {
       bg = const Color(0xFF16A34A).withValues(alpha: 0.12);
       fg = const Color(0xFF16A34A);
-    } else if (stage == 'LOST') {
+    } else if (s.contains('lost') || s.contains('not interested')) {
       bg = const Color(0xFFDC2626).withValues(alpha: 0.12);
       fg = const Color(0xFFDC2626);
-    } else if (stage == 'NEW') {
+    } else if (s.contains('allocated')) {
+      bg = const Color(0xFF0F766E).withValues(alpha: 0.12);
+      fg = const Color(0xFF0F766E);
+    } else if (s.contains('visit')) {
+      bg = const Color(0xFF9333EA).withValues(alpha: 0.12);
+      fg = const Color(0xFF9333EA);
+    } else if (s.contains('follow')) {
+      bg = const Color(0xFF0D9488).withValues(alpha: 0.12);
+      fg = const Color(0xFF0D9488);
+    } else if (s.contains('negotiation')) {
+      bg = const Color(0xFFF59E0B).withValues(alpha: 0.12);
+      fg = const Color(0xFFF59E0B);
+    } else if (s.contains('listed')) {
+      bg = const Color(0xFF16A34A).withValues(alpha: 0.12);
+      fg = const Color(0xFF16A34A);
+    } else if (s.contains('cnr')) {
+      bg = const Color(0xFFEA580C).withValues(alpha: 0.12);
+      fg = const Color(0xFFEA580C);
+    } else if (s.contains('callback')) {
+      bg = const Color(0xFF2563EB).withValues(alpha: 0.12);
+      fg = const Color(0xFF2563EB);
+    } else if (s.contains('interested')) {
+      bg = const Color(0xFF16A34A).withValues(alpha: 0.12);
+      fg = const Color(0xFF16A34A);
+    } else if (s.contains('assigned') || s.contains('sales')) {
+      bg = const Color(0xFF2563EB).withValues(alpha: 0.12);
+      fg = const Color(0xFF2563EB);
+    } else if (s == 'new') {
       bg = const Color(0xFF0284C7).withValues(alpha: 0.12);
       fg = const Color(0xFF0284C7);
     }
