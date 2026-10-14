@@ -69,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _captchaError = null;
     });
     try {
-      final res = await _authService.getCaptcha();
+      final res = await _authService.getCaptcha().timeout(const Duration(seconds: 4));
       final data = res['data'] is Map<String, dynamic>
           ? res['data'] as Map<String, dynamic>
           : <String, dynamic>{};
@@ -648,6 +648,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ? Image.memory(
                                       _captchaImageBytes!,
                                       fit: BoxFit.fill,
+                                      gaplessPlayback: true,
+                                      filterQuality: FilterQuality.medium,
                                     )
                                   : Center(
                                       child: Text(

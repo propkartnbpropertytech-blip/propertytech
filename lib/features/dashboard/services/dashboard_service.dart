@@ -716,5 +716,35 @@ class DashboardService {
       rethrow;
     }
   }
+
+  /// Fetch Authoritative Lead Lifecycle Breakdown from /api/v1/dashboard/lifecycle-breakdown
+  Future<Map<String, dynamic>> getLifecycleBreakdown({
+    String dateFilter = 'Weekly',
+    String? startDate,
+    String? endDate,
+    String leadType = 'Both',
+    String? source,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/lifecycle-breakdown',
+        queryParameters: {
+          'dateFilter': dateFilter,
+          if (startDate != null) 'startDate': startDate,
+          if (endDate != null) 'endDate': endDate,
+          'leadType': leadType,
+          if (source != null) 'source': source,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return (response.data['data'] as Map<String, dynamic>?) ?? {};
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getLifecycleBreakdown] Error: $e');
+      return {};
+    }
+  }
 }
+
 
