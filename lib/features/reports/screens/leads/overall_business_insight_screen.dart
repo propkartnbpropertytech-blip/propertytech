@@ -5,7 +5,6 @@
 /// ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/constants/kpi_rulebook.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
@@ -262,6 +261,10 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
           summary: summary,
           from: config.dateRange.startDate,
           to: config.dateRange.endDate,
+          dateRange: config.dateRange,
+          onDateRangeChanged: (newRange) {
+            context.read<ReportsBloc>().add(UpdateDateRangeEvent(newRange));
+          },
           onBack: () => setState(() => _currentView = BusinessInsightView.main),
         );
 
@@ -270,6 +273,10 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
           summary: summary,
           from: config.dateRange.startDate,
           to: config.dateRange.endDate,
+          dateRange: config.dateRange,
+          onDateRangeChanged: (newRange) {
+            context.read<ReportsBloc>().add(UpdateDateRangeEvent(newRange));
+          },
           onBack: () => setState(() => _currentView = BusinessInsightView.main),
         );
 

@@ -4,7 +4,9 @@ import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../models/business_insight_summary.dart';
+import '../models/report_date_range.dart';
 import '../services/business_insight_service.dart';
+import 'report_date_filter_bar.dart';
 
 // ============================================================================
 // 1. LEAD SOURCE GRID VIEW (Total Leads Click)
@@ -549,6 +551,8 @@ class PropertyListingLeadsView extends StatefulWidget {
   final VoidCallback onBack;
   final DateTime? from;
   final DateTime? to;
+  final ReportDateRange? dateRange;
+  final ValueChanged<ReportDateRange>? onDateRangeChanged;
 
   const PropertyListingLeadsView({
     super.key,
@@ -556,6 +560,8 @@ class PropertyListingLeadsView extends StatefulWidget {
     required this.onBack,
     this.from,
     this.to,
+    this.dateRange,
+    this.onDateRangeChanged,
   });
 
   @override
@@ -577,6 +583,15 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
         // Breadcrumb
         _buildBreadcrumb(context, 'Overall Business Insights', widget.onBack),
         const SizedBox(height: CRMSpacing.m),
+
+        // Date Filter Bar
+        if (widget.dateRange != null && widget.onDateRangeChanged != null) ...[
+          ReportDateFilterBar(
+            activeRange: widget.dateRange!,
+            onRangeChanged: widget.onDateRangeChanged!,
+          ),
+          const SizedBox(height: CRMSpacing.m),
+        ],
 
         // Title
         _buildDrilldownHeader(
@@ -810,6 +825,8 @@ class RequirementLeadsView extends StatefulWidget {
   final VoidCallback onBack;
   final DateTime? from;
   final DateTime? to;
+  final ReportDateRange? dateRange;
+  final ValueChanged<ReportDateRange>? onDateRangeChanged;
 
   const RequirementLeadsView({
     super.key,
@@ -817,6 +834,8 @@ class RequirementLeadsView extends StatefulWidget {
     required this.onBack,
     this.from,
     this.to,
+    this.dateRange,
+    this.onDateRangeChanged,
   });
 
   @override
@@ -838,6 +857,15 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
         // Breadcrumb
         _buildBreadcrumb(context, 'Overall Business Insights', widget.onBack),
         const SizedBox(height: CRMSpacing.m),
+
+        // Date Filter Bar
+        if (widget.dateRange != null && widget.onDateRangeChanged != null) ...[
+          ReportDateFilterBar(
+            activeRange: widget.dateRange!,
+            onRangeChanged: widget.onDateRangeChanged!,
+          ),
+          const SizedBox(height: CRMSpacing.m),
+        ],
 
         // Title
         _buildDrilldownHeader(
@@ -1682,7 +1710,7 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
       telecallerId: widget.telecallerId,
       from: widget.from,
       to: widget.to,
-      limit: 1000,
+      limit: 5000,
       offset: 0,
     );
 
