@@ -2870,6 +2870,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             );
           } else if (state is PropertyCreatedState) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                final lt = state.property.listingTypeName.toLowerCase();
+                if (lt.contains('rent') && _activeListingTab != 'Rent') {
+                  setState(() => _activeListingTab = 'Rent');
+                } else if (!lt.contains('rent') && _activeListingTab == 'Rent') {
+                  setState(() => _activeListingTab = 'Re-Sale');
+                }
+              }
               _openPropertyDetails(context, state.property);
               _onPropertyEntered(state.property);
             });
