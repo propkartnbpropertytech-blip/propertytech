@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import '../../../core/theme/theme_manager.dart';
-import '../../dashboard/bloc/dashboard_bloc.dart';
 import '../../dashboard/models/kpi_models.dart';
 import '../../dashboard/services/dashboard_service.dart';
-import '../../dashboard/widgets/generic_kpi_drilldown_dialog.dart';
 
+/// Clean, authoritative, and simplified KPI Configuration screen.
+/// Directly maps KPI names, database count source tables, target display pages,
+/// and role-wise visibility in a clear and responsive table.
 class KpiConfigScreen extends StatefulWidget {
   final bool isEmbedded;
   const KpiConfigScreen({super.key, this.isEmbedded = false});
@@ -17,232 +16,253 @@ class KpiConfigScreen extends StatefulWidget {
 
 class _KpiConfigScreenState extends State<KpiConfigScreen> {
   final DashboardService _service = DashboardService();
-  int _activeTabIndex = 0; // 0: Registry, 1: Builder, 2: Role Visibility, 3: Audit History
 
   bool _isLoading = true;
-  bool _isSaving = false;
   String _errorMessage = '';
   List<KpiRegistryItem> _kpiList = [];
-  List<KpiAuditLogItem> _auditLogs = [];
 
-  // Filter States for Registry Table
+  // Filter & Search states
   String _searchQuery = '';
   String _selectedPageFilter = 'All';
   String _selectedRoleFilter = 'All';
-  final String _selectedStatusFilter = 'All';
-
-  // Builder State
-  bool _isEditing = false;
-  String? _editingKpiId;
-  final _nameController = TextEditingController();
-  final _whyController = TextEditingController();
-  final _keyController = TextEditingController();
-  final _orderController = TextEditingController(text: '10');
-
-  // Friendly Data Source Selection
-  String _selectedSourceId = 'site_visits';
-  String _selectedCountType = 'records'; // 'records', 'unique', 'sum', 'avg'
-  List<Map<String, String>> _activeFilters = [
-    {'field': 'status', 'operator': '=', 'value': 'DONE'}
-  ];
-
-  // Pages & Roles
-  final List<String> _selectedPages = ['Admin Dashboard'];
-  bool _adminVisible = true;
-  bool _telecallerVisible = false;
-  bool _salesVisible = false;
-  String _uiComponent = 'KPI Card';
-  final String _displayFormat = 'Count';
-  String _selectedIcon = 'insights_rounded';
-  bool _isClickable = true;
-
-  // Drilldown Composer State
-  List<Map<String, dynamic>> _drilldownComponents = [];
+  String _selectedStatusFilter = 'All';
 
   // Available Pages
-  final List<String> _allPages = [
-    'Admin Dashboard',
-    'Telecaller Dashboard',
-    'Sales Dashboard',
-    'Locality Intelligence',
+  static const List<String> kAvailablePages = [
+    'Dashboard',
+    'Properties',
+    'Leads',
     'Reports',
     'Campaign',
-    'Telecaller Performance',
-    'Sales Performance',
+    'Locality Intelligence',
   ];
 
-  final Map<String, IconData> _iconCatalog = {
-    'insights_rounded': Icons.insights_rounded,
-    'location_on_rounded': Icons.location_on_rounded,
-    'home_work_rounded': Icons.home_work_rounded,
-    'assignment_rounded': Icons.assignment_rounded,
-    'support_agent_rounded': Icons.support_agent_rounded,
-    'badge_rounded': Icons.badge_rounded,
-    'emoji_events_rounded': Icons.emoji_events_rounded,
-    'groups_rounded': Icons.groups_rounded,
-    'phone_disabled_rounded': Icons.phone_disabled_rounded,
-    'map_rounded': Icons.map_rounded,
-    'bar_chart_rounded': Icons.bar_chart_rounded,
-    'pie_chart_rounded': Icons.pie_chart_rounded,
-    'trending_up_rounded': Icons.trending_up_rounded,
-    'check_circle_rounded': Icons.check_circle_rounded,
-  };
+  // Canonical KPI Templates Catalog for Searchable Dropdown
+  static final List<Map<String, dynamic>> kCountSourceTemplates = [
+    // Leads & Pipeline
+    {
+      'id': 'total_leads',
+      'label': 'Total Inbound Leads',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': 'leads (deleted_at IS NULL)',
+      'icon': 'insights_rounded',
+      'defaultPages': ['Dashboard', 'Leads', 'Reports'],
+      'why': 'Total unique inquiries captured across all marketing channels.'
+    },
+    {
+      'id': 'fresh_uncontacted',
+      'label': 'Fresh / Uncontacted Leads',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "stage = 'NEW' & call_disposition IS NULL",
+      'icon': 'inbox_rounded',
+      'defaultPages': ['Dashboard', 'Leads', 'Campaign'],
+      'why': 'New incoming inquiries awaiting first telecaller outbound contact.'
+    },
+    {
+      'id': 'cnr',
+      'label': 'Call Not Received (CNR)',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "call_disposition = 'CNR' OR allocation_status = 'CNR'",
+      'icon': 'phone_missed_rounded',
+      'defaultPages': ['Dashboard', 'Leads', 'Reports'],
+      'why': 'Unreachable prospect inquiries scheduled for retry calling cycles.'
+    },
+    {
+      'id': 'callback',
+      'label': 'Scheduled Callbacks',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "call_disposition = 'CALLBACK' OR allocation_status = 'CALLBACK'",
+      'icon': 'phone_callback_rounded',
+      'defaultPages': ['Dashboard', 'Leads'],
+      'why': 'Customers requesting follow-up at a specific scheduled time.'
+    },
+    {
+      'id': 'followup',
+      'label': 'Active Follow-ups',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "call_disposition = 'FOLLOWUP' OR allocation_status = 'FOLLOWUP'",
+      'icon': 'sync_rounded',
+      'defaultPages': ['Dashboard', 'Leads', 'Reports'],
+      'why': 'Ongoing prospect nurturing conversations requiring regular touchpoints.'
+    },
+    {
+      'id': 'allocated_to_telecaller',
+      'label': 'Allocated to Telecallers',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': 'assigned_telecaller_id IS NOT NULL',
+      'icon': 'support_agent_rounded',
+      'defaultPages': ['Dashboard', 'Leads', 'Campaign'],
+      'why': 'Inbound leads distributed to active telecaller calling queues.'
+    },
+    {
+      'id': 'sales_handover',
+      'label': 'Qualified Sales Handover',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "stage = 'SALES' & assigned_to IS NOT NULL",
+      'icon': 'handshake_rounded',
+      'defaultPages': ['Dashboard', 'Leads', 'Reports'],
+      'why': 'Budget and locality validated prospects actively assigned to sales reps.'
+    },
+    {
+      'id': 'deal_won',
+      'label': 'Deals Won',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "stage = 'WON'",
+      'icon': 'verified_rounded',
+      'defaultPages': ['Dashboard', 'Reports'],
+      'why': 'Executed transactions with finalized client agreements.'
+    },
+    {
+      'id': 'not_interested',
+      'label': 'Not Interested / Lost',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "stage = 'LOST' OR rejection_reason IS NOT NULL",
+      'icon': 'cancel_outlined',
+      'defaultPages': ['Dashboard', 'Leads', 'Reports'],
+      'why': 'Prospects that declined, dropped out, or have budget mismatches.'
+    },
+    {
+      'id': 'owner_listing',
+      'label': 'Owner Property Listings',
+      'category': 'Leads & Pipeline',
+      'table': 'leads',
+      'rule': "lead_type = 'Property Listing'",
+      'icon': 'real_estate_agent_rounded',
+      'defaultPages': ['Dashboard', 'Properties'],
+      'why': 'Direct property owner submissions offering units for lease or sale.'
+    },
 
-  final List<Map<String, dynamic>> _dataSources = [
+    // Properties & Inventory
     {
-      'id': 'site_visits',
-      'label': 'Site Visits',
-      'description': 'Customer property visits and in-person tours',
-      'icon': Icons.location_on_rounded,
-      'defaultField': 'id',
-      'defaultDate': 'created_at',
-      'filterFields': [
-        {'id': 'status', 'label': 'Status', 'values': ['DONE', 'SCHEDULED', 'CANCELLED', 'REJECTED_AFTER_VISIT']},
-        {'id': 'outcome', 'label': 'Outcome', 'values': ['INTERESTED', 'REJECTED_AFTER_VISIT', 'OFFER_MADE', 'CANCELLED']},
-      ],
+      'id': 'available_inventory',
+      'label': 'Available Inventory',
+      'category': 'Properties & Inventory',
+      'table': 'properties',
+      'rule': "status = 'Available' & deleted_at IS NULL",
+      'icon': 'home_work_rounded',
+      'defaultPages': ['Dashboard', 'Properties', 'Locality Intelligence'],
+      'why': 'Active verified units ready for prospective tenant/buyer site visits.'
     },
     {
-      'id': 'properties',
-      'label': 'Properties / Inventory',
-      'description': 'Marketable units, rentals, and resale listings',
-      'icon': Icons.home_work_rounded,
-      'defaultField': 'id',
-      'defaultDate': 'created_at',
-      'filterFields': [
-        {'id': 'status', 'label': 'Status', 'values': ['Available', 'Sold', 'Rented', 'Draft']},
-        {'id': 'listing_type', 'label': 'Listing Type', 'values': ['Rent', 'Re-sale']},
-        {'id': 'property_type', 'label': 'Property Type', 'values': ['Apartment', 'Villa', 'Plot', 'Commercial']},
-      ],
+      'id': 'total_listed_properties',
+      'label': 'Total Listed Properties',
+      'category': 'Properties & Inventory',
+      'table': 'properties',
+      'rule': 'deleted_at IS NULL',
+      'icon': 'inventory_2_rounded',
+      'defaultPages': ['Properties', 'Reports'],
+      'why': 'All registered real estate assets in company database.'
     },
     {
-      'id': 'leads',
-      'label': 'Leads (Direct & Campaigns)',
-      'description': 'Inbound prospects from Meta, Housing, and manual entry',
-      'icon': Icons.assignment_rounded,
-      'defaultField': 'id',
-      'defaultDate': 'created_at',
-      'filterFields': [
-        {'id': 'campaign_status', 'label': 'Campaign Status', 'values': ['NEW', 'CONTACTED', 'INTERESTED', 'NOT_INTERESTED']},
-        {'id': 'source', 'label': 'Source', 'values': ['Meta Ads', 'Housing', 'Manual', 'Webhook API']},
-        {'id': 'lead_type', 'label': 'Lead Type', 'values': ['Listing', 'Requirement', 'Both']},
-      ],
+      'id': 'rented_sold_properties',
+      'label': 'Rented / Sold Properties',
+      'category': 'Properties & Inventory',
+      'table': 'properties',
+      'rule': "status IN ('Rented', 'Sold')",
+      'icon': 'task_alt_rounded',
+      'defaultPages': ['Properties', 'Reports'],
+      'why': 'Successfully closed properties off active market circulation.'
+    },
+
+    // Site Visits & Field Operations
+    {
+      'id': 'site_visits_done',
+      'label': 'Site Visits Done',
+      'category': 'Site Visits & Field',
+      'table': 'site_visits',
+      'rule': "status = 'DONE' & deleted_at IS NULL",
+      'icon': 'location_on_rounded',
+      'defaultPages': ['Dashboard', 'Reports'],
+      'why': 'Physical in-person property tours conducted by sales reps.'
     },
     {
-      'id': 'requirements',
-      'label': 'Requirements',
-      'description': 'Buyer and tenant requirement demands',
-      'icon': Icons.badge_rounded,
-      'defaultField': 'id',
-      'defaultDate': 'created_at',
-      'filterFields': [
-        {'id': 'status', 'label': 'Status', 'values': ['Active', 'Closed', 'Matched']},
-        {'id': 'listing_type', 'label': 'Listing Type', 'values': ['Rent', 'Re-sale']},
-      ],
+      'id': 'site_visits_scheduled',
+      'label': 'Scheduled Upcoming Visits',
+      'category': 'Site Visits & Field',
+      'table': 'site_visits',
+      'rule': "status = 'SCHEDULED'",
+      'icon': 'event_available_rounded',
+      'defaultPages': ['Dashboard', 'Reports'],
+      'why': 'Upcoming confirmed on-site customer inspection appointments.'
+    },
+
+    // Campaigns & Ingestion
+    {
+      'id': 'meta_ads_leads',
+      'label': 'Meta Ads Leads',
+      'category': 'Campaigns & Ingestion',
+      'table': 'integration_leads',
+      'rule': "source = 'Meta Ads' (deduplicated)",
+      'icon': 'campaign_rounded',
+      'defaultPages': ['Campaign', 'Reports'],
+      'why': 'Facebook and Instagram Lead Ad form submissions.'
     },
     {
-      'id': 'users',
-      'label': 'Team Members',
-      'description': 'Admins, telecallers, and sales executives',
-      'icon': Icons.groups_rounded,
-      'defaultField': 'id',
-      'defaultDate': 'created_at',
-      'filterFields': [
-        {'id': 'role', 'label': 'Role', 'values': ['admin', 'telecaller', 'sales']},
-        {'id': 'status', 'label': 'Status', 'values': ['active', 'inactive']},
-      ],
+      'id': 'housing_leads',
+      'label': 'Housing.com Leads',
+      'category': 'Campaigns & Ingestion',
+      'table': 'integration_leads',
+      'rule': "source = 'Housing'",
+      'icon': 'travel_explore_rounded',
+      'defaultPages': ['Campaign', 'Reports'],
+      'why': 'Inbound direct inquiries from Housing.com portal syndication.'
+    },
+    {
+      'id': 'webhook_api_leads',
+      'label': 'Webhook API Leads',
+      'category': 'Campaigns & Ingestion',
+      'table': 'integration_leads',
+      'rule': "source = 'Webhook API'",
+      'icon': 'webhook_rounded',
+      'defaultPages': ['Campaign'],
+      'why': 'Custom API webhook submissions from third-party landing pages.'
+    },
+
+    // Team & Capacity
+    {
+      'id': 'active_telecallers',
+      'label': 'Active Telecallers',
+      'category': 'Team & Capacity',
+      'table': 'users',
+      'rule': "role = 'Telecaller' & is_active = true",
+      'icon': 'groups_rounded',
+      'defaultPages': ['Dashboard', 'Reports'],
+      'why': 'Number of active calling personnel logged into allocation queues.'
+    },
+    {
+      'id': 'active_sales_users',
+      'label': 'Active Sales Personnel',
+      'category': 'Team & Capacity',
+      'table': 'users',
+      'rule': "role = 'Sales' & is_active = true",
+      'icon': 'badge_rounded',
+      'defaultPages': ['Dashboard', 'Reports'],
+      'why': 'Field executives authorized to receive qualified customer handovers.'
     },
   ];
 
   @override
   void initState() {
     super.initState();
-    _initDefaultDrilldownComponents();
-    _loadAll();
+    _fetchKpiRegistry();
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _whyController.dispose();
-    _keyController.dispose();
-    _orderController.dispose();
-    super.dispose();
-  }
-
-  void _initDefaultDrilldownComponents() {
-    _drilldownComponents = [
-      {
-        'id': 'comp_kpis',
-        'type': 'kpi_group',
-        'title': 'Status Summary',
-        'items': [
-          {'label': 'Scheduled', 'status': 'SCHEDULED', 'is_clickable': true},
-          {'label': 'Completed', 'status': 'DONE', 'is_clickable': true},
-          {'label': 'Cancelled', 'status': 'CANCELLED', 'is_clickable': true},
-        ],
-      },
-      {
-        'id': 'comp_chart',
-        'type': 'chart',
-        'title': 'Status Distribution',
-        'chart_type': 'donut',
-        'dimension': 'status',
-      },
-      {
-        'id': 'comp_breakdown',
-        'type': 'status_breakdown',
-        'title': 'Status Breakdown',
-        'dimension': 'status',
-      },
-      {
-        'id': 'comp_table',
-        'type': 'table',
-        'title': 'Recent Records',
-        'columns': ['Customer', 'Property', 'Date', 'Status'],
-        'data_source': 'site_visits',
-      },
-    ];
-  }
-
-  IconData _getIconData(String iconName) {
-    return _iconCatalog[iconName] ?? Icons.insights_rounded;
-  }
-
-  Map<String, dynamic> _getCurrentSourceDef() {
-    return _dataSources.firstWhere(
-      (s) => s['id'] == _selectedSourceId,
-      orElse: () => _dataSources.first,
-    );
-  }
-
-  String get _mappedAggregation {
-    switch (_selectedCountType) {
-      case 'unique':
-        return 'COUNT_DISTINCT';
-      case 'sum':
-        return 'SUM';
-      case 'avg':
-        return 'AVG';
-      case 'records':
-      default:
-        return 'COUNT';
-    }
-  }
-
-  String get _mappedPrimaryField {
-    if (_selectedSourceId == 'site_visits' && _selectedCountType == 'unique') {
-      return 'lead_id';
-    }
-    return 'id';
-  }
-
-  Future<void> _loadAll() async {
+  Future<void> _fetchKpiRegistry() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
     try {
-      final kpis = await _service.getKpiRegistry(
+      final list = await _service.getKpiRegistry(
         search: _searchQuery,
         page: _selectedPageFilter,
         role: _selectedRoleFilter,
@@ -250,7 +270,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
       );
       if (mounted) {
         setState(() {
-          _kpiList = kpis;
+          _kpiList = list;
           _isLoading = false;
         });
       }
@@ -264,2124 +284,993 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     }
   }
 
-  Future<void> _loadAuditLogs() async {
-    try {
-      final logs = await _service.getKpiAuditLogs();
-      if (mounted) setState(() => _auditLogs = logs);
-    } catch (_) {}
-  }
-
-  void _onNameChanged(String val) {
-    if (!_isEditing) {
-      final autoKey = val
-          .toLowerCase()
-          .trim()
-          .replaceAll(RegExp(r'[^a-z0-9_]'), '_')
-          .replaceAll(RegExp(r'_+'), '_')
-          .replaceAll(RegExp(r'^_|_$'), '');
-      _keyController.text = autoKey;
-    }
-    setState(() {});
-  }
-
-  void _resetBuilder() {
+  Future<void> _toggleKpiStatus(KpiRegistryItem kpi, bool newStatus) async {
+    final originalStatus = kpi.isEnabled;
     setState(() {
-      _isEditing = false;
-      _editingKpiId = null;
-      _nameController.clear();
-      _whyController.clear();
-      _keyController.clear();
-      _orderController.text = '10';
-      _selectedSourceId = 'site_visits';
-      _selectedCountType = 'records';
-      _activeFilters = [
-        {'field': 'status', 'operator': '=', 'value': 'DONE'}
-      ];
-      _selectedPages.clear();
-      _selectedPages.add('Admin Dashboard');
-      _adminVisible = true;
-      _telecallerVisible = false;
-      _salesVisible = false;
-      _uiComponent = 'KPI Card';
-      _selectedIcon = 'insights_rounded';
-      _isClickable = true;
-      _initDefaultDrilldownComponents();
+      final index = _kpiList.indexWhere((item) => item.id == kpi.id);
+      if (index != -1) {
+        _kpiList[index] = _kpiList[index].copyWith(isEnabled: newStatus);
+      }
     });
+
+    final success = await _service.toggleKpiRegistryStatus(kpi.id, newStatus);
+    if (!success && mounted) {
+      setState(() {
+        final index = _kpiList.indexWhere((item) => item.id == kpi.id);
+        if (index != -1) {
+          _kpiList[index] = _kpiList[index].copyWith(isEnabled: originalStatus);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update status on server.')),
+      );
+    }
   }
 
-  void _initEdit(KpiRegistryItem kpi) {
-    setState(() {
-      _isEditing = true;
-      _editingKpiId = kpi.id;
-      _nameController.text = kpi.kpiLabel;
-      _whyController.text = kpi.whyDoWeHaveIt;
-      _keyController.text = kpi.kpiKey;
-      _orderController.text = kpi.displayOrder.toString();
-      _selectedSourceId = kpi.dataSource;
-      if (kpi.aggregation == 'COUNT_DISTINCT') {
-        _selectedCountType = 'unique';
-      } else if (kpi.aggregation == 'SUM') {
-        _selectedCountType = 'sum';
-      } else if (kpi.aggregation == 'AVG') {
-        _selectedCountType = 'avg';
-      } else {
-        _selectedCountType = 'records';
-      }
-
-      _selectedPages.clear();
-      _selectedPages.addAll(kpi.pages);
-      _adminVisible = kpi.adminVisible;
-      _telecallerVisible = kpi.telecallerVisible;
-      _salesVisible = kpi.salesVisible;
-      _uiComponent = kpi.uiComponent;
-      _selectedIcon = kpi.icon;
-      _isClickable = kpi.isClickable;
-
-      if (kpi.conditionsJson.isNotEmpty) {
-        _activeFilters = kpi.conditionsJson
-            .whereType<Map>()
-            .map((c) => {
-                  'field': c['field']?.toString() ?? 'status',
-                  'operator': c['operator']?.toString() ?? '=',
-                  'value': c['value']?.toString() ?? '',
-                })
-            .toList();
-      } else {
-        _activeFilters = [];
-      }
-
-      if (kpi.drilldownConfig.containsKey('components') &&
-          kpi.drilldownConfig['components'] is List) {
-        _drilldownComponents = List<Map<String, dynamic>>.from(
-          (kpi.drilldownConfig['components'] as List)
-              .map((c) => Map<String, dynamic>.from(c)),
-        );
-      } else {
-        _initDefaultDrilldownComponents();
-      }
-      _activeTabIndex = 1;
-    });
-  }
-
-  void _duplicate(KpiRegistryItem kpi) {
-    _resetBuilder();
-    setState(() {
-      _nameController.text = '${kpi.kpiLabel} (Copy)';
-      _whyController.text = kpi.whyDoWeHaveIt;
-      _keyController.text = '${kpi.kpiKey}_copy';
-      _selectedSourceId = kpi.dataSource;
-      if (kpi.aggregation == 'COUNT_DISTINCT') {
-        _selectedCountType = 'unique';
-      } else {
-        _selectedCountType = 'records';
-      }
-      _selectedPages.clear();
-      _selectedPages.addAll(kpi.pages);
-      _adminVisible = kpi.adminVisible;
-      _telecallerVisible = kpi.telecallerVisible;
-      _salesVisible = kpi.salesVisible;
-      _uiComponent = kpi.uiComponent;
-      _selectedIcon = kpi.icon;
-      _isClickable = kpi.isClickable;
-      if (kpi.drilldownConfig.containsKey('components') &&
-          kpi.drilldownConfig['components'] is List) {
-        _drilldownComponents = List<Map<String, dynamic>>.from(
-          (kpi.drilldownConfig['components'] as List)
-              .map((c) => Map<String, dynamic>.from(c)),
-        );
-      }
-      _activeTabIndex = 1;
-    });
-    _showFeedback('Pre-filled new KPI from "${kpi.kpiLabel}".', isSuccess: true);
-  }
-
-  Future<void> _saveKpi() async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) {
-      _showFeedback('Please enter a KPI Name.', isSuccess: false);
-      return;
-    }
-    final why = _whyController.text.trim();
-    if (why.isEmpty) {
-      _showFeedback('Please describe what this KPI represents.', isSuccess: false);
-      return;
-    }
-    if (_selectedPages.isEmpty) {
-      _showFeedback('Please choose at least one dashboard where this KPI appears.', isSuccess: false);
-      return;
-    }
-    if (!_adminVisible && !_telecallerVisible && !_salesVisible) {
-      _showFeedback('Please enable visibility for at least one user role.', isSuccess: false);
-      return;
-    }
-
-    setState(() => _isSaving = true);
-
-    final payload = {
-      'kpi_name': name,
-      'kpi_label': name,
-      'kpi_key': _keyController.text.trim().isNotEmpty
-          ? _keyController.text.trim()
-          : name.toLowerCase().replaceAll(' ', '_'),
-      'why_do_we_have_it': why,
-      'data_source': _selectedSourceId,
-      'entity_table': _selectedSourceId,
-      'primary_field': _mappedPrimaryField,
-      'aggregation': _mappedAggregation,
-      'conditions_json': _activeFilters,
-      'date_field': _getCurrentSourceDef()['defaultDate'] ?? 'created_at',
-      'database_mapping_description': '$_selectedSourceId ($_mappedAggregation) ${_activeFilters.isNotEmpty ? "WHERE ${_activeFilters.map((f) => "${f['field']} ${f['operator']} ${f['value']}").join(" AND ")}" : ""}',
-      'pages': _selectedPages,
-      'ui_component': _uiComponent,
-      'display_format': _displayFormat,
-      'icon': _selectedIcon,
-      'is_clickable': _isClickable,
-      'drilldown_type': 'Modal',
-      'second_level_enabled': _isClickable,
-      'drilldown_config': {
-        'layout': 'default',
-        'components': _drilldownComponents,
-      },
-      'admin_visible': _adminVisible,
-      'telecaller_visible': _telecallerVisible,
-      'sales_visible': _salesVisible,
-      'is_enabled': true,
-      'display_order': int.tryParse(_orderController.text.trim()) ?? 10,
+  Future<void> _toggleRoleVisibility(
+      KpiRegistryItem kpi, String role, bool currentVal) async {
+    final newVal = !currentVal;
+    final updatedData = {
+      'admin_visible': role == 'admin' ? newVal : kpi.adminVisible,
+      'telecaller_visible':
+          role == 'telecaller' ? newVal : kpi.telecallerVisible,
+      'sales_visible': role == 'sales' ? newVal : kpi.salesVisible,
     };
 
+    setState(() {
+      final index = _kpiList.indexWhere((item) => item.id == kpi.id);
+      if (index != -1) {
+        _kpiList[index] = _kpiList[index].copyWith(
+          adminVisible: updatedData['admin_visible'],
+          telecallerVisible: updatedData['telecaller_visible'],
+          salesVisible: updatedData['sales_visible'],
+        );
+      }
+    });
+
     try {
-      if (_isEditing && _editingKpiId != null) {
-        await _service.updateKpiRegistryItem(_editingKpiId!, payload);
-        _showFeedback('KPI "$name" updated successfully!', isSuccess: true);
-      } else {
-        await _service.createKpiRegistryItem(payload);
-        _showFeedback('KPI "$name" created successfully!', isSuccess: true);
-      }
-
-      // Sync with DashboardBloc
-      if (mounted) {
-        context.read<DashboardBloc>().add(
-              ToggleKpiConfig(
-                kpiKey: payload['kpi_key'].toString(),
-                isEnabled: true,
-              ),
-            );
-      }
-
-      _resetBuilder();
-      setState(() => _activeTabIndex = 0);
-      _loadAll();
+      await _service.updateKpiRegistryItem(kpi.id, updatedData);
     } catch (e) {
-      _showFeedback('Failed to save KPI: $e', isSuccess: false);
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      _fetchKpiRegistry();
     }
   }
 
-  Future<void> _toggleStatus(KpiRegistryItem kpi, bool isEnabled) async {
-    setState(() => _isSaving = true);
-    final ok = await _service.toggleKpiRegistryStatus(kpi.id, isEnabled);
-    if (ok) {
-      if (mounted) {
-        context.read<DashboardBloc>().add(
-              ToggleKpiConfig(kpiKey: kpi.kpiKey, isEnabled: isEnabled),
-            );
-      }
-      _showFeedback('KPI "${kpi.kpiLabel}" ${isEnabled ? "enabled" : "disabled"}.', isSuccess: true);
-      _loadAll();
-    } else {
-      _showFeedback('Failed to toggle KPI status.', isSuccess: false);
-    }
-    if (mounted) setState(() => _isSaving = false);
-  }
-
-  Future<void> _toggleRole(
-    KpiRegistryItem kpi, {
-    bool? admin,
-    bool? telecaller,
-    bool? sales,
-  }) async {
-    final newAdmin = admin ?? kpi.adminVisible;
-    final newTele = telecaller ?? kpi.telecallerVisible;
-    final newSales = sales ?? kpi.salesVisible;
-
-    if (!newAdmin && !newTele && !newSales) {
-      _showFeedback('At least one role must remain enabled.', isSuccess: false);
-      return;
-    }
-
-    setState(() => _isSaving = true);
-    try {
-      await _service.updateKpiRegistryItem(kpi.id, {
-        'admin_visible': newAdmin,
-        'telecaller_visible': newTele,
-        'sales_visible': newSales,
-      });
-      _showFeedback('Role visibility updated for "${kpi.kpiLabel}".', isSuccess: true);
-      _loadAll();
-    } catch (e) {
-      _showFeedback('Failed to update roles: $e', isSuccess: false);
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<void> _deleteKpi(KpiRegistryItem kpi) async {
-    if (kpi.isSystem) {
-      _showFeedback('System canonical KPIs cannot be deleted. You can disable them instead.', isSuccess: false);
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete KPI?'),
-        content: Text('Are you sure you want to delete "${kpi.kpiLabel}"? This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      setState(() => _isSaving = true);
-      try {
-        await _service.deleteKpiRegistryItem(kpi.id);
-        _showFeedback('KPI deleted successfully.', isSuccess: true);
-        _loadAll();
-      } catch (e) {
-        _showFeedback('Failed to delete KPI: $e', isSuccess: false);
-      } finally {
-        if (mounted) setState(() => _isSaving = false);
-      }
-    }
-  }
-
-  void _showFeedback(String msg, {bool isSuccess = true}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  // ==========================================
-  // DRILLDOWN COMPONENT ADD DIALOGS
-  // ==========================================
-  void _openAddSubKpiDialog() {
-    String subLabel = 'Scheduled';
-    String subStatus = 'SCHEDULED';
-    String? selectedKpiKey;
-    bool isCustom = false;
-    bool isSecondaryClickable = true;
-    String? nextDrilldownKey;
-
+  void _openKpiConfigDialog([KpiRegistryItem? kpi]) {
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          title: const Text('Add Sub-KPI to Drilldown'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Select Existing KPI'),
-                      selected: !isCustom,
-                      onSelected: (val) => setDlgState(() => isCustom = !val),
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('Create New Sub-Metric'),
-                      selected: isCustom,
-                      onSelected: (val) => setDlgState(() => isCustom = val),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (!isCustom) ...[
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'Choose Registered KPI', border: OutlineInputBorder()),
-                    items: _kpiList.map((k) {
-                      return DropdownMenuItem(value: k.kpiKey, child: Text(k.kpiLabel));
-                    }).toList(),
-                    onChanged: (val) => selectedKpiKey = val,
-                  ),
-                ] else ...[
-                  TextFormField(
-                    initialValue: subLabel,
-                    decoration: const InputDecoration(labelText: 'Metric Label', hintText: 'e.g. Scheduled Visits', border: OutlineInputBorder()),
-                    onChanged: (val) => subLabel = val,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    initialValue: subStatus,
-                    decoration: const InputDecoration(labelText: 'Target Status Filter', hintText: 'e.g. SCHEDULED', border: OutlineInputBorder()),
-                    onChanged: (val) => subStatus = val,
-                  ),
-                ],
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Checkbox(
-                      value: isSecondaryClickable,
-                      onChanged: (val) => setDlgState(() => isSecondaryClickable = val ?? true),
-                    ),
-                    const Text('Make this Sub-KPI clickable (Nested Drilldown)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                  ],
-                ),
-                if (isSecondaryClickable) ...[
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'Target Nested Drilldown', border: OutlineInputBorder()),
-                    items: [
-                      const DropdownMenuItem(value: 'filtered_records', child: Text('Open Filtered Records List')),
-                      ..._kpiList.map((k) => DropdownMenuItem(value: k.kpiKey, child: Text('Open ${k.kpiLabel} Drilldown'))),
-                    ],
-                    onChanged: (val) => nextDrilldownKey = val,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  var kpiGroupComp = _drilldownComponents.firstWhere(
-                    (c) => c['type'] == 'kpi_group',
-                    orElse: () => <String, dynamic>{},
-                  );
-                  if (kpiGroupComp.isEmpty) {
-                    kpiGroupComp = {
-                      'id': 'comp_kpis_${DateTime.now().millisecondsSinceEpoch}',
-                      'type': 'kpi_group',
-                      'title': 'Status Summary',
-                      'items': [],
-                    };
-                    _drilldownComponents.insert(0, kpiGroupComp);
-                  }
-                  final items = (kpiGroupComp['items'] as List?) ?? [];
-                  if (isCustom) {
-                    items.add({
-                      'label': subLabel,
-                      'status': subStatus,
-                      'is_clickable': isSecondaryClickable,
-                      if (nextDrilldownKey != null) 'next_drilldown_kpi': nextDrilldownKey,
-                    });
-                  } else if (selectedKpiKey != null) {
-                    final matched = _kpiList.firstWhere((k) => k.kpiKey == selectedKpiKey);
-                    items.add({
-                      'label': matched.kpiLabel,
-                      'kpi_key': matched.kpiKey,
-                      'is_clickable': isSecondaryClickable,
-                      if (nextDrilldownKey != null) 'next_drilldown_kpi': nextDrilldownKey,
-                    });
-                  }
-                  kpiGroupComp['items'] = items;
-                });
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add to Drilldown'),
-            ),
-          ],
-        ),
+      barrierDismissible: true,
+      builder: (ctx) => _KpiConfigModal(
+        kpi: kpi,
+        onSave: () => _fetchKpiRegistry(),
       ),
     );
   }
 
-  void _openAddChartDialog() {
-    String chartTitle = 'Status Distribution';
-    String chartType = 'donut';
-    String dimension = 'status';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          title: const Text('Add Chart to Drilldown'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                initialValue: chartTitle,
-                decoration: const InputDecoration(labelText: 'Chart Title', border: OutlineInputBorder()),
-                onChanged: (val) => chartTitle = val,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: chartType,
-                decoration: const InputDecoration(labelText: 'Chart Type', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(value: 'donut', child: Text('Donut / Pie Chart')),
-                  DropdownMenuItem(value: 'bar', child: Text('Bar Chart')),
-                  DropdownMenuItem(value: 'line', child: Text('Trend Line Chart')),
-                ],
-                onChanged: (val) => chartType = val ?? 'donut',
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: dimension,
-                decoration: const InputDecoration(labelText: 'Group By (Dimension)', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(value: 'status', child: Text('Status')),
-                  DropdownMenuItem(value: 'stage', child: Text('Lifecycle Stage')),
-                  DropdownMenuItem(value: 'source', child: Text('Source')),
-                  DropdownMenuItem(value: 'property_type', child: Text('Property Type')),
-                ],
-                onChanged: (val) => dimension = val ?? 'status',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _drilldownComponents.add({
-                    'id': 'chart_${DateTime.now().millisecondsSinceEpoch}',
-                    'type': 'chart',
-                    'title': chartTitle,
-                    'chart_type': chartType,
-                    'dimension': dimension,
-                  });
-                });
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add Chart'),
-            ),
-          ],
-        ),
-      ),
-    );
+  IconData _getIconData(String iconName) {
+    switch (iconName) {
+      case 'insights_rounded':
+        return Icons.insights_rounded;
+      case 'inbox_rounded':
+        return Icons.inbox_rounded;
+      case 'phone_missed_rounded':
+        return Icons.phone_missed_rounded;
+      case 'phone_callback_rounded':
+        return Icons.phone_callback_rounded;
+      case 'sync_rounded':
+        return Icons.sync_rounded;
+      case 'support_agent_rounded':
+        return Icons.support_agent_rounded;
+      case 'handshake_rounded':
+        return Icons.handshake_rounded;
+      case 'verified_rounded':
+        return Icons.verified_rounded;
+      case 'cancel_outlined':
+        return Icons.cancel_outlined;
+      case 'real_estate_agent_rounded':
+        return Icons.real_estate_agent_rounded;
+      case 'home_work_rounded':
+        return Icons.home_work_rounded;
+      case 'inventory_2_rounded':
+        return Icons.inventory_2_rounded;
+      case 'location_on_rounded':
+        return Icons.location_on_rounded;
+      case 'campaign_rounded':
+        return Icons.campaign_rounded;
+      case 'groups_rounded':
+        return Icons.groups_rounded;
+      case 'badge_rounded':
+        return Icons.badge_rounded;
+      default:
+        return Icons.analytics_rounded;
+    }
   }
 
-  void _openAddTableDialog() {
-    String tableTitle = 'Record Details';
-    String dataSource = _selectedSourceId;
-    final Set<String> selectedCols = {'Customer', 'Property', 'Date', 'Status'};
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          title: const Text('Add Records Table to Drilldown'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                initialValue: tableTitle,
-                decoration: const InputDecoration(labelText: 'Table Title', border: OutlineInputBorder()),
-                onChanged: (val) => tableTitle = val,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: dataSource,
-                decoration: const InputDecoration(labelText: 'Data Source', border: OutlineInputBorder()),
-                items: _dataSources.map((ds) {
-                  return DropdownMenuItem(value: ds['id'] as String, child: Text(ds['label'] as String));
-                }).toList(),
-                onChanged: (val) => setDlgState(() => dataSource = val ?? 'site_visits'),
-              ),
-              const SizedBox(height: 12),
-              const Text('Visible Columns:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: ['Customer', 'Property', 'Sales User', 'Date', 'Status', 'Phone'].map((col) {
-                  final isSel = selectedCols.contains(col);
-                  return FilterChip(
-                    label: Text(col),
-                    selected: isSel,
-                    onSelected: (val) {
-                      setDlgState(() {
-                        if (val) {
-                          selectedCols.add(col);
-                        } else {
-                          selectedCols.remove(col);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _drilldownComponents.add({
-                    'id': 'table_${DateTime.now().millisecondsSinceEpoch}',
-                    'type': 'table',
-                    'title': tableTitle,
-                    'data_source': dataSource,
-                    'columns': selectedCols.toList(),
-                  });
-                });
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add Table'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openAddStatusBreakdownDialog() {
-    String title = 'Status Breakdown';
-    String dimension = 'status';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Status Breakdown'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              initialValue: title,
-              decoration: const InputDecoration(labelText: 'Breakdown Title', border: OutlineInputBorder()),
-              onChanged: (val) => title = val,
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: dimension,
-              decoration: const InputDecoration(labelText: 'Dimension', border: OutlineInputBorder()),
-              items: const [
-                DropdownMenuItem(value: 'status', child: Text('Status')),
-                DropdownMenuItem(value: 'stage', child: Text('Stage')),
-                DropdownMenuItem(value: 'source', child: Text('Source')),
-              ],
-              onChanged: (val) => dimension = val ?? 'status',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _drilldownComponents.add({
-                  'id': 'breakdown_${DateTime.now().millisecondsSinceEpoch}',
-                  'type': 'status_breakdown',
-                  'title': title,
-                  'dimension': dimension,
-                });
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Add Breakdown'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openAddFilterDialog() {
-    String filterTitle = 'Sales User Filter';
-    String filterKey = 'sales_user';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Filter to Drilldown'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              initialValue: filterTitle,
-              decoration: const InputDecoration(labelText: 'Filter Label', border: OutlineInputBorder()),
-              onChanged: (val) => filterTitle = val,
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: filterKey,
-              decoration: const InputDecoration(labelText: 'Filter Dimension', border: OutlineInputBorder()),
-              items: const [
-                DropdownMenuItem(value: 'sales_user', child: Text('Sales User')),
-                DropdownMenuItem(value: 'telecaller', child: Text('Telecaller')),
-                DropdownMenuItem(value: 'lead_source', child: Text('Lead Source')),
-                DropdownMenuItem(value: 'property_type', child: Text('Property Type')),
-                DropdownMenuItem(value: 'date_range', child: Text('Date Range')),
-              ],
-              onChanged: (val) => filterKey = val ?? 'sales_user',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _drilldownComponents.add({
-                  'id': 'filter_${DateTime.now().millisecondsSinceEpoch}',
-                  'type': 'filter',
-                  'title': filterTitle,
-                  'filter_key': filterKey,
-                });
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Add Filter'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ==========================================
-  // ROOT BUILD METHOD (STABLE CONTAINER)
-  // ==========================================
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-    final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final borderColor =
+        isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
 
-    final content = LayoutBuilder(
-      builder: (context, constraints) {
-        final hasBoundedHeight = constraints.hasBoundedHeight;
+    return Container(
+      color: isDark ? const Color(0xFF0B132B) : const Color(0xFFF8FAFC),
+      padding: EdgeInsets.all(widget.isEmbedded ? 0 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Card
+          _buildHeaderBar(cardBg, textColor, subColor, borderColor, isDark),
+          const SizedBox(height: 14),
 
-        return Container(
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Top Header Bar
-              _buildTopHeader(cardBg, textColor, subColor, borderColor),
+          // Filters Toolbar
+          _buildFiltersBar(cardBg, textColor, subColor, borderColor, isDark),
+          const SizedBox(height: 14),
 
-              // 2. Segmented Navigation Bar
-              _buildSegmentedTabBar(cardBg, textColor, subColor, borderColor),
-
-              // 3. Tab Body
-              if (hasBoundedHeight)
-                Expanded(
-                  child: _buildCurrentTab(
-                    cardBg,
-                    textColor,
-                    subColor,
-                    borderColor,
-                    hasBoundedHeight: true,
-                  ),
-                )
-              else
-                _buildCurrentTab(
-                  cardBg,
-                  textColor,
-                  subColor,
-                  borderColor,
-                  hasBoundedHeight: false,
-                ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (widget.isEmbedded) {
-      return content;
-    }
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          'KPI Registry & Configuration',
-          style: TextStyle(
-            color: textColor,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
-        backgroundColor: cardBg,
-        elevation: 0.5,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: textColor),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              context.go('/settings');
-            }
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh_rounded, color: textColor),
-            tooltip: 'Refresh Registry',
-            onPressed: _loadAll,
+          // Main KPI Table
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage.isNotEmpty
+                    ? _buildErrorView(textColor, subColor)
+                    : _buildTableCard(
+                        cardBg, textColor, subColor, borderColor, isDark),
           ),
         ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: content,
       ),
     );
   }
 
-  Widget _buildTopHeader(Color cardBg, Color textColor, Color subColor, Color borderColor) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-    if (isMobile) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: borderColor)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: ThemeManager().primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(Icons.dashboard_customize_outlined, color: ThemeManager().primaryColor, size: 20),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'KPI Registry & No-Code Builder',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Centralized metrics registry and guided database mappings',
-                        style: TextStyle(fontSize: 11, color: subColor),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                if (_isSaving)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                  tooltip: 'Refresh Registry',
-                  onPressed: _loadAll,
-                ),
-              ],
-            ),
-            if (_activeTabIndex == 0) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('+ Add KPI'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                  onPressed: () {
-                    _resetBuilder();
-                    setState(() => _activeTabIndex = 1);
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-
+  Widget _buildHeaderBar(Color cardBg, Color textColor, Color subColor,
+      Color borderColor, bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: borderColor)),
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: ThemeManager().primaryColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.dashboard_customize_outlined, color: ThemeManager().primaryColor, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'KPI Registry & No-Code Builder',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                Text(
-                  'Centralized registry for metrics, guided database mappings, and visual drilldowns.',
-                  style: TextStyle(fontSize: 12, color: subColor),
-                ),
-              ],
+                child: const Icon(Icons.tune_rounded,
+                    color: Color(0xFF3B82F6), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'KPI Configuration & Data Mapping',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: textColor,
+                    ),
+                  ),
+                  Text(
+                    'Direct table mapping for all KPIs across dashboard, reports, and role dashboards.',
+                    style: TextStyle(fontSize: 12, color: subColor),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          ElevatedButton.icon(
+            onPressed: () => _openKpiConfigDialog(),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add New KPI',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
           ),
-          if (_isSaving)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 20),
-            tooltip: 'Refresh Registry',
-            onPressed: _loadAll,
-          ),
-          if (_activeTabIndex == 0) ...[
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('+ Add KPI'),
-              onPressed: () {
-                _resetBuilder();
-                setState(() => _activeTabIndex = 1);
-              },
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildSegmentedTabBar(Color cardBg, Color textColor, Color subColor, Color borderColor) {
-    final tabs = [
-      {'index': 0, 'label': 'KPI Registry (${_kpiList.length})', 'icon': Icons.table_chart_rounded},
-      {'index': 1, 'label': _isEditing ? 'Edit KPI' : '+ No-Code Builder', 'icon': _isEditing ? Icons.edit_rounded : Icons.auto_awesome_rounded},
-      {'index': 2, 'label': 'Role Visibility Matrix', 'icon': Icons.security_rounded},
-      {'index': 3, 'label': 'Audit History', 'icon': Icons.history_rounded},
-    ];
-
+  Widget _buildFiltersBar(Color cardBg, Color textColor, Color subColor,
+      Color borderColor, bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: ThemeManager().isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-        border: Border(bottom: BorderSide(color: borderColor)),
+        color: cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: tabs.map((t) {
-            final idx = t['index'] as int;
-            final isSelected = _activeTabIndex == idx;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () {
-                  setState(() {
-                    _activeTabIndex = idx;
-                    if (_activeTabIndex == 3 && _auditLogs.isEmpty) {
-                      _loadAuditLogs();
-                    }
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: isSelected ? ThemeManager().primaryColor : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        t['icon'] as IconData,
-                        size: 15,
-                        color: isSelected ? Colors.white : subColor,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        t['label'] as String,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color: isSelected ? Colors.white : textColor,
-                        ),
-                      ),
-                    ],
-                  ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          // Search Box
+          SizedBox(
+            width: 280,
+            height: 36,
+            child: TextField(
+              style: TextStyle(fontSize: 12.5, color: textColor),
+              decoration: InputDecoration(
+                hintText: 'Search KPI name, table or key...',
+                hintStyle: TextStyle(fontSize: 12, color: subColor),
+                prefixIcon:
+                    Icon(Icons.search_rounded, size: 16, color: subColor),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                filled: true,
+                fillColor:
+                    isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(color: borderColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(color: borderColor),
                 ),
               ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCurrentTab(
-    Color cardBg,
-    Color textColor,
-    Color subColor,
-    Color borderColor, {
-    bool hasBoundedHeight = true,
-  }) {
-    switch (_activeTabIndex) {
-      case 0:
-        return _buildRegistryTab(
-          cardBg,
-          textColor,
-          subColor,
-          borderColor,
-          hasBoundedHeight: hasBoundedHeight,
-        );
-      case 1:
-        return _buildBuilderTab(cardBg, textColor, subColor, borderColor);
-      case 2:
-        return _buildRoleMatrixTab(cardBg, textColor, subColor, borderColor);
-      case 3:
-        return _buildAuditHistoryTab(cardBg, textColor, subColor, borderColor);
-      default:
-        return _buildRegistryTab(
-          cardBg,
-          textColor,
-          subColor,
-          borderColor,
-          hasBoundedHeight: hasBoundedHeight,
-        );
-    }
-  }
-
-  // ==========================================
-  // TAB 1: KPI REGISTRY TABLE
-  // ==========================================
-  Widget _buildRegistryTab(
-    Color cardBg,
-    Color textColor,
-    Color subColor,
-    Color borderColor, {
-    bool hasBoundedHeight = true,
-  }) {
-    if (_isLoading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(40.0),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline_rounded, size: 40, color: Colors.red),
-              const SizedBox(height: 10),
-              Text(
-                'Failed to load registry: $_errorMessage',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton(onPressed: _loadAll, child: const Text('Retry')),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final isDark = ThemeManager().isDarkMode;
-
-    Widget tableWidget;
-    if (_kpiList.isEmpty) {
-      tableWidget = Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.dashboard_customize_outlined, size: 48, color: subColor),
-              const SizedBox(height: 12),
-              Text(
-                'No KPIs Found',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'No metrics match the selected filter criteria.',
-                style: TextStyle(fontSize: 13, color: subColor),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Create KPI'),
-                    onPressed: () {
-                      _resetBuilder();
-                      setState(() => _activeTabIndex = 1);
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: const Text('Refresh'),
-                    onPressed: _loadAll,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      tableWidget = SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: Scrollbar(
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 1100),
-              child: DataTable(
-              columnSpacing: 18,
-              headingRowColor: WidgetStateProperty.all(
-                isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-              ),
-              columns: const [
-                DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('KPI Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('KPI Key', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Business Purpose', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Data Source', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Pages', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Admin', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Telecaller', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Sales User', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Active', style: TextStyle(fontWeight: FontWeight.bold))),
-                DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
-              ],
-              rows: List.generate(_kpiList.length, (index) {
-                final kpi = _kpiList[index];
-                return DataRow(
-                  cells: [
-                    DataCell(Text('${index + 1}', style: TextStyle(color: subColor, fontSize: 13))),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(_getIconData(kpi.icon), size: 18, color: ThemeManager().primaryColor),
-                          const SizedBox(width: 8),
-                          Text(kpi.kpiLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                          if (kpi.isSystem) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text('SYS', style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    DataCell(
-                      Text(kpi.kpiKey, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Color(0xFF6366F1))),
-                    ),
-                    DataCell(
-                      SizedBox(
-                        width: 220,
-                        child: Tooltip(
-                          message: kpi.whyDoWeHaveIt,
-                          child: Text(kpi.whyDoWeHaveIt, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: subColor)),
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Text('${kpi.dataSource} (${kpi.aggregation})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                    ),
-                    DataCell(
-                      Text(kpi.pages.join(', ').replaceAll(' Dashboard', ''), style: TextStyle(fontSize: 12, color: subColor)),
-                    ),
-                    DataCell(Checkbox(value: kpi.adminVisible, onChanged: (val) => _toggleRole(kpi, admin: val))),
-                    DataCell(Checkbox(value: kpi.telecallerVisible, onChanged: (val) => _toggleRole(kpi, telecaller: val))),
-                    DataCell(Checkbox(value: kpi.salesVisible, onChanged: (val) => _toggleRole(kpi, sales: val))),
-                    DataCell(Switch(value: kpi.isEnabled, onChanged: (val) => _toggleStatus(kpi, val))),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-                            tooltip: 'Preview Live Drilldown',
-                            onPressed: () {
-                              GenericKpiDrilldownDialog.show(
-                                context,
-                                kpiKey: kpi.kpiKey,
-                                kpiLabel: kpi.kpiLabel,
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.edit_rounded, size: 18),
-                            tooltip: 'Edit in Builder',
-                            onPressed: () => _initEdit(kpi),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, size: 18),
-                            tooltip: 'Duplicate',
-                            onPressed: () => _duplicate(kpi),
-                          ),
-                          if (!kpi.isSystem)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
-                              tooltip: 'Delete KPI',
-                              onPressed: () => _deleteKpi(kpi),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              }),
+              onChanged: (val) {
+                _searchQuery = val.trim();
+                _fetchKpiRegistry();
+              },
             ),
           ),
-        ),
-      ),
-    );
-  }
 
-    final isMobile = MediaQuery.of(context).size.width < 600;
-
-    return Column(
-      mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Filter toolbar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: cardBg,
-            border: Border(bottom: BorderSide(color: borderColor)),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 600;
-              if (isNarrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Search KPIs...',
-                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        isDense: true,
-                      ),
-                      onChanged: (val) {
-                        setState(() => _searchQuery = val);
-                        _loadAll();
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: _selectedPageFilter,
-                            underline: const SizedBox(),
-                            items: ['All', ..._allPages].map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() => _selectedPageFilter = val);
-                                _loadAll();
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: _selectedRoleFilter,
-                            underline: const SizedBox(),
-                            items: const [
-                              DropdownMenuItem(value: 'All', child: Text('All Roles', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'Admin', child: Text('Admin', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'Telecaller', child: Text('Telecaller', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
-                              DropdownMenuItem(value: 'Sales', child: Text('Sales User', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() => _selectedRoleFilter = val);
-                                _loadAll();
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
+          // Page Filter Dropdown
+          _buildFilterDropdown(
+            label: 'Page',
+            value: _selectedPageFilter,
+            options: ['All', ...kAvailablePages],
+            textColor: textColor,
+            borderColor: borderColor,
+            isDark: isDark,
+            onChanged: (val) {
+              if (val != null) {
+                setState(() => _selectedPageFilter = val);
+                _fetchKpiRegistry();
               }
-              return Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 240,
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Search KPIs...',
-                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        isDense: true,
-                      ),
-                      onChanged: (val) {
-                        setState(() => _searchQuery = val);
-                        _loadAll();
-                      },
-                    ),
-                  ),
-                  DropdownButton<String>(
-                    value: _selectedPageFilter,
-                    underline: const SizedBox(),
-                    items: ['All', ..._allPages].map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13)))).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedPageFilter = val);
-                        _loadAll();
-                      }
-                    },
-                  ),
-                  DropdownButton<String>(
-                    value: _selectedRoleFilter,
-                    underline: const SizedBox(),
-                    items: const [
-                      DropdownMenuItem(value: 'All', child: Text('All Roles', style: TextStyle(fontSize: 13))),
-                      DropdownMenuItem(value: 'Admin', child: Text('Admin', style: TextStyle(fontSize: 13))),
-                      DropdownMenuItem(value: 'Telecaller', child: Text('Telecaller', style: TextStyle(fontSize: 13))),
-                      DropdownMenuItem(value: 'Sales', child: Text('Sales User', style: TextStyle(fontSize: 13))),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedRoleFilter = val);
-                        _loadAll();
-                      }
-                    },
-                  ),
-                ],
-              );
             },
           ),
-        ),
 
-        if (isMobile)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            color: ThemeManager().primaryColor.withValues(alpha: 0.08),
-            child: Row(
-              children: [
-                Icon(Icons.swipe_left_rounded, size: 16, color: ThemeManager().primaryColor),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Swipe horizontally to view all columns & actions',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: ThemeManager().primaryColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          // Role Filter Dropdown
+          _buildFilterDropdown(
+            label: 'Role',
+            value: _selectedRoleFilter,
+            options: const ['All', 'Admin', 'Telecaller', 'Sales'],
+            textColor: textColor,
+            borderColor: borderColor,
+            isDark: isDark,
+            onChanged: (val) {
+              if (val != null) {
+                setState(() => _selectedRoleFilter = val);
+                _fetchKpiRegistry();
+              }
+            },
           ),
 
-        // Registry Table or Empty State
-        if (hasBoundedHeight)
-          Expanded(child: tableWidget)
-        else
-          tableWidget,
-      ],
+          // Status Filter Dropdown
+          _buildFilterDropdown(
+            label: 'Status',
+            value: _selectedStatusFilter,
+            options: const ['All', 'Active', 'Inactive'],
+            textColor: textColor,
+            borderColor: borderColor,
+            isDark: isDark,
+            onChanged: (val) {
+              if (val != null) {
+                setState(() => _selectedStatusFilter = val);
+                _fetchKpiRegistry();
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 
-  // ==========================================
-  // TAB 2: NO-CODE KPI BUILDER & DRILLDOWN COMPOSER
-  // ==========================================
-  Widget _buildBuilderTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
-    final curSource = _getCurrentSourceDef();
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Top Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: ThemeManager().primaryColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      _isEditing ? Icons.edit_note_rounded : Icons.auto_awesome_rounded,
-                      color: ThemeManager().primaryColor,
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _isEditing ? 'Edit KPI Definition' : 'Simple No-Code KPI Builder',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
-                        ),
-                        Text(
-                          'Name your metric, choose data source, select dashboards, and visually compose the drilldown.',
-                          style: TextStyle(fontSize: 13, color: subColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_isEditing)
-                    TextButton(
-                      onPressed: () {
-                        _resetBuilder();
-                        setState(() => _activeTabIndex = 0);
-                      },
-                      child: const Text('Cancel Edit'),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              // STEP 1: What do you want to measure?
-              _buildBuilderCard(
-                title: '1. What do you want to call it?',
-                subtitle: 'Enter the human-readable KPI name and business description.',
-                cardBg: cardBg,
-                borderColor: borderColor,
-                textColor: textColor,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'KPI Name *',
-                        hintText: 'e.g. Site Visits Done',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: _onNameChanged,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _whyController,
-                      decoration: const InputDecoration(
-                        labelText: 'What does this KPI represent? *',
-                        hintText: 'e.g. Number of completed physical property visits by clients',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    if (_keyController.text.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.vpn_key_rounded, size: 14, color: Color(0xFF6366F1)),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Auto-generated KPI Key: ${_keyController.text}',
-                              style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6366F1)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // STEP 2: Where does its data come from?
-              _buildBuilderCard(
-                title: '2. Where does its data come from?',
-                subtitle: 'Select from available business entities and friendly filters without writing SQL.',
-                cardBg: cardBg,
-                borderColor: borderColor,
-                textColor: textColor,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _selectedSourceId,
-                            decoration: const InputDecoration(labelText: 'Data Source', border: OutlineInputBorder()),
-                            items: _dataSources.map((ds) {
-                              return DropdownMenuItem(
-                                value: ds['id'] as String,
-                                child: Row(
-                                  children: [
-                                    Icon(ds['icon'] as IconData, size: 18, color: ThemeManager().primaryColor),
-                                    const SizedBox(width: 8),
-                                    Text(ds['label'] as String),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedSourceId = val;
-                                  _activeFilters.clear();
-                                  if (val == 'site_visits') {
-                                    _activeFilters.add({'field': 'status', 'operator': '=', 'value': 'DONE'});
-                                  } else if (val == 'properties') {
-                                    _activeFilters.add({'field': 'status', 'operator': '=', 'value': 'Available'});
-                                  } else if (val == 'leads') {
-                                    _activeFilters.add({'field': 'campaign_status', 'operator': '=', 'value': 'INTERESTED'});
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _selectedCountType,
-                            decoration: const InputDecoration(labelText: 'Count Method', border: OutlineInputBorder()),
-                            items: const [
-                              DropdownMenuItem(value: 'records', child: Text('Count Records (Total)')),
-                              DropdownMenuItem(value: 'unique', child: Text('Count Unique Leads / Users')),
-                              DropdownMenuItem(value: 'sum', child: Text('Sum of Value')),
-                              DropdownMenuItem(value: 'avg', child: Text('Average of Value')),
-                            ],
-                            onChanged: (val) => setState(() => _selectedCountType = val ?? 'records'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Active Filters Section
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Data Filters', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        TextButton.icon(
-                          icon: const Icon(Icons.add_rounded, size: 16),
-                          label: const Text('Add Filter'),
-                          onPressed: () {
-                            final filterFields = curSource['filterFields'] as List;
-                            final firstField = filterFields.first;
-                            setState(() {
-                              _activeFilters.add({
-                                'field': firstField['id'] as String,
-                                'operator': '=',
-                                'value': (firstField['values'] as List).first as String,
-                              });
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    if (_activeFilters.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text('No filters applied (All records in $_selectedSourceId will be counted)', style: TextStyle(fontSize: 12, color: subColor)),
-                      )
-                    else
-                      ...List.generate(_activeFilters.length, (idx) {
-                        final filter = _activeFilters[idx];
-                        final filterFields = curSource['filterFields'] as List;
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: ThemeManager().isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              DropdownButton<String>(
-                                value: filter['field'],
-                                underline: const SizedBox(),
-                                items: filterFields.map<DropdownMenuItem<String>>((f) {
-                                  return DropdownMenuItem(value: f['id'] as String, child: Text(f['label'] as String, style: const TextStyle(fontSize: 13)));
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    final fDef = filterFields.firstWhere((f) => f['id'] == val);
-                                    setState(() {
-                                      filter['field'] = val;
-                                      filter['value'] = (fDef['values'] as List).first as String;
-                                    });
-                                  }
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              const Text('equals', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextFormField(
-                                  initialValue: filter['value'],
-                                  decoration: const InputDecoration(
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    border: OutlineInputBorder(),
-                                    isDense: true,
-                                  ),
-                                  onChanged: (val) => filter['value'] = val,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close_rounded, size: 16, color: Colors.red),
-                                onPressed: () => setState(() => _activeFilters.removeAt(idx)),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-
-                    const SizedBox(height: 10),
-                    // Technical Mapping Accordion
-                    ExpansionTile(
-                      title: const Text('Advanced / Technical Mapping', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6366F1))),
-                      tilePadding: EdgeInsets.zero,
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: ThemeManager().isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: borderColor),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Table: $_selectedSourceId', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                              Text('Field: $_mappedPrimaryField', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                              Text('Aggregation: $_mappedAggregation', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                              Text('Date Field: ${curSource['defaultDate']}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                              Text('Filters: ${_activeFilters.toString()}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // STEP 3: Where should it appear?
-              _buildBuilderCard(
-                title: '3. Where should this KPI appear?',
-                subtitle: 'Choose target dashboards and pages for this metric.',
-                cardBg: cardBg,
-                borderColor: borderColor,
-                textColor: textColor,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _allPages.map((page) {
-                    final isSelected = _selectedPages.contains(page);
-                    return FilterChip(
-                      label: Text(page),
-                      selected: isSelected,
-                      selectedColor: ThemeManager().primaryColor.withValues(alpha: 0.15),
-                      checkmarkColor: ThemeManager().primaryColor,
-                      onSelected: (val) {
-                        setState(() {
-                          if (val) {
-                            _selectedPages.add(page);
-                          } else {
-                            _selectedPages.remove(page);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // STEP 4: Who can see this KPI?
-              _buildBuilderCard(
-                title: '4. Who can see this KPI?',
-                subtitle: 'Enforced at both backend API and frontend role-based access control.',
-                cardBg: cardBg,
-                borderColor: borderColor,
-                textColor: textColor,
-                child: Row(
-                  children: [
-                    _buildRoleCheckbox('Admin', _adminVisible, (v) => setState(() => _adminVisible = v)),
-                    const SizedBox(width: 24),
-                    _buildRoleCheckbox('Telecaller', _telecallerVisible, (v) => setState(() => _telecallerVisible = v)),
-                    const SizedBox(width: 24),
-                    _buildRoleCheckbox('Sales User', _salesVisible, (v) => setState(() => _salesVisible = v)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // STEP 5: Visual Presentation
-              _buildBuilderCard(
-                title: '5. Visual Presentation',
-                subtitle: 'Select component card type and display icon.',
-                cardBg: cardBg,
-                borderColor: borderColor,
-                textColor: textColor,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Wrap(
-                      spacing: 10,
-                      children: ['KPI Card', 'Table Metric', 'Status Metric', 'Chart'].map((style) {
-                        final isSel = _uiComponent == style;
-                        return ChoiceChip(
-                          label: Text(style),
-                          selected: isSel,
-                          onSelected: (val) => setState(() => _uiComponent = style),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _selectedIcon,
-                            decoration: const InputDecoration(labelText: 'Icon', border: OutlineInputBorder()),
-                            items: _iconCatalog.entries.map((entry) {
-                              return DropdownMenuItem(
-                                value: entry.key,
-                                child: Row(
-                                  children: [
-                                    Icon(entry.value, size: 18),
-                                    const SizedBox(width: 8),
-                                    Text(entry.key.replaceAll('_rounded', '')),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (val) => setState(() => _selectedIcon = val ?? 'insights_rounded'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _orderController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(labelText: 'Display Order', border: OutlineInputBorder()),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // STEP 6: Visual Drilldown Builder
-              _buildBuilderCard(
-                title: '6. Should users be able to click this KPI?',
-                subtitle: 'Visually compose the drilldown view that appears upon tap.',
-                cardBg: cardBg,
-                borderColor: borderColor,
-                textColor: textColor,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        ChoiceChip(
-                          label: const Text('No (Static Card)'),
-                          selected: !_isClickable,
-                          onSelected: (val) => setState(() => _isClickable = !val),
-                        ),
-                        const SizedBox(width: 10),
-                        ChoiceChip(
-                          label: const Text('Yes (Interactive Drilldown)'),
-                          selected: _isClickable,
-                          onSelected: (val) => setState(() => _isClickable = val),
-                        ),
-                      ],
-                    ),
-                    if (_isClickable) ...[
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('What should users see when they click?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textColor)),
-                          Wrap(
-                            spacing: 6,
-                            children: [
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.add_rounded, size: 15),
-                                label: const Text('KPI'),
-                                onPressed: _openAddSubKpiDialog,
-                              ),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.filter_list_rounded, size: 15),
-                                label: const Text('Filter'),
-                                onPressed: _openAddFilterDialog,
-                              ),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.bar_chart_rounded, size: 15),
-                                label: const Text('Chart'),
-                                onPressed: _openAddChartDialog,
-                              ),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.table_rows_rounded, size: 15),
-                                label: const Text('Table'),
-                                onPressed: _openAddTableDialog,
-                              ),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.pie_chart_outline_rounded, size: 15),
-                                label: const Text('Status'),
-                                onPressed: _openAddStatusBreakdownDialog,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      if (_drilldownComponents.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: borderColor, style: BorderStyle.solid),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text('No drilldown components added yet. Use the buttons above to compose.', style: TextStyle(fontSize: 12, color: subColor)),
-                        )
-                      else
-                        ...List.generate(_drilldownComponents.length, (idx) {
-                          final comp = _drilldownComponents[idx];
-                          final cTitle = comp['title']?.toString() ?? 'Component';
-                          final cType = comp['type']?.toString() ?? '';
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: borderColor),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  cType == 'kpi_group'
-                                      ? Icons.space_dashboard_rounded
-                                      : cType == 'chart'
-                                          ? Icons.bar_chart_rounded
-                                          : cType == 'filter'
-                                              ? Icons.filter_list_rounded
-                                              : cType == 'status_breakdown'
-                                                  ? Icons.pie_chart_outline_rounded
-                                                  : Icons.table_chart_rounded,
-                                  size: 18,
-                                  color: ThemeManager().primaryColor,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(cTitle, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                      Text('Type: $cType', style: TextStyle(fontSize: 11, color: subColor)),
-                                    ],
-                                  ),
-                                ),
-                                if (idx > 0)
-                                  IconButton(
-                                    icon: const Icon(Icons.arrow_upward_rounded, size: 16),
-                                    tooltip: 'Move Up',
-                                    onPressed: () {
-                                      setState(() {
-                                        final item = _drilldownComponents.removeAt(idx);
-                                        _drilldownComponents.insert(idx - 1, item);
-                                      });
-                                    },
-                                  ),
-                                if (idx < _drilldownComponents.length - 1)
-                                  IconButton(
-                                    icon: const Icon(Icons.arrow_downward_rounded, size: 16),
-                                    tooltip: 'Move Down',
-                                    onPressed: () {
-                                      setState(() {
-                                        final item = _drilldownComponents.removeAt(idx);
-                                        _drilldownComponents.insert(idx + 1, item);
-                                      });
-                                    },
-                                  ),
-                                IconButton(
-                                  icon: const Icon(Icons.close_rounded, size: 16, color: Colors.red),
-                                  tooltip: 'Remove',
-                                  onPressed: () {
-                                    setState(() => _drilldownComponents.removeAt(idx));
-                                  },
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // LIVE PREVIEW CARD
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: ThemeManager().primaryColor.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: ThemeManager().primaryColor.withValues(alpha: 0.2)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.remove_red_eye_rounded, size: 18, color: ThemeManager().primaryColor),
-                        const SizedBox(width: 8),
-                        Text('Live Preview', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textColor)),
-                        const Spacer(),
-                        if (_isClickable)
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                            label: const Text('Test Drilldown Preview'),
-                            onPressed: () {
-                              GenericKpiDrilldownDialog.show(
-                                context,
-                                kpiKey: _keyController.text.isNotEmpty ? _keyController.text : 'site_visits_done',
-                                kpiLabel: _nameController.text.isNotEmpty ? _nameController.text : 'Site Visits Done',
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    // Simulated Stat Card
-                    Container(
-                      width: 240,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: cardBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: borderColor),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _nameController.text.isNotEmpty ? _nameController.text : 'Site Visits Done',
-                                style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w500),
-                              ),
-                              Icon(_getIconData(_selectedIcon), size: 20, color: ThemeManager().primaryColor),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text('87', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: textColor)),
-                          if (_isClickable) ...[
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Text('Click to view drilldown', style: TextStyle(fontSize: 11, color: ThemeManager().primaryColor)),
-                                const SizedBox(width: 4),
-                                Icon(Icons.arrow_forward_rounded, size: 12, color: ThemeManager().primaryColor),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // SAVE ACTION BUTTONS
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  OutlinedButton(
-                    onPressed: () {
-                      _resetBuilder();
-                      setState(() => _activeTabIndex = 0);
-                    },
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    icon: _isSaving
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.check_rounded, size: 18),
-                    label: Text(_isEditing ? 'Update KPI' : 'Save KPI Definition'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                    ),
-                    onPressed: _isSaving ? null : _saveKpi,
-                  ),
-                ],
-              ),
-            ],
-          ),
+  Widget _buildFilterDropdown({
+    required String label,
+    required String value,
+    required List<String> options,
+    required Color textColor,
+    required Color borderColor,
+    required bool isDark,
+    required void Function(String?) onChanged,
+  }) {
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
+          dropdownColor:
+              isDark ? const Color(0xFF1E293B) : Colors.white,
+          onChanged: onChanged,
+          items: options
+              .map((opt) => DropdownMenuItem(
+                    value: opt,
+                    child: Text('$label: $opt'),
+                  ))
+              .toList(),
         ),
       ),
     );
   }
 
-  Widget _buildBuilderCard({
-    required String title,
-    required String subtitle,
-    required Color cardBg,
-    required Color borderColor,
-    required Color textColor,
-    required Widget child,
-  }) {
+  Widget _buildTableCard(Color cardBg, Color textColor, Color subColor,
+      Color borderColor, bool isDark) {
+    if (_kpiList.isEmpty) {
+      return Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.filter_alt_off_rounded, size: 40, color: subColor),
+              const SizedBox(height: 8),
+              Text('No KPI configurations found matching your filters.',
+                  style: TextStyle(color: subColor, fontSize: 13)),
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: () {
+                  setState(() {
+                    _searchQuery = '';
+                    _selectedPageFilter = 'All';
+                    _selectedRoleFilter = 'All';
+                    _selectedStatusFilter = 'All';
+                  });
+                  _fetchKpiRegistry();
+                },
+                child: const Text('Reset Filters'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor),
       ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(
+                isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              ),
+              headingTextStyle: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+              dataTextStyle: TextStyle(fontSize: 12, color: textColor),
+              horizontalMargin: 16,
+              columnSpacing: 22,
+              columns: const [
+                DataColumn(label: Text('KPI Name')),
+                DataColumn(label: Text('Which Data Count Table To Fetch')),
+                DataColumn(label: Text('Display Pages')),
+                DataColumn(label: Text('Role Visibility')),
+                DataColumn(label: Text('Active')),
+                DataColumn(label: Text('Actions')),
+              ],
+              rows: _kpiList.map((kpi) {
+                final iconData = _getIconData(kpi.icon);
+                final tableName = kpi.entityTable.isNotEmpty
+                    ? kpi.entityTable
+                    : (kpi.dataSource.isNotEmpty ? kpi.dataSource : 'leads');
+                final ruleDesc = kpi.databaseMappingDescription.isNotEmpty
+                    ? kpi.databaseMappingDescription
+                    : '$tableName (canonical)';
+
+                return DataRow(
+                  cells: [
+                    // KPI Name Column
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3B82F6)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(iconData,
+                                color: const Color(0xFF3B82F6), size: 16),
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                kpi.kpiLabel,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 12.5),
+                              ),
+                              Text(
+                                kpi.kpiKey,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: subColor,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Which Data Count Table To Fetch
+                    DataCell(
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: const Color(0xFF3B82F6)
+                                  .withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.table_chart_rounded,
+                                size: 13, color: Color(0xFF3B82F6)),
+                            const SizedBox(width: 5),
+                            Text(
+                              ruleDesc,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? const Color(0xFF93C5FD)
+                                    : const Color(0xFF1D4ED8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Display Pages Chips
+                    DataCell(
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: kpi.pages.map((p) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: const Color(0xFF10B981)
+                                    .withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              p,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    // Role Visibility (Admin, Telecaller, Sales)
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildRoleBadge(
+                            label: 'Admin',
+                            isActive: kpi.adminVisible,
+                            activeColor: const Color(0xFFF59E0B),
+                            onTap: () => _toggleRoleVisibility(
+                                kpi, 'admin', kpi.adminVisible),
+                          ),
+                          const SizedBox(width: 5),
+                          _buildRoleBadge(
+                            label: 'Telecaller',
+                            isActive: kpi.telecallerVisible,
+                            activeColor: const Color(0xFF3B82F6),
+                            onTap: () => _toggleRoleVisibility(
+                                kpi, 'telecaller', kpi.telecallerVisible),
+                          ),
+                          const SizedBox(width: 5),
+                          _buildRoleBadge(
+                            label: 'Sales',
+                            isActive: kpi.salesVisible,
+                            activeColor: const Color(0xFF10B981),
+                            onTap: () => _toggleRoleVisibility(
+                                kpi, 'sales', kpi.salesVisible),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Active Switch
+                    DataCell(
+                      Transform.scale(
+                        scale: 0.8,
+                        child: Switch(
+                          value: kpi.isEnabled,
+                          activeTrackColor: const Color(0xFF10B981),
+                          onChanged: (val) => _toggleKpiStatus(kpi, val),
+                        ),
+                      ),
+                    ),
+
+                    // Actions
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            tooltip: 'Edit KPI',
+                            onPressed: () => _openKpiConfigDialog(kpi),
+                          ),
+                          if (!kpi.isSystem)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded,
+                                  size: 16, color: Colors.redAccent),
+                              tooltip: 'Delete KPI',
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Delete KPI'),
+                                    content: Text(
+                                        'Are you sure you want to delete "${kpi.kpiLabel}"?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  await _service.deleteKpiRegistryItem(kpi.id);
+                                  _fetchKpiRegistry();
+                                }
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoleBadge({
+    required String label,
+    required bool isActive,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: isActive
+              ? activeColor.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isActive
+                ? activeColor
+                : Colors.grey.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isActive ? Icons.check_circle : Icons.circle_outlined,
+              size: 11,
+              color: isActive ? activeColor : Colors.grey,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive ? activeColor : Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorView(Color textColor, Color subColor) {
+    return Center(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor)),
-          const SizedBox(height: 2),
-          Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-          const SizedBox(height: 14),
-          child,
+          const Icon(Icons.error_outline_rounded, size: 40, color: Colors.red),
+          const SizedBox(height: 8),
+          Text(_errorMessage, style: TextStyle(color: textColor)),
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _fetchKpiRegistry,
+            child: const Text('Retry'),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildRoleCheckbox(String label, bool value, ValueChanged<bool> onChanged) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Checkbox(
-          value: value,
-          onChanged: (val) => onChanged(val ?? false),
-        ),
-        Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-      ],
-    );
+/// Simple modal to add or edit KPI configurations with a searchable dropdown.
+class _KpiConfigModal extends StatefulWidget {
+  final KpiRegistryItem? kpi;
+  final VoidCallback onSave;
+
+  const _KpiConfigModal({this.kpi, required this.onSave});
+
+  @override
+  State<_KpiConfigModal> createState() => _KpiConfigModalState();
+}
+
+class _KpiConfigModalState extends State<_KpiConfigModal> {
+  final DashboardService _service = DashboardService();
+  late TextEditingController _labelController;
+  late TextEditingController _keyController;
+  late TextEditingController _whyController;
+  final TextEditingController _templateSearchController =
+      TextEditingController();
+
+  Map<String, dynamic>? _selectedTemplate;
+  late List<String> _selectedPages;
+  late bool _adminVisible;
+  late bool _telecallerVisible;
+  late bool _salesVisible;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final k = widget.kpi;
+    _labelController = TextEditingController(text: k?.kpiLabel ?? '');
+    _keyController = TextEditingController(text: k?.kpiKey ?? '');
+    _whyController = TextEditingController(text: k?.whyDoWeHaveIt ?? '');
+    _selectedPages = k != null ? List<String>.from(k.pages) : ['Dashboard'];
+    _adminVisible = k?.adminVisible ?? true;
+    _telecallerVisible = k?.telecallerVisible ?? false;
+    _salesVisible = k?.salesVisible ?? false;
+
+    if (k != null) {
+      _selectedTemplate = _KpiConfigScreenState.kCountSourceTemplates.firstWhere(
+        (t) =>
+            t['id'] == k.kpiKey ||
+            t['table'] == k.entityTable ||
+            t['label'] == k.kpiLabel,
+        orElse: () => {
+          'id': k.kpiKey,
+          'label': k.kpiLabel,
+          'category': 'Custom',
+          'table': k.entityTable.isNotEmpty ? k.entityTable : 'leads',
+          'rule': k.databaseMappingDescription.isNotEmpty
+              ? k.databaseMappingDescription
+              : '${k.entityTable} (custom)',
+          'icon': k.icon,
+          'defaultPages': k.pages,
+          'why': k.whyDoWeHaveIt,
+        },
+      );
+    } else {
+      _selectedTemplate = _KpiConfigScreenState.kCountSourceTemplates.first;
+      _applyTemplate(_selectedTemplate!);
+    }
   }
 
-  // ==========================================
-  // TAB 3: ROLE VISIBILITY MATRIX
-  // ==========================================
-  Widget _buildRoleMatrixTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
+  void _applyTemplate(Map<String, dynamic> t) {
+    if (widget.kpi == null) {
+      _labelController.text = t['label'] ?? '';
+      _keyController.text = t['id'] ?? '';
+      _whyController.text = t['why'] ?? '';
+      _selectedPages = List<String>.from(t['defaultPages'] ?? ['Dashboard']);
+    }
+  }
+
+  @override
+  void dispose() {
+    _labelController.dispose();
+    _keyController.dispose();
+    _whyController.dispose();
+    _templateSearchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final label = _labelController.text.trim();
+    if (label.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a KPI label.')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    final payload = {
+      'kpi_label': label,
+      'kpi_key': _keyController.text.trim().isNotEmpty
+          ? _keyController.text.trim()
+          : label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_'),
+      'why_do_we_have_it': _whyController.text.trim(),
+      'entity_table': _selectedTemplate?['table'] ?? 'leads',
+      'data_source': _selectedTemplate?['table'] ?? 'leads',
+      'database_mapping_description': _selectedTemplate?['rule'] ?? 'leads',
+      'pages': _selectedPages,
+      'admin_visible': _adminVisible,
+      'telecaller_visible': _telecallerVisible,
+      'sales_visible': _salesVisible,
+      'icon': _selectedTemplate?['icon'] ?? 'insights_rounded',
+      'is_enabled': widget.kpi?.isEnabled ?? true,
+    };
+
+    try {
+      if (widget.kpi != null) {
+        await _service.updateKpiRegistryItem(widget.kpi!.id, payload);
+      } else {
+        await _service.createKpiRegistryItem(payload);
+      }
+      widget.onSave();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving KPI: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = ThemeManager().isDarkMode;
+    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final borderColor =
+        isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
+    return Dialog(
+      backgroundColor: cardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Container(
+        width: 600,
+        padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: cardBg,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: borderColor),
+              // Dialog Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    widget.kpi != null ? 'Edit KPI Configuration' : 'Configure New KPI',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: textColor,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(height: 18),
+
+              // KPI Name
+              const Text('KPI Label / Name',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 5),
+              TextField(
+                controller: _labelController,
+                style: TextStyle(fontSize: 13, color: textColor),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Available Inventory, Fresh Leads, Deals Won',
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
-                child: DataTable(
-                  columns: const [
-                    DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('KPI Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Admin', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Telecaller', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Sales User', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Active', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: List.generate(_kpiList.length, (index) {
-                    final kpi = _kpiList[index];
-                    return DataRow(
-                      cells: [
-                        DataCell(Text('${index + 1}', style: TextStyle(color: subColor, fontSize: 13))),
-                        DataCell(Text(kpi.kpiLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                        DataCell(Checkbox(value: kpi.adminVisible, onChanged: (val) => _toggleRole(kpi, admin: val))),
-                        DataCell(Checkbox(value: kpi.telecallerVisible, onChanged: (val) => _toggleRole(kpi, telecaller: val))),
-                        DataCell(Checkbox(value: kpi.salesVisible, onChanged: (val) => _toggleRole(kpi, sales: val))),
-                        DataCell(Switch(value: kpi.isEnabled, onChanged: (val) => _toggleStatus(kpi, val))),
-                      ],
-                    );
-                  }),
+              ),
+              const SizedBox(height: 14),
+
+              // Searchable Count Source Dropdown
+              const Text('Which Data Count Table To Fetch',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 5),
+              _buildSearchableTemplatePicker(textColor, subColor, borderColor, isDark),
+              const SizedBox(height: 14),
+
+              // Display Pages
+              const Text('Show In Pages',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: _KpiConfigScreenState.kAvailablePages.map((page) {
+                  final isSelected = _selectedPages.contains(page);
+                  return FilterChip(
+                    label: Text(page, style: const TextStyle(fontSize: 11.5)),
+                    selected: isSelected,
+                    selectedColor: const Color(0xFF10B981).withValues(alpha: 0.2),
+                    checkmarkColor: const Color(0xFF10B981),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedPages.add(page);
+                        } else {
+                          _selectedPages.remove(page);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+
+              // Role Visibility
+              const Text('Role-wise Visibility',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _adminVisible,
+                    activeColor: const Color(0xFFF59E0B),
+                    onChanged: (v) =>
+                        setState(() => _adminVisible = v ?? true),
+                  ),
+                  const Text('👑 Admin', style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 14),
+                  Checkbox(
+                    value: _telecallerVisible,
+                    activeColor: const Color(0xFF3B82F6),
+                    onChanged: (v) =>
+                        setState(() => _telecallerVisible = v ?? false),
+                  ),
+                  const Text('🎧 Telecaller', style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 14),
+                  Checkbox(
+                    value: _salesVisible,
+                    activeColor: const Color(0xFF10B981),
+                    onChanged: (v) =>
+                        setState(() => _salesVisible = v ?? false),
+                  ),
+                  const Text('💼 Sales', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // Description / Why
+              const Text('Why Do We Have This KPI? (Optional)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 5),
+              TextField(
+                controller: _whyController,
+                maxLines: 2,
+                style: TextStyle(fontSize: 12.5, color: textColor),
+                decoration: InputDecoration(
+                  hintText: 'Brief context explaining how this metric impacts business operations.',
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
+              ),
+              const SizedBox(height: 20),
+
+              // Action Buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: _isSaving ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save Configuration'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2390,80 +1279,151 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     );
   }
 
-  // ==========================================
-  // TAB 4: AUDIT HISTORY
-  // ==========================================
-  Widget _buildAuditHistoryTab(Color cardBg, Color textColor, Color subColor, Color borderColor) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildSearchableTemplatePicker(
+      Color textColor, Color subColor, Color borderColor, bool isDark) {
+    return InkWell(
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (bctx) {
+            String filter = '';
+            return StatefulBuilder(
+              builder: (ctx, setModalState) {
+                final filtered = _KpiConfigScreenState.kCountSourceTemplates
+                    .where((t) =>
+                        (t['label']?.toString().toLowerCase() ?? '')
+                            .contains(filter.toLowerCase()) ||
+                        (t['category']?.toString().toLowerCase() ?? '')
+                            .contains(filter.toLowerCase()) ||
+                        (t['table']?.toString().toLowerCase() ?? '')
+                            .contains(filter.toLowerCase()))
+                    .toList();
+
+                return Container(
+                  height: 500,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Select Data Count Table & Formula',
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w700)),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () => Navigator.pop(bctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search data source, table or formula...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onChanged: (val) {
+                          setModalState(() => filter = val);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1),
+                          itemBuilder: (ctx, index) {
+                            final item = filtered[index];
+                            final isSel = _selectedTemplate?['id'] == item['id'];
+
+                            return ListTile(
+                              leading: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF3B82F6)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Icon(Icons.table_chart_rounded,
+                                    color: Color(0xFF3B82F6), size: 18),
+                              ),
+                              title: Text(item['label'] ?? '',
+                                  style: TextStyle(
+                                      fontWeight: isSel
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      fontSize: 13)),
+                              subtitle: Text(
+                                '${item['category']} • ${item['rule']}',
+                                style: TextStyle(
+                                    fontSize: 11, color: subColor),
+                              ),
+                              trailing: isSel
+                                  ? const Icon(Icons.check_circle_rounded,
+                                      color: Color(0xFF10B981), size: 18)
+                                  : null,
+                              onTap: () {
+                                setState(() {
+                                  _selectedTemplate = item;
+                                  _applyTemplate(item);
+                                });
+                                Navigator.pop(bctx);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.table_chart_rounded,
+                size: 16, color: Color(0xFF3B82F6)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('KPI Audit & Mapping History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor)),
-                  IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _loadAuditLogs),
+                  Text(
+                    _selectedTemplate?['label'] ?? 'Select Data Count Source',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: textColor),
+                  ),
+                  Text(
+                    '${_selectedTemplate?['category'] ?? ''} • ${_selectedTemplate?['rule'] ?? ''}',
+                    style: TextStyle(fontSize: 11, color: subColor),
+                  ),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (_auditLogs.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(40),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Text('No audit logs recorded yet.', style: TextStyle(color: subColor)),
-                )
-              else
-                Container(
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('KPI', style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('Performed By', style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataColumn(label: Text('Timestamp', style: TextStyle(fontWeight: FontWeight.bold))),
-                    ],
-                    rows: _auditLogs.map((log) {
-                      final actionColor = log.action == 'CREATED'
-                          ? Colors.green
-                          : log.action == 'DELETED'
-                              ? Colors.red
-                              : Colors.orange;
-
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: actionColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(log.action, style: TextStyle(color: actionColor, fontWeight: FontWeight.bold, fontSize: 11)),
-                            ),
-                          ),
-                          DataCell(Text(log.kpiLabel ?? log.kpiKey ?? '-', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13))),
-                          DataCell(Text(log.performedByName ?? log.performedByEmail ?? 'Admin User', style: TextStyle(fontSize: 12, color: subColor))),
-                          DataCell(Text(log.createdAt != null ? '${log.createdAt!.toLocal()}'.split('.')[0] : '-', style: TextStyle(fontSize: 12, color: subColor))),
-                        ],
-                      );
-                    }).toList(),
-                  ),
-                ),
-            ],
-          ),
+            ),
+            Icon(Icons.arrow_drop_down_rounded, color: subColor),
+          ],
         ),
       ),
     );

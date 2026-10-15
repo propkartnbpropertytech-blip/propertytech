@@ -745,6 +745,46 @@ class DashboardService {
       return {};
     }
   }
+
+  /// Fetch individual lifecycle lead records and multi-table pipeflow steps
+  Future<Map<String, dynamic>> getLifecycleLeads({
+    String? stage,
+    String? salesUserId,
+    String? telecallerId,
+    String leadType = 'Both',
+    String dateFilter = 'All Time',
+    String? startDate,
+    String? endDate,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/lifecycle-leads',
+        queryParameters: {
+          if (stage != null) 'stage': stage,
+          if (salesUserId != null) 'salesUserId': salesUserId,
+          if (telecallerId != null) 'telecallerId': telecallerId,
+          'leadType': leadType,
+          'dateFilter': dateFilter,
+          if (startDate != null) 'startDate': startDate,
+          if (endDate != null) 'endDate': endDate,
+          'page': page,
+          'limit': limit,
+          if (search != null && search.isNotEmpty) 'search': search,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return (response.data['data'] as Map<String, dynamic>?) ?? {};
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getLifecycleLeads] Error: $e');
+      return {};
+    }
+  }
 }
+
 
 

@@ -12,6 +12,7 @@ class PipelineFunnelBar extends StatefulWidget {
   final String? dateFilter;
   final bool isLoading;
   final void Function(String stageKey, String stageLabel)? onStageTap;
+  final void Function(String userId, String userName)? onSalesUserTap;
 
   const PipelineFunnelBar({
     super.key,
@@ -22,6 +23,7 @@ class PipelineFunnelBar extends StatefulWidget {
     this.dateFilter,
     this.isLoading = false,
     this.onStageTap,
+    this.onSalesUserTap,
   });
 
   @override
@@ -103,46 +105,53 @@ class _PipelineFunnelBarState extends State<PipelineFunnelBar> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.account_tree_rounded,
-                      size: 18,
-                      color: Color(0xFF3B82F6),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Lead Lifecycle Pipeline',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                        ),
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      Text(
-                        '100% Complete Distribution Engine',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                        ),
+                      child: const Icon(
+                        Icons.account_tree_rounded,
+                        size: 18,
+                        color: Color(0xFF3B82F6),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Lead Lifecycle Pipeline',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            '100% Complete Distribution Engine',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
 
               // 100% Balanced Verification Pill
               Container(
@@ -421,50 +430,57 @@ class _PipelineFunnelBarState extends State<PipelineFunnelBar> {
               children: widget.salesRoster!.map((agent) {
                 final name = agent['full_name']?.toString() ?? 'Sales Agent';
                 final leads = agent['active_leads_count'] as num? ?? 0;
+                final userId = agent['user_id']?.toString() ?? agent['id']?.toString() ?? '';
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.12 : 0.06),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.3 : 0.2),
+                return InkWell(
+                  onTap: widget.onSalesUserTap != null && userId.isNotEmpty
+                      ? () => widget.onSalesUserTap!(userId, name)
+                      : null,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.12 : 0.06),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.3 : 0.2),
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.person_rounded,
-                        size: 12,
-                        color: Color(0xFF10B981),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        name,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.person_rounded,
+                          size: 12,
+                          color: Color(0xFF10B981),
                         ),
-                      ),
-                      const SizedBox(width: 5),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$leads leads',
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        const SizedBox(width: 5),
+                        Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$leads leads',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }).toList(),

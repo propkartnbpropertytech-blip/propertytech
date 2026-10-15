@@ -254,5 +254,25 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <!-- Roakbot Chatbot Embed -->
+  <style>
+    #roakbot-launcher {
+      display: none !important;
+    }
+    #roakbot-container {
+      pointer-events: auto !important;
+      z-index: 999999 !important;
+    }
+  </style>
+  <script>
+    window.roakbotConfig = {
+      botId: "bot_84ce2455",
+      launcherPosition: "bottom_right",
+      launcherAnimation: "rotate_fade",
+      launcherAnimationDuration: 450,
+    };
+  </script>
+  <script src="https://roakbot.web.app/widget.js" async></script>
 </body>
 </html>
