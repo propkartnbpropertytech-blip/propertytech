@@ -24,6 +24,8 @@ class JwtInterceptor extends Interceptor {
     '/health',
     '/audit/events',
     '/audit',
+    '/telecaller/heartbeat',
+    '/telecaller/availability',
   ];
 
   /// Public endpoints should not receive Authorization (confused deputy).

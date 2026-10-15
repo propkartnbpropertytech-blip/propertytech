@@ -6,6 +6,7 @@ import 'isar_service.dart';
 import 'local_repositories.dart';
 import 'secure_storage.dart';
 import '../../features/integration/services/integration_service.dart';
+import '../../features/telecaller/services/telecaller_shift_manager.dart';
 
 /// Clears all user-scoped local state so the next login cannot see prior data.
 /// Theme preference is intentionally preserved.
@@ -32,6 +33,10 @@ class SessionCleanup {
 
   /// Wipe tokens, Isar/web caches, sync state, and user-scoped prefs.
   static Future<void> clearLocalSession({bool clearToken = true}) async {
+    try {
+      TelecallerShiftManager.instance.dispose();
+    } catch (_) {}
+
     try {
       await SyncManager().disconnect();
     } catch (_) {}

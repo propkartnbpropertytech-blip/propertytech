@@ -11,6 +11,7 @@ import '../../../core/utils/app_logger.dart';
 import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/notification_center.dart';
 import '../../telecaller/services/telecaller_shift_manager.dart';
+import '../../telecaller/telecaller_heartbeat_service.dart';
 
 // ==========================================
 // Auth Events
@@ -244,6 +245,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       RoleGuard.currentUser = user;
       AppLogger.i('User ${user.email} (${user.role}) logged in successfully');
 
+      if (!RoleGuard.isTelecaller(user.role)) {
+        TelecallerShiftManager.instance.dispose();
+        TelecallerHeartbeatService.instance.stop();
+      }
+
       emit(Authenticated(user: user));
       _startSessionWatchdog();
       unawaited(PushNotificationService.registerCurrentUser());
@@ -261,8 +267,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     } catch (e, stackTrace) {
       AppLogger.e('Login failed for ${event.email}', e, stackTrace);
       RoleGuard.currentUser = null;
-      emit(AuthError(message: e.toString()));
-      emit(Unauthenticated());
+      emit(AuthError(message: e.toString().replaceAll('Exception: ', '')));
     }
   }
 
@@ -279,6 +284,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       RoleGuard.currentUser = user;
       AppLogger.i('User ${user.email} (${user.role}) logged in successfully via 2FA');
+
+      if (!RoleGuard.isTelecaller(user.role)) {
+        TelecallerShiftManager.instance.dispose();
+        TelecallerHeartbeatService.instance.stop();
+      }
 
       emit(Authenticated(user: user));
       _startSessionWatchdog();
@@ -298,7 +308,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       AppLogger.e('2FA verification failed for challenge ${event.mfaChallengeId}', e, stackTrace);
       RoleGuard.currentUser = null;
       emit(AuthError(message: e.toString().replaceAll('Exception: ', '')));
-      emit(Unauthenticated());
     }
   }
 
