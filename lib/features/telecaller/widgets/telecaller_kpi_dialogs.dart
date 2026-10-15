@@ -1877,13 +1877,43 @@ class _TelecallerOpenLeadsDialogState extends State<TelecallerOpenLeadsDialog> {
     super.dispose();
   }
 
+  bool _matchesDateFilter(DateTime? date) {
+    if (date == null) return false;
+    final filter = widget.dateFilter.trim().toLowerCase();
+    final now = DateTime.now();
+    final local = date.toLocal();
+
+    if (filter == 'today') {
+      return local.year == now.year && local.month == now.month && local.day == now.day;
+    } else if (filter == 'weekly') {
+      final startOf7Days = DateTime(now.year, now.month, now.day - 6);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'monthly' || filter == 'this month') {
+      return local.year == now.year && local.month == now.month;
+    } else if (filter == 'yearly' || filter == 'this year') {
+      return local.year == now.year;
+    } else if (filter == 'custom' || filter == 'custom range') {
+      if (widget.startDate != null && widget.endDate != null) {
+        final s = DateTime.tryParse(widget.startDate!);
+        final e = DateTime.tryParse('${widget.endDate!} 23:59:59');
+        if (s != null && e != null) {
+          return !local.isBefore(s) && !local.isAfter(e);
+        }
+      }
+    }
+    return true;
+  }
+
   List<IntegrationLeadModel> get _allOpenLeads {
     final valid = IntegrationService().leads.where((l) => _isOpenUntouchedLead(l)).toList();
     return valid.where((l) {
       final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
-      if (widget.leadType == 'Listing') return isListing;
-      if (widget.leadType == 'Requirement') return !isListing;
-      return true;
+      if (widget.leadType == 'Listing' && !isListing) return false;
+      if (widget.leadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = (raw['created_at'] != null ? DateTime.tryParse(raw['created_at'].toString()) : null) ?? l.receivedAt;
+      return _matchesDateFilter(dt);
     }).toList();
   }
 
@@ -2295,13 +2325,9 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
       final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
       return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
     } else if (filter == 'monthly' || filter == 'this month') {
-      final startOf30Days = DateTime(now.year, now.month, now.day - 29);
-      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-      return !local.isBefore(startOf30Days) && !local.isAfter(endOfToday);
+      return local.year == now.year && local.month == now.month;
     } else if (filter == 'yearly' || filter == 'this year') {
-      final startOf365Days = DateTime(now.year, now.month, now.day - 364);
-      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-      return !local.isBefore(startOf365Days) && !local.isAfter(endOfToday);
+      return local.year == now.year;
     } else if (filter == 'custom' || filter == 'custom range') {
       if (widget.startDate != null && widget.endDate != null) {
         final s = DateTime.tryParse(widget.startDate!);

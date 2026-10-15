@@ -8,16 +8,19 @@ import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../properties/models/property_model.dart';
+import '../../properties/models/property_pdf_filter_config.dart';
 import '../utils/property_share_pdf.dart';
 
 class PdfOptionSelectionDialog extends StatefulWidget {
   final List<PropertyModel> properties;
+  final PropertyPdfFilterConfig? filterConfig;
   final String? recipientPhone;
   final String? customMessage;
 
   const PdfOptionSelectionDialog({
     super.key,
     required this.properties,
+    this.filterConfig,
     this.recipientPhone,
     this.customMessage,
   });
@@ -25,6 +28,7 @@ class PdfOptionSelectionDialog extends StatefulWidget {
   static Future<bool?> show(
     BuildContext context, {
     required List<PropertyModel> properties,
+    PropertyPdfFilterConfig? filterConfig,
     String? recipientPhone,
     String? customMessage,
   }) {
@@ -32,6 +36,7 @@ class PdfOptionSelectionDialog extends StatefulWidget {
       context: context,
       builder: (context) => PdfOptionSelectionDialog(
         properties: properties,
+        filterConfig: filterConfig,
         recipientPhone: recipientPhone,
         customMessage: customMessage,
       ),
@@ -62,6 +67,7 @@ class _PdfOptionSelectionDialogState extends State<PdfOptionSelectionDialog> {
       final bytes = await PropertySharePdf.build(
         widget.properties,
         templateStyle: style,
+        filterConfig: widget.filterConfig,
       );
 
       final fileName = widget.properties.length == 1

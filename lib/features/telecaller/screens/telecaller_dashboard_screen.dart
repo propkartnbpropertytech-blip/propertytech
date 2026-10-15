@@ -268,13 +268,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
       final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
       return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
     } else if (filter == 'monthly' || filter == 'this month') {
-      final startOf30Days = DateTime(now.year, now.month, now.day - 29);
-      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-      return !local.isBefore(startOf30Days) && !local.isAfter(endOfToday);
+      return local.year == now.year && local.month == now.month;
     } else if (filter == 'yearly' || filter == 'this year') {
-      final startOf365Days = DateTime(now.year, now.month, now.day - 364);
-      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-      return !local.isBefore(startOf365Days) && !local.isAfter(endOfToday);
+      return local.year == now.year;
     } else if (filter == 'custom' || filter == 'custom range') {
       if (_customStartDate != null && _customEndDate != null) {
         final s = DateTime.tryParse(_customStartDate!);
@@ -427,9 +423,10 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     final valid = leads.where((l) => _isOpenUntouchedLead(l)).toList();
     final filtered = valid.where((l) {
       final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
-      if (_kpiLeadType == 'Listing') return isListing;
-      if (_kpiLeadType == 'Requirement') return !isListing;
-      final dt = l.telecallerAssignedAt ?? l.receivedAt;
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = (raw['created_at'] != null ? DateTime.tryParse(raw['created_at'].toString()) : null) ?? l.receivedAt;
       return _matchesKpiDateFilter(dt);
     }).toList();
 
