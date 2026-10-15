@@ -17,7 +17,6 @@ import '../../core/design_system/tokens/app_typography.dart';
 import '../../core/design_system/widgets/buttons.dart';
 import '../../core/design_system/widgets/crm_brand_lockup.dart';
 import '../../core/api/dio_client.dart';
-import 'package:dio/dio.dart';
 import '../../core/utils/seo_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -62,11 +61,13 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchCaptcha() async {
+  Future<void> _fetchCaptcha({bool preserveError = false}) async {
     if (!mounted) return;
     setState(() {
       _isLoadingCaptcha = true;
-      _captchaError = null;
+      if (!preserveError) {
+        _captchaError = null;
+      }
     });
     try {
       final res = await _authService.getCaptcha().timeout(const Duration(seconds: 4));
@@ -227,6 +228,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 type: 'forgot_password',
                               );
                               
+                              if (!context.mounted) return;
                               showDialog(
                                 context: context,
                                 builder: (context) => AlertDialog(
@@ -267,6 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   errorMsg = e.message!;
                                 }
                               }
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(errorMsg),
@@ -327,20 +330,19 @@ class _LoginScreenState extends State<LoginScreen> {
           body: BlocListener<AuthBloc, AuthState>(
             listener: (context, state) {
               if (state is AuthError) {
-                _fetchCaptcha();
                 final msg = state.message.toLowerCase();
                 if (msg.contains('verification code') || msg.contains('captcha')) {
                   setState(() => _captchaError = state.message);
+                  _fetchCaptcha(preserveError: true);
                 } else {
                   _showErrorDialog("Login Failed", state.message);
+                  _fetchCaptcha();
                 }
               } else if (state is MfaChallengeRequired) {
                 MfaVerifyDialog.show(context, state);
               }
             },
-            child: Stack(
-              children: [
-                SafeArea(
+            child: SafeArea(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       // Increase breakpoint to 950 to fit 1000px container and prevent test overflows at 800px width
@@ -409,55 +411,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                   ),
                 ),
-                BlocBuilder<AuthBloc, AuthState>(
-                  builder: (context, state) {
-                    if (state is AuthLoading) {
-                      return Container(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        child: Center(
-                          child: Card(
-                            color: CRMColors.surfaceElevatedOf(context),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'Syncing Data...',
-                                    style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Please wait while we sync listings and profile',
-                                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
-                                  ),
-                                  const SizedBox(height: 24),
-                                  SizedBox(
-                                    width: 200,
-                                    child: LinearProgressIndicator(
-                                      color: CRMColors.primaryOf(context),
-                                      backgroundColor: CRMColors.borderOf(context).withValues(alpha: 0.2),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-              ],
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
   }
 
   Widget _buildFormContent({required bool isDesktop}) {
