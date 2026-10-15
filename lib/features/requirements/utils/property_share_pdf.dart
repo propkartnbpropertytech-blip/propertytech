@@ -246,7 +246,7 @@ class PropertySharePdf {
       final p = properties[idx];
       final images = includeImages ? (propertyImagesMap[p.id] ?? []) : <Uint8List>[];
 
-      final showCode = config.isFieldEnabled('basic_property_code');
+      final showCode = config.isFieldEnabled('overview_property_code') || config.isFieldEnabled('basic_property_code');
       final headerSubtitle = properties.length > 1
           ? (showCode ? 'PROPERTY ${idx + 1} OF ${properties.length} (${p.propertyCode})' : 'PROPERTY ${idx + 1} OF ${properties.length}')
           : (showCode ? 'PROPERTY ID: ${p.propertyCode}' : '');
@@ -847,7 +847,7 @@ class PropertySharePdf {
                           _money(p.price),
                           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: goldAccent),
                         ),
-                        if (config.isFieldEnabled('basic_listing_type') && _hasValue(p.listingTypeName))
+                        if ((config.isFieldEnabled('overview_listing_type') || config.isFieldEnabled('basic_listing_type')) && _hasValue(p.listingTypeName))
                           pw.Text('Listing: ${_text(p.listingTypeName)}', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
                       ],
                     ),
@@ -1224,7 +1224,7 @@ class PropertySharePdf {
   // CATEGORIZED SECTION BUILDERS (Strictly filtered by user checkboxes)
   // =========================================================================
 
-  // 1. OVERVIEW SECTION (Based on View Details Overview Card)
+  // 1. OVERVIEW SECTION (Identity summary of the property)
   static pw.Widget? _buildOverviewSection(
     PropertyModel p,
     PdfColor primaryColor,
@@ -1238,46 +1238,30 @@ class PropertySharePdf {
     if (config.isFieldEnabled('overview_title') && p.title.trim().isNotEmpty) {
       items.add(_detailRow('Project / Title', p.title.trim(), _svgBuilding, iconHex));
     }
-    if (config.isFieldEnabled('overview_deposit') && p.deposit > 0) {
-      items.add(_detailRow('Security Deposit', _money(p.deposit), _svgPrice, iconHex));
+    if ((config.isFieldEnabled('overview_property_code') || config.isFieldEnabled('basic_property_code')) && _hasValue(p.propertyCode)) {
+      items.add(_detailRow('Property Code', _text(p.propertyCode), _svgBuilding, iconHex));
     }
-    final builtUp = (p.superBuiltupArea != null && p.superBuiltupArea! > 0)
-        ? _area(p.superBuiltupArea)
-        : ((p.carpetArea != null && p.carpetArea! > 0) ? _area(p.carpetArea) : null);
-    if (config.isFieldEnabled('overview_builtup_area') && builtUp != null) {
-      items.add(_detailRow('Built Up Area', builtUp, _svgArea, iconHex));
+    if (config.isFieldEnabled('overview_configuration') && _hasValue(p.configurationName)) {
+      items.add(_detailRow('Configuration', _text(p.configurationName), _svgBed, iconHex));
     }
-    if (config.isFieldEnabled('overview_furnishing') && _hasValue(p.furnishingTypeName)) {
-      items.add(_detailRow('Furnishing', _text(p.furnishingTypeName), _svgFurnishing, iconHex));
+    if (config.isFieldEnabled('overview_property_type') && _hasValue(p.propertyTypeName)) {
+      items.add(_detailRow('Property Type', _text(p.propertyTypeName), _svgBuilding, iconHex));
     }
-    if (config.isFieldEnabled('overview_bathrooms') && p.bathrooms > 0) {
-      items.add(_detailRow('Bathrooms', '${p.bathrooms}', _svgBath, iconHex));
+    if (config.isFieldEnabled('overview_category') && _hasValue(p.categoryName)) {
+      items.add(_detailRow('Category', _text(p.categoryName), _svgBuilding, iconHex));
     }
-    if (config.isFieldEnabled('overview_balcony') && p.balconies > 0) {
-      items.add(_detailRow('Balcony', '${p.balconies}', _svgBed, iconHex));
+    if ((config.isFieldEnabled('overview_listing_type') || config.isFieldEnabled('basic_listing_type')) && _hasValue(p.listingTypeName)) {
+      items.add(_detailRow('Listing Type', _text(p.listingTypeName), _svgPrice, iconHex));
     }
-    final availFrom = p.availableFromFormatted;
-    if (config.isFieldEnabled('overview_available_from') && _hasValue(availFrom)) {
-      items.add(_detailRow('Available From', availFrom!, _svgBuilding, iconHex));
-    }
-    final floorStr = p.floorNo != null
-        ? '${p.floorNo}${p.totalFloor != null ? ' / ${p.totalFloor}' : ''}'
-        : (p.totalFloor != null ? 'Total ${p.totalFloor}' : null);
-    if (config.isFieldEnabled('overview_floor') && floorStr != null) {
-      items.add(_detailRow('Floor Number', floorStr, _svgBuilding, iconHex));
-    }
-    if (config.isFieldEnabled('overview_age') && p.ageOfProperty != null && p.ageOfProperty! > 0) {
-      items.add(_detailRow('Age of Property', '${p.ageOfProperty} years', _svgBuilding, iconHex));
-    }
-    if (config.isFieldEnabled('overview_parking') && p.parking > 0) {
-      items.add(_detailRow('Parking Info', '${p.parking}', _svgParking, iconHex));
+    if (config.isFieldEnabled('overview_status') && _hasValue(p.propertyStatusName)) {
+      items.add(_detailRow('Status', _text(p.propertyStatusName), _svgBuilding, iconHex));
     }
 
     if (items.isEmpty) return null;
     return _buildSectionBox('Overview', _svgBuilding, items, primaryColor, iconHex);
   }
 
-  // 2. BASIC DETAILS SECTION (Based on View Details Basic Details)
+  // 2. BASIC DETAILS SECTION (Commercial, financial & administration terms)
   static pw.Widget? _buildBasicDetailsSection(
     PropertyModel p,
     PdfColor primaryColor,
@@ -1288,24 +1272,6 @@ class PropertySharePdf {
 
     final List<pw.Widget> items = [];
 
-    if (config.isFieldEnabled('basic_property_code') && _hasValue(p.propertyCode)) {
-      items.add(_detailRow('Property Code', _text(p.propertyCode), _svgBuilding, iconHex));
-    }
-    if (config.isFieldEnabled('basic_listing_type') && _hasValue(p.listingTypeName)) {
-      items.add(_detailRow('Listing Type', _text(p.listingTypeName), _svgPrice, iconHex));
-    }
-    if (config.isFieldEnabled('basic_category') && _hasValue(p.categoryName)) {
-      items.add(_detailRow('Category', _text(p.categoryName), _svgBuilding, iconHex));
-    }
-    if (config.isFieldEnabled('basic_property_type') && _hasValue(p.propertyTypeName)) {
-      items.add(_detailRow('Property Type', _text(p.propertyTypeName), _svgBuilding, iconHex));
-    }
-    if (config.isFieldEnabled('basic_configuration') && _hasValue(p.configurationName)) {
-      items.add(_detailRow('Configuration', _text(p.configurationName), _svgBed, iconHex));
-    }
-    if (config.isFieldEnabled('basic_status') && _hasValue(p.propertyStatusName)) {
-      items.add(_detailRow('Status', _text(p.propertyStatusName), _svgBuilding, iconHex));
-    }
     if (config.isFieldEnabled('basic_price') && p.price > 0) {
       items.add(_detailRow('Price / Rent', _money(p.price), _svgPrice, iconHex));
     }
@@ -1313,7 +1279,7 @@ class PropertySharePdf {
       items.add(_detailRow('Security Deposit', _money(p.deposit), _svgPrice, iconHex));
     }
     if (config.isFieldEnabled('basic_maintenance') && p.maintenance > 0) {
-      items.add(_detailRow('Maintenance', '${_money(p.maintenance)}/mo', _svgPrice, iconHex));
+      items.add(_detailRow('Maintenance Charges', '${_money(p.maintenance)}/mo', _svgPrice, iconHex));
     }
     if (config.isFieldEnabled('basic_created_at')) {
       items.add(_detailRow('Created Date', _date(p.createdAt), _svgBuilding, iconHex));
@@ -1326,7 +1292,7 @@ class PropertySharePdf {
     return _buildSectionBox('Basic Details', _svgBuilding, items, primaryColor, iconHex);
   }
 
-  // 3. SPECIFICATIONS & FLOOR DETAILS SECTION
+  // 3. SPECIFICATIONS & FLOOR DETAILS SECTION (Architectural & physical details)
   static pw.Widget? _buildSpecificationsSection(
     PropertyModel p,
     PdfColor primaryColor,
@@ -1344,28 +1310,31 @@ class PropertySharePdf {
       items.add(_detailRow('Bathrooms', '${p.bathrooms}', _svgBath, iconHex));
     }
     if (config.isFieldEnabled('specs_balconies') && p.balconies > 0) {
-      items.add(_detailRow('Balconies', '${p.balconies}', _svgBed, iconHex));
+      items.add(_detailRow('Balcony', '${p.balconies}', _svgBed, iconHex));
     }
     final floorStr = p.floorNo != null
         ? '${p.floorNo}${p.totalFloor != null ? ' / ${p.totalFloor}' : ''}'
         : (p.totalFloor != null ? 'Total ${p.totalFloor}' : null);
     if (config.isFieldEnabled('specs_floor') && floorStr != null) {
-      items.add(_detailRow('Floor', floorStr, _svgBuilding, iconHex));
+      items.add(_detailRow('Floor Number', floorStr, _svgBuilding, iconHex));
     }
     if (config.isFieldEnabled('specs_age') && p.ageOfProperty != null && p.ageOfProperty! > 0) {
-      items.add(_detailRow('Property Age', '${p.ageOfProperty} years', _svgBuilding, iconHex));
+      items.add(_detailRow('Age of Property', '${p.ageOfProperty} years', _svgBuilding, iconHex));
     }
-    if (config.isFieldEnabled('specs_super_builtup') && p.superBuiltupArea != null && p.superBuiltupArea! > 0) {
-      items.add(_detailRow('Super Built-up Area', _area(p.superBuiltupArea), _svgArea, iconHex));
+    final builtUp = (p.superBuiltupArea != null && p.superBuiltupArea! > 0)
+        ? _area(p.superBuiltupArea)
+        : ((p.carpetArea != null && p.carpetArea! > 0) ? _area(p.carpetArea) : null);
+    if (config.isFieldEnabled('specs_super_builtup') && builtUp != null) {
+      items.add(_detailRow('Built Up Area', builtUp, _svgArea, iconHex));
     }
     if (config.isFieldEnabled('specs_carpet') && p.carpetArea != null && p.carpetArea! > 0) {
-      items.add(_detailRow('Carpet Area', _area(p.carpetArea), _svgArea, iconHex));
+      items.add(_detailRow('Carpet Area Size', _area(p.carpetArea), _svgArea, iconHex));
     }
     if (config.isFieldEnabled('specs_plot') && p.plotArea != null && p.plotArea! > 0) {
-      items.add(_detailRow('Plot Area', '${p.plotArea!.toStringAsFixed(0)} sq.yds', _svgArea, iconHex));
+      items.add(_detailRow('Plot Area Size', '${p.plotArea!.toStringAsFixed(0)} sq.yds', _svgArea, iconHex));
     }
     if (config.isFieldEnabled('specs_furnishing') && _hasValue(p.furnishingTypeName)) {
-      items.add(_detailRow('Furnishing Type', _text(p.furnishingTypeName), _svgFurnishing, iconHex));
+      items.add(_detailRow('Furnishing', _text(p.furnishingTypeName), _svgFurnishing, iconHex));
     }
     if (config.isFieldEnabled('specs_facing') && _hasValue(p.facingTypeName)) {
       items.add(_detailRow('Facing', _text(p.facingTypeName), _svgLocation, iconHex));
@@ -1375,7 +1344,7 @@ class PropertySharePdf {
       items.add(_detailRow('Available From', availFrom!, _svgBuilding, iconHex));
     }
     if (config.isFieldEnabled('specs_parking') && p.parking > 0) {
-      items.add(_detailRow('Parking', '${p.parking}', _svgParking, iconHex));
+      items.add(_detailRow('Parking Info', '${p.parking}', _svgParking, iconHex));
     }
 
     if (items.isEmpty) return null;
