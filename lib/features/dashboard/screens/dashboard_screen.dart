@@ -46,6 +46,8 @@ import '../widgets/inventory_demand_analytics_section.dart';
 import '../../requirements/screens/requirements_screen.dart';
 import '../services/dashboard_service.dart';
 import '../widgets/pipeline_funnel_bar.dart';
+import '../widgets/pipeline_stage_drilldown_dialog.dart';
+import '../widgets/floating_mascot_chatbot_button.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -131,10 +133,18 @@ class _DashboardScreenState extends State<DashboardScreen>
       dateFilter: kpiFilters.dateFilter,
       isLoading: _loadingLifecycle && _lifecycleData == null,
       onStageTap: (stageKey, stageLabel) {
-        GenericKpiDrilldownDialog.show(
+        PipelineStageDrilldownDialog.show(
           context,
-          kpiKey: stageKey,
-          kpiLabel: stageLabel,
+          stage: stageKey,
+          stageLabel: stageLabel,
+          initialFilters: kpiFilters.toJson(),
+        );
+      },
+      onSalesUserTap: (userId, userName) {
+        PipelineStageDrilldownDialog.show(
+          context,
+          salesUserId: userId,
+          salesUserName: userName,
           initialFilters: kpiFilters.toJson(),
         );
       },
@@ -184,20 +194,20 @@ class _DashboardScreenState extends State<DashboardScreen>
       final state = bloc.state;
       return state is Authenticated ? state.user.role : '';
     });
+
+    final Widget dashboardView;
     if (RoleGuard.isTelecaller(role)) {
-      return const TelecallerDashboardScreen();
-    }
-    if (RoleGuard.isSales(role)) {
-      return const SalesDashboardScreen();
-    }
+      dashboardView = const TelecallerDashboardScreen();
+    } else if (RoleGuard.isSales(role)) {
+      dashboardView = const SalesDashboardScreen();
+    } else {
+      Theme.of(context);
+      final userName = context.select<AuthBloc, String>((bloc) {
+        final state = bloc.state;
+        return state is Authenticated ? state.user.fullName : '';
+      });
 
-    Theme.of(context);
-    final userName = context.select<AuthBloc, String>((bloc) {
-      final state = bloc.state;
-      return state is Authenticated ? state.user.fullName : '';
-    });
-
-    return MultiBlocListener(
+      dashboardView = MultiBlocListener(
       listeners: [
         BlocListener<RequirementsBloc, RequirementsState>(
           listenWhen: (previous, current) =>
@@ -329,10 +339,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                           _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
                           const SizedBox(height: 16),
 
-                          // 3.5 Authoritative Lead Pipeline Funnel Bar
-                          _buildPipelineFunnelSection(kpiFilters),
-                          const SizedBox(height: 20),
-
                           // 4. Responsive Main Content Area
                           LayoutBuilder(
                             builder: (context, constraints) {
@@ -353,8 +359,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   _buildDynamicCustomKpisSection(kpis, kpiFilters),
                                   const SizedBox(height: 20),
 
-                                  // Inventory & Demand Analytics Section
+                                  // Authoritative Lead Pipeline Funnel Bar (above Locality Intelligence)
+                                  _buildPipelineFunnelSection(kpiFilters),
+                                  const SizedBox(height: 20),
 
+                                  // Inventory & Demand Analytics Section (Locality Intelligence)
                                   InventoryDemandAnalyticsSection(
                                     businessType: kpiFilters.businessType,
                                   ),
@@ -411,12 +420,25 @@ class _DashboardScreenState extends State<DashboardScreen>
         if (_isLoadingProperty)
           Positioned.fill(
             child: Container(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
               child: const Center(child: CircularProgressIndicator()),
             ),
           ),
-      ],
-    ),
+        ],
+      ),
+    );
+  }
+
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      dashboardView,
+      const Positioned(
+        bottom: 24,
+        right: 24,
+        child: FloatingMascotChatbotButton(),
+      ),
+    ],
   );
 }
 
@@ -572,10 +594,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
           const SizedBox(height: 14),
 
-          // 3.5 Authoritative Lead Pipeline Funnel Bar
-          _buildPipelineFunnelSection(kpiFilters),
-          const SizedBox(height: 16),
-
           // 4. Telecaller Section KPIs
           _buildTelecallerKpisSection(data, kpis, kpiFilters),
           const SizedBox(height: 14),
@@ -588,7 +606,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           _buildDynamicCustomKpisSection(kpis, kpiFilters),
           const SizedBox(height: 16),
 
-          // Inventory & Demand Analytics Section
+          // 7. Authoritative Lead Pipeline Funnel Bar (above Locality Intelligence)
+          _buildPipelineFunnelSection(kpiFilters),
+          const SizedBox(height: 16),
+
+          // Inventory & Demand Analytics Section (Locality Intelligence)
           InventoryDemandAnalyticsSection(
             businessType: kpiFilters.businessType,
           ),

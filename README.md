@@ -86,6 +86,8 @@ flowchart LR
 | 🏗️ **Builders** | Developer / builder partnerships and tiers | Team |
 | 🏘️ **Owners** | Owner directory linked to their listings | Team |
 | 🧍 **Clients** | Client records, sources, and pipeline stages | Team |
+| 🛠️ **Support** | 3-step dynamic role-based issue reporting (sidebar page, function/KPI, and issue details) | Everyone |
+| 🤖 **RoakBot** | Embedded AI mascot assistant with Web postMessage bindings and interactive dialog | Everyone |
 
 ---
 
@@ -146,7 +148,8 @@ A requirement is a living deal — not a static form.
 
 - 📱 WhatsApp chat from the lead card
 - 🔗 Public shortlist links clients can open on any device
-- 📄 Branded multi-property PDF share
+- 📄 Branded multi-property PDF share with customizable field deduplication (Available From, Parking, Furnishing, Deposit)
+- ☎️ Live telecaller queue management (CNR, Callbacks, Follow-ups) with instant Not Interested handling
 - 📅 Follow-up dates, re-followups, and site-visit statuses
 - 🧠 Auto-match against inventory (budget, area, config, furnishing, facing)
 - 🗂️ Statuses such as Active, Closed, Suspended, Follow-up, Site Visit, Not Interested
@@ -169,8 +172,10 @@ The home screen of the desk.
 
 | Widget | What you see |
 | --- | --- |
-| 👋 Welcome | Personalized greeting |
-| 📈 KPIs | Total, available, sold, rented, requirements, users — with trends |
+| 👋 Welcome | Personalized user greeting with animated name shimmer |
+| 📈 Reconciled KPIs | Available Inventory, Total Leads, Telecaller Operations (Telecallers, Allocated, CNR, Not Interested), Sales Pipeline (Sales Users, Handover, Site Visits, Won), and Dynamic Custom KPIs |
+| 🧬 Lead Lifecycle Pipeline | Real-time stage distribution (Total, Callbacks, Follow-ups, Negotiation, Won, Lost) positioned above Locality Intelligence with all KPIs above it |
+| 🗺️ Locality Intelligence | City & area analytics, inventory-demand supply ratios, and interactive leaflet map |
 | 🏘️ Mix | Rental vs Re-Sale availability, rented / sold, won requirements |
 | 🏆 Performance | Top broker, top area, top property, monthly growth |
 | 📅 Today | Site-visit schedule |

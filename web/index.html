@@ -97,9 +97,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@400;500;600;700&family=Inclusive+Sans:wght@400;700&display=swap">
 
-  <!-- Preload Key Landing Assets for Instant Fetch -->
-  <link rel="preload" as="image" href="assets/assets/images/landing_villa.webp" type="image/webp">
-
   <!-- Google Tag Manager & Microsoft Clarity Tracking (Production Only) -->
   <script type="text/javascript">
     if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
@@ -254,5 +251,27 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <!-- Roakbot Dynamic Widget (Auto-syncs all updates) -->
+  <style>
+    #roakbot-launcher, #roakbot-container, #roakbot-invitation-bubble, #roakbot-branding-badge {
+      pointer-events: auto !important;
+      z-index: 999999 !important;
+    }
+  </style>
+  <script>
+    window.roakbotConfig = {
+      botId: "bot_fc456356",
+      launcherPosition: "bottom_right",
+      launcherAnimation: "rotate_fade",
+      launcherAnimationDuration: 450,
+      launcherImageUrl: "https://res.cloudinary.com/haacwr5z/image/upload/v1792041589/roakbot/k4t0dfawrgayape2ztkr.gif",
+      invitationBubbleText: "👋 Need assistance? Tap to chat!",
+      showInvitationBubble: true,
+      launcherText: "👋 Need assistance? Tap to chat!",
+      primaryColor: "#0F172A",
+    };
+  </script>
+  <script src="https://roakbot.web.app/widget.js" data-bot-id="bot_fc456356" async></script>
 </body>
 </html>

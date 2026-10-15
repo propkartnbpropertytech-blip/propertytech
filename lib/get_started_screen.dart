@@ -39,9 +39,12 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
     super.didChangeDependencies();
     if (!_imagePrecached) {
       _imagePrecached = true;
-      // Precache fast-fetching WebP & logo into GPU memory to eliminate render latency
-      precacheImage(const AssetImage('assets/images/landing_villa.webp'), context);
-      precacheImage(const AssetImage('assets/images/landing_logo.png'), context);
+      // Lazily precache assets after the initial frame has rendered so the UI is immediately responsive
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        precacheImage(const AssetImage('assets/images/landing_villa.webp'), context).catchError((_) {});
+        precacheImage(const AssetImage('assets/images/landing_logo.webp'), context).catchError((_) {});
+      });
     }
   }
 
@@ -90,7 +93,7 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
           return Stack(
             fit: StackFit.expand,
             children: [
-              // 1. Photographic Villa Background (fast-fetching WebP with progressive JPEG fallback)
+              // 1. Photographic Villa Background (fast-fetching WebP with progressive fallback & smooth frameBuilder)
               Positioned.fill(
                 child: Image.asset(
                   'assets/images/landing_villa.webp',
@@ -100,6 +103,17 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
                       ? Alignment.center
                       : const Alignment(0.15, 0.0),
                   filterQuality: FilterQuality.medium,
+                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                    if (wasSynchronouslyLoaded || frame != null) {
+                      return AnimatedOpacity(
+                        opacity: frame != null ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeOutCubic,
+                        child: child,
+                      );
+                    }
+                    return const ColoredBox(color: _charcoalDark);
+                  },
                   errorBuilder: (context, error, stackTrace) {
                     return Image.asset(
                       'assets/images/landing_villa.jpg',
@@ -109,6 +123,17 @@ class _GetStartedScreenState extends State<GetStartedScreen> {
                           ? Alignment.center
                           : const Alignment(0.15, 0.0),
                       filterQuality: FilterQuality.medium,
+                      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                        if (wasSynchronouslyLoaded || frame != null) {
+                          return AnimatedOpacity(
+                            opacity: frame != null ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.easeOutCubic,
+                            child: child,
+                          );
+                        }
+                        return const ColoredBox(color: _charcoalDark);
+                      },
                       errorBuilder: (context, error, stackTrace) {
                         return const ColoredBox(color: _charcoalDark);
                       },
@@ -230,15 +255,20 @@ class _LandingNavigationBar extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: Image.asset(
-            'assets/images/landing_logo.png',
+            'assets/images/landing_logo.webp',
             fit: BoxFit.cover,
-            filterQuality: FilterQuality.high,
+            filterQuality: FilterQuality.medium,
             errorBuilder: (context, error, stackTrace) => Image.asset(
-              'assets/app_icon.png',
+              'assets/images/landing_logo.png',
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const ColoredBox(
-                color: Colors.black,
-                child: Icon(Icons.apartment_rounded, color: Color(0xFFD9AD6E)),
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (context, error, stackTrace) => Image.asset(
+                'assets/app_icon.png',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const ColoredBox(
+                  color: Colors.black,
+                  child: Icon(Icons.apartment_rounded, color: Color(0xFFD9AD6E)),
+                ),
               ),
             ),
           ),
