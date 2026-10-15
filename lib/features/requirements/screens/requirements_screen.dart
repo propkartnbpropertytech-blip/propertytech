@@ -51,6 +51,7 @@ import '../../../core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../../core/utils/formatters.dart';
 import '../widgets/pdf_option_selection_dialog.dart';
+import '../../properties/widgets/property_pdf_content_selection_dialog.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/utils/team_user_visibility.dart';
 import '../../../core/security/permission_matrix_service.dart';
@@ -12033,7 +12034,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                         .where((m) => selectedPropIds.contains(m.property.id))
                                         .map((m) => m.property)
                                         .toList();
-                                    await PdfOptionSelectionDialog.show(
+                                    await PropertyPdfContentSelectionDialog.show(
                                       context,
                                       properties: selected,
                                       recipientPhone: req.clientMobile,

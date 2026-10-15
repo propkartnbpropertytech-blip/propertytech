@@ -4,6 +4,7 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/design_system/widgets/crm_brand_lockup.dart';
+import '../../settings/services/page_control_service.dart';
 import 'user_profile_card.dart';
 
 class ModernSidebar extends StatefulWidget {
@@ -100,7 +101,10 @@ class _ModernSidebarState extends State<ModernSidebar> {
             // ── Navigation Items ───────────────────────────────
             Expanded(
               child: ListenableBuilder(
-                listenable: PermissionMatrixService.instance,
+                listenable: Listenable.merge([
+                  PermissionMatrixService.instance,
+                  PageControlService.instance,
+                ]),
                 builder: (context, _) => ListView(
                   padding: EdgeInsets.symmetric(
                     vertical: 12,
@@ -297,12 +301,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
     final isDark = themeManager.isDarkMode;
     final primaryColor = themeManager.primaryColor;
     final primaryHoverColor = themeManager.primaryHoverColor;
+    final isUnderDev = PageControlService.instance.isRouteUnderDevelopment(route, widget.userRole);
 
     if (widget.isCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Tooltip(
-          message: title,
+          message: isUnderDev ? '$title (Under Development)' : title,
           child: Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(10),
@@ -331,7 +336,9 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         ? (isDark
                             ? primaryColor.withValues(alpha: 0.45)
                             : primaryColor.withValues(alpha: 0.35))
-                        : Colors.transparent,
+                        : (isUnderDev
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                            : Colors.transparent),
                     width: 1,
                   ),
                 ),
@@ -342,13 +349,28 @@ class _ModernSidebarState extends State<ModernSidebar> {
                       Icon(
                         icon,
                         size: 20,
-                        color: isActive
-                            ? (isDark ? primaryHoverColor : primaryColor)
-                            : (isDark
-                                ? const Color(0xFF94A3B8)
-                                : const Color(0xFF4A5568)),
+                        color: isUnderDev
+                            ? const Color(0xFFD97706)
+                            : (isActive
+                                ? (isDark ? primaryHoverColor : primaryColor)
+                                : (isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF4A5568))),
                       ),
-                      if (badgeCount != null && badgeCount > 0)
+                      if (isUnderDev)
+                        Positioned(
+                          top: -2,
+                          right: -4,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF59E0B),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        )
+                      else if (badgeCount != null && badgeCount > 0)
                         Positioned(
                           top: -2,
                           right: -4,
@@ -401,7 +423,9 @@ class _ModernSidebarState extends State<ModernSidebar> {
                     ? (isDark
                         ? primaryColor.withValues(alpha: 0.45)
                         : primaryColor.withValues(alpha: 0.35))
-                    : Colors.transparent,
+                    : (isUnderDev
+                        ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                        : Colors.transparent),
                 width: 1,
               ),
             ),
@@ -410,11 +434,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
                 Icon(
                   icon,
                   size: 20,
-                  color: isActive
-                      ? (isDark ? primaryHoverColor : primaryColor)
-                      : (isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF4A5568)),
+                  color: isUnderDev
+                      ? const Color(0xFFD97706)
+                      : (isActive
+                          ? (isDark ? primaryHoverColor : primaryColor)
+                          : (isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF4A5568))),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -432,6 +458,27 @@ class _ModernSidebarState extends State<ModernSidebar> {
                     ),
                   ),
                 ),
+                if (isUnderDev)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: const Text(
+                      'Under Dev',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFD97706),
+                      ),
+                    ),
+                  ),
                 if (isActive)
                   Container(
                     width: 7,
@@ -488,14 +535,17 @@ class _ModernSidebarState extends State<ModernSidebar> {
         widget.currentPath.startsWith('/campaign/connections');
     final isMetaActive = widget.currentPath.startsWith('/campaign/meta');
     final isHousingActive = widget.currentPath.startsWith('/campaign/housing');
-    final isLeadsActive = isMetaActive || isHousingActive ||
-        widget.currentPath.startsWith('/campaign/leads');
+
+    final isAnyCampaignUnderDev =
+        PageControlService.instance.isRouteUnderDevelopment('/campaign/connections', widget.userRole) ||
+        PageControlService.instance.isRouteUnderDevelopment('/campaign/meta', widget.userRole) ||
+        PageControlService.instance.isRouteUnderDevelopment('/campaign/housing', widget.userRole);
 
     if (widget.isCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Tooltip(
-          message: 'Campaign',
+          message: isAnyCampaignUnderDev ? 'Campaign (Under Development)' : 'Campaign',
           child: Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(10),
@@ -524,19 +574,41 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         ? (isDark
                             ? primaryColor.withValues(alpha: 0.35)
                             : primaryColor.withValues(alpha: 0.25))
-                        : Colors.transparent,
+                        : (isAnyCampaignUnderDev
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                            : Colors.transparent),
                     width: 1,
                   ),
                 ),
                 child: Center(
-                  child: Icon(
-                    Icons.campaign_outlined,
-                    size: 20,
-                    color: isChildActive
-                        ? (isDark ? primaryHoverColor : primaryColor)
-                        : (isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF4A5568)),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        Icons.campaign_outlined,
+                        size: 20,
+                        color: isAnyCampaignUnderDev
+                            ? const Color(0xFFD97706)
+                            : (isChildActive
+                                ? (isDark ? primaryHoverColor : primaryColor)
+                                : (isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF4A5568))),
+                      ),
+                      if (isAnyCampaignUnderDev)
+                        Positioned(
+                          top: -2,
+                          right: -4,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF59E0B),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -580,7 +652,9 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         ? (isDark
                             ? primaryColor.withValues(alpha: 0.35)
                             : primaryColor.withValues(alpha: 0.25))
-                        : Colors.transparent,
+                        : (isAnyCampaignUnderDev
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                            : Colors.transparent),
                     width: 1,
                   ),
                 ),
@@ -589,11 +663,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
                     Icon(
                       Icons.campaign_outlined,
                       size: 20,
-                      color: isChildActive
-                          ? (isDark ? primaryHoverColor : primaryColor)
-                          : (isDark
-                              ? const Color(0xFF94A3B8)
-                              : const Color(0xFF4A5568)),
+                      color: isAnyCampaignUnderDev
+                          ? const Color(0xFFD97706)
+                          : (isChildActive
+                              ? (isDark ? primaryHoverColor : primaryColor)
+                              : (isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF4A5568))),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -612,6 +688,27 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         ),
                       ),
                     ),
+                    if (isAnyCampaignUnderDev)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: const Text(
+                          'Under Dev',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFD97706),
+                          ),
+                        ),
+                      ),
                     AnimatedRotation(
                       turns: _isCampaignExpanded ? 0.5 : 0.0,
                       duration: const Duration(milliseconds: 200),
@@ -700,6 +797,7 @@ class _ModernSidebarState extends State<ModernSidebar> {
     required Color primaryColor,
     required Color primaryHoverColor,
   }) {
+    final isUnderDev = PageControlService.instance.isRouteUnderDevelopment(route, widget.userRole);
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(8),
@@ -727,7 +825,9 @@ class _ModernSidebarState extends State<ModernSidebar> {
                   ? (isDark
                       ? primaryColor.withValues(alpha: 0.45)
                       : primaryColor.withValues(alpha: 0.35))
-                  : Colors.transparent,
+                  : (isUnderDev
+                      ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                      : Colors.transparent),
               width: 1,
             ),
           ),
@@ -736,11 +836,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
               Icon(
                 icon,
                 size: 16,
-                color: isActive
-                    ? (isDark ? primaryHoverColor : primaryColor)
-                    : (isDark
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFF64748B)),
+                color: isUnderDev
+                    ? const Color(0xFFD97706)
+                    : (isActive
+                        ? (isDark ? primaryHoverColor : primaryColor)
+                        : (isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B))),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -759,6 +861,27 @@ class _ModernSidebarState extends State<ModernSidebar> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (isUnderDev)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  margin: const EdgeInsets.only(right: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: const Text(
+                    'Under Dev',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFD97706),
+                    ),
+                  ),
+                ),
               if (isActive)
                 Container(
                   width: 6,

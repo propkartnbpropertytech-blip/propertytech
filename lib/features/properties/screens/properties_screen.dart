@@ -39,6 +39,7 @@ import '../../../core/utils/file_downloader.dart';
 import '../../../core/utils/formatters.dart';
 import '../../requirements/utils/property_share_pdf.dart';
 import '../../requirements/widgets/pdf_option_selection_dialog.dart';
+import '../widgets/property_pdf_content_selection_dialog.dart';
 
 import '../../requirements/models/requirement_model.dart';
 import '../../requirements/repository/requirements_repository.dart';
@@ -549,7 +550,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           onPressed: (isGeneratingLink || isSharingPdf)
                               ? null
                               : () async {
-                                  await PdfOptionSelectionDialog.show(
+                                  await PropertyPdfContentSelectionDialog.show(
                                     context,
                                     properties: [p],
                                     recipientPhone: p.ownerMobile,
@@ -955,7 +956,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                   isSharingPdf
                               ? null
                               : () async {
-                                  await PdfOptionSelectionDialog.show(
+                                  await PropertyPdfContentSelectionDialog.show(
                                     context,
                                     properties: currentlySelected,
                                   );
