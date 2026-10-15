@@ -1205,16 +1205,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final archiveHeaderButton = CRMButton(
       label: isArchiveMode
-          ? 'Exit Archive'
+          ? 'Exit Listed'
           : (isMobile
-              ? 'Archive ($totalArchiveCount)'
+              ? 'Listed ($totalArchiveCount)'
               : (isPropertyListing
                   ? (_cachedListedCount == 0 && _cachedArchivedReqCount > 0
-                      ? 'Requirement Archive ($_cachedArchivedReqCount)'
-                      : 'Property Archive ($_cachedListedCount)')
+                      ? 'Requirement Listed ($_cachedArchivedReqCount)'
+                      : 'Property Listed ($_cachedListedCount)')
                   : (_cachedArchivedReqCount == 0 && _cachedListedCount > 0
-                      ? 'Property Archive ($_cachedListedCount)'
-                      : 'Requirement Archive ($_cachedArchivedReqCount)'))),
+                      ? 'Property Listed ($_cachedListedCount)'
+                      : 'Requirement Listed ($_cachedArchivedReqCount)'))),
       prefixIcon: isArchiveMode ? Icons.arrow_back_rounded : Icons.inventory_2_outlined,
       variant: isArchiveMode ? CRMButtonVariant.primary : CRMButtonVariant.outline,
       height: 36,
@@ -1842,7 +1842,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             setState(() {});
             AppStatusSnackBar.show(
               context,
-              message: isArchive ? 'Lead moved to Property Listing Archive table.' : 'Lead moved to Property Listing table.',
+              message: isArchive ? 'Lead moved to Property Listed table.' : 'Lead moved to Property Listing table.',
               backgroundColor: const Color(0xFF0284C7),
               duration: const Duration(seconds: 5),
               actionLabel: 'View',
@@ -1884,7 +1884,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             setState(() {});
             AppStatusSnackBar.show(
               context,
-              message: isArchive ? 'Lead moved to Requirement Archive table.' : 'Lead moved to Requirement table.',
+              message: isArchive ? 'Lead moved to Requirement Listed table.' : 'Lead moved to Requirement table.',
               backgroundColor: const Color(0xFF8B5CF6),
               duration: const Duration(seconds: 5),
               actionLabel: 'View',
@@ -2144,7 +2144,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _selectedSection == 'Property Listing' ? 'Archive Property' : 'Archive Requirement',
+                        _selectedSection == 'Property Listing' ? 'Property Listed' : 'Requirement Listed',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
@@ -2155,8 +2155,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       ),
                       Text(
                         _selectedSection == 'Property Listing'
-                            ? 'Save to Property Listing archive'
-                            : 'Save to Requirement archive',
+                            ? 'Save to Property Listed'
+                            : 'Save to Requirement Listed',
                         style: const TextStyle(fontSize: 11, color: Colors.grey),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -6921,11 +6921,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final themeColor = isListed ? const Color(0xFF10B981) : const Color(0xFF6366F1);
     final count = isListed ? _cachedListedCount : _cachedArchivedReqCount;
     final title = isListed
-        ? 'Archive: Listed Properties ($count)'
-        : 'Archive: Requirements ($count)';
+        ? 'Listed Properties ($count)'
+        : 'Requirement Listed ($count)';
     final desc = isListed
-        ? 'Showing closed and listed property leads saved in the archive. You can search, filter, export, or change status to restore them to active leads.'
-        : 'Showing archived requirement leads saved in the archive. You can search, filter, export, or change status to restore them to active leads.';
+        ? 'Showing closed and listed property leads. You can search, filter, export, or change status to restore them to active leads.'
+        : 'Showing listed requirement leads. You can search, filter, export, or change status to restore them to active leads.';
 
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.m),
@@ -6969,7 +6969,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
           const SizedBox(width: 12),
           CRMButton(
-            label: 'Exit Archive',
+            label: 'Exit Listed',
             prefixIcon: Icons.arrow_back_rounded,
             height: 32,
             variant: CRMButtonVariant.secondary,
@@ -8288,7 +8288,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             : 'Requirement lead archived.',
         backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
         duration: const Duration(seconds: 5),
-        actionLabel: 'View Archive',
+        actionLabel: 'View Listed',
         onAction: () {
           setState(() {
             _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
@@ -8350,7 +8350,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         message: '$count lead(s) archived.',
         backgroundColor: isProp ? const Color(0xFF10B981) : const Color(0xFF6366F1),
         duration: const Duration(seconds: 5),
-        actionLabel: 'View Archive',
+        actionLabel: 'View Listed',
         onAction: () {
           setState(() {
             _viewMode = isProp ? 'archive_listed' : 'archive_requirements';
@@ -8410,10 +8410,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         unawaited(_loadFollowups());
         AppStatusSnackBar.show(
           context,
-          message: '$count property listing(s) marked as Listed and saved in Archive.',
+          message: '$count property listing(s) marked as Property Listed.',
           backgroundColor: const Color(0xFF10B981),
           duration: const Duration(seconds: 5),
-          actionLabel: 'View Archive',
+          actionLabel: 'View Listed',
           onAction: () {
             setState(() {
               _viewMode = 'archive_listed';
@@ -8435,10 +8435,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         unawaited(_loadFollowups());
         AppStatusSnackBar.show(
           context,
-          message: '$count requirement lead(s) archived and saved in Archive.',
+          message: '$count requirement lead(s) marked as Requirement Listed.',
           backgroundColor: const Color(0xFF6366F1),
           duration: const Duration(seconds: 5),
-          actionLabel: 'View Archive',
+          actionLabel: 'View Listed',
           onAction: () {
             setState(() {
               _viewMode = 'archive_requirements';
@@ -8466,7 +8466,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         AppStatusSnackBar.show(
           context,
           message: isArchive
-              ? '$count lead(s) moved to Requirement Archive table.'
+              ? '$count lead(s) moved to Requirement Listed table.'
               : '$count lead(s) moved to Requirement table.',
           backgroundColor: const Color(0xFF8B5CF6),
           duration: const Duration(seconds: 5),
@@ -8512,7 +8512,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         AppStatusSnackBar.show(
           context,
           message: isArchive
-              ? '$count lead(s) moved to Property Listing Archive table.'
+              ? '$count lead(s) moved to Property Listed table.'
               : '$count lead(s) moved to Property Listing table.',
           backgroundColor: const Color(0xFF0284C7),
           duration: const Duration(seconds: 5),
