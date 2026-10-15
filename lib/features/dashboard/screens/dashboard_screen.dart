@@ -339,10 +339,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                           _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
                           const SizedBox(height: 16),
 
-                          // 3.5 Authoritative Lead Pipeline Funnel Bar
-                          _buildPipelineFunnelSection(kpiFilters),
-                          const SizedBox(height: 20),
-
                           // 4. Responsive Main Content Area
                           LayoutBuilder(
                             builder: (context, constraints) {
@@ -363,8 +359,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   _buildDynamicCustomKpisSection(kpis, kpiFilters),
                                   const SizedBox(height: 20),
 
-                                  // Inventory & Demand Analytics Section
+                                  // Authoritative Lead Pipeline Funnel Bar (above Locality Intelligence)
+                                  _buildPipelineFunnelSection(kpiFilters),
+                                  const SizedBox(height: 20),
 
+                                  // Inventory & Demand Analytics Section (Locality Intelligence)
                                   InventoryDemandAnalyticsSection(
                                     businessType: kpiFilters.businessType,
                                   ),
@@ -595,10 +594,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           _buildGlobalFilterBar(kpiFilters, isKpiLoading, kpis),
           const SizedBox(height: 14),
 
-          // 3.5 Authoritative Lead Pipeline Funnel Bar
-          _buildPipelineFunnelSection(kpiFilters),
-          const SizedBox(height: 16),
-
           // 4. Telecaller Section KPIs
           _buildTelecallerKpisSection(data, kpis, kpiFilters),
           const SizedBox(height: 14),
@@ -611,7 +606,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           _buildDynamicCustomKpisSection(kpis, kpiFilters),
           const SizedBox(height: 16),
 
-          // Inventory & Demand Analytics Section
+          // 7. Authoritative Lead Pipeline Funnel Bar (above Locality Intelligence)
+          _buildPipelineFunnelSection(kpiFilters),
+          const SizedBox(height: 16),
+
+          // Inventory & Demand Analytics Section (Locality Intelligence)
           InventoryDemandAnalyticsSection(
             businessType: kpiFilters.businessType,
           ),
