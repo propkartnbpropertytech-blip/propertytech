@@ -1383,8 +1383,9 @@ class IntegrationService extends ChangeNotifier {
         final currentUserId = RoleGuard.currentUser?.id;
         final currentRaw = Map<String, dynamic>.from(_leads[idx].rawJson);
         final cleanReason = reason?.trim();
+        final isNotInterested = status == 'Not interested';
         if (cleanReason != null && cleanReason.isNotEmpty) {
-          if (status == 'Not interested') {
+          if (isNotInterested) {
             currentRaw['not_interested_reason'] = cleanReason;
             currentRaw['not_interested_notes'] = cleanReason;
           } else if (status == 'Archived' || status == 'Property Listed' || status == 'Listed') {
@@ -1393,20 +1394,25 @@ class IntegrationService extends ChangeNotifier {
             currentRaw['archive_reason'] = cleanReason;
           }
         }
+        if (isNotInterested) {
+          currentRaw.remove('_callback');
+          currentRaw.remove('callback');
+        }
         final isArchivedStatus = status == 'Archived' || status == 'Property Listed' || status == 'Listed';
+        final clearCb = isArchivedStatus || isNotInterested;
         _leads[idx] = _leads[idx].copyWith(
           campaignStatus: status,
-          allocationStatus: status == 'Not interested'
+          allocationStatus: isNotInterested
               ? 'RELEASED'
               : (isArchivedStatus ? (status == 'Property Listed' ? 'LISTED' : 'ARCHIVED') : _leads[idx].allocationStatus),
           rawJson: currentRaw,
           statusUpdatedByName: currentUserName.isNotEmpty ? currentUserName : _leads[idx].statusUpdatedByName,
           statusUpdatedById: currentUserId ?? _leads[idx].statusUpdatedById,
           statusUpdatedAt: DateTime.now(),
-          notInterestedByName: status == 'Not interested' ? currentUserName : _leads[idx].notInterestedByName,
-          notInterestedById: status == 'Not interested' ? currentUserId : _leads[idx].notInterestedById,
-          notInterestedAt: status == 'Not interested' ? DateTime.now() : _leads[idx].notInterestedAt,
-          notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
+          notInterestedByName: isNotInterested ? currentUserName : _leads[idx].notInterestedByName,
+          notInterestedById: isNotInterested ? currentUserId : _leads[idx].notInterestedById,
+          notInterestedAt: isNotInterested ? DateTime.now() : _leads[idx].notInterestedAt,
+          notInterestedReason: (isNotInterested && cleanReason != null && cleanReason.isNotEmpty)
               ? cleanReason
               : _leads[idx].notInterestedReason,
           archivedByName: isArchivedStatus ? currentUserName : _leads[idx].archivedByName,
@@ -1416,10 +1422,10 @@ class IntegrationService extends ChangeNotifier {
           archiveReason: isArchivedStatus ? cleanReason : _leads[idx].archiveReason,
           followupScheduledAt: isFollowup ? _leads[idx].followupScheduledAt : null,
           followupStatus: isFollowup ? _leads[idx].followupStatus : 'Completed',
-          callbackScheduledAt: isArchivedStatus ? null : _leads[idx].callbackScheduledAt,
-          callbackStatus: isArchivedStatus ? 'Completed' : _leads[idx].callbackStatus,
+          callbackScheduledAt: clearCb ? null : _leads[idx].callbackScheduledAt,
+          callbackStatus: clearCb ? 'Completed' : _leads[idx].callbackStatus,
           clearFollowup: !isFollowup,
-          clearCallback: isArchivedStatus,
+          clearCallback: clearCb,
         );
         notifyListeners();
         await _persistLeads();
@@ -1452,13 +1458,15 @@ class IntegrationService extends ChangeNotifier {
             if (leadIdx != -1) {
               final isFollowup = status == 'Follow up' || status == 'Follow-up';
               final isArchivedStatus = status == 'Archived' || status == 'Property Listed' || status == 'Listed';
+              final isNotInterested = status == 'Not interested';
+              final clearCb = isArchivedStatus || isNotInterested;
               final cleanReason = reason?.trim();
               _leads[leadIdx] = updatedLead.copyWith(
                 campaignStatus: status,
-                allocationStatus: status == 'Not interested'
+                allocationStatus: isNotInterested
                     ? 'RELEASED'
                     : (isArchivedStatus ? (status == 'Property Listed' ? 'LISTED' : 'ARCHIVED') : (updatedLead.allocationStatus ?? _leads[leadIdx].allocationStatus)),
-                notInterestedReason: (status == 'Not interested' && cleanReason != null && cleanReason.isNotEmpty)
+                notInterestedReason: (isNotInterested && cleanReason != null && cleanReason.isNotEmpty)
                     ? cleanReason
                     : (updatedLead.notInterestedReason ?? _leads[leadIdx].notInterestedReason),
                 archiveRemark: (isArchivedStatus && cleanReason != null && cleanReason.isNotEmpty)
@@ -1473,10 +1481,10 @@ class IntegrationService extends ChangeNotifier {
                 assignedToName: updatedLead.assignedToName ?? _leads[leadIdx].assignedToName,
                 followupScheduledAt: isFollowup ? updatedLead.followupScheduledAt : null,
                 followupStatus: isFollowup ? updatedLead.followupStatus : 'Completed',
-                callbackScheduledAt: isArchivedStatus ? null : updatedLead.callbackScheduledAt,
-                callbackStatus: isArchivedStatus ? 'Completed' : updatedLead.callbackStatus,
+                callbackScheduledAt: clearCb ? null : updatedLead.callbackScheduledAt,
+                callbackStatus: clearCb ? 'Completed' : updatedLead.callbackStatus,
                 clearFollowup: !isFollowup,
-                clearCallback: isArchivedStatus,
+                clearCallback: clearCb,
               );
               notifyListeners();
               await _persistLeads();
@@ -2064,6 +2072,8 @@ class IntegrationService extends ChangeNotifier {
       }
       final currentRaw = Map<String, dynamic>.from(lead.rawJson);
       if (isNotInterested) {
+        currentRaw.remove('_callback');
+        currentRaw.remove('callback');
         if (remarks != null && remarks.isNotEmpty) {
           currentRaw['not_interested_reason'] = remarks;
           currentRaw['not_interested_notes'] = remarks;

@@ -709,7 +709,7 @@ class _TelecallerCallbacksViewState extends State<_TelecallerCallbacksView> {
                                         if (item['id'] != null) {
                                           context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(item['id'].toString()));
                                         }
-                                        context.read<TelecallerCallbacksBloc>().add(TelecallerCallbacksRequested());
+                                        _fetchFromBloc();
                                       },
                                     ),
                                   ),
@@ -1755,6 +1755,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                 ),
               for (final raw in state.items.where((raw) => queueItemMatchesSearch(raw, _query) && (queueLeadType(raw) == 'Property Listing') == (_section == 'Property Listing')))
                 _CnrCard(
+                  key: ValueKey(_campaignLeadId(raw is Map ? raw : {})),
                   lead: Map<String, dynamic>.from(raw as Map),
                   onOutcomeRecorded: () {
                     context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
@@ -2120,11 +2121,20 @@ class _CnrCardState extends State<_CnrCard> {
                         clientName: name,
                         phone: phone,
                         onDone: () {
-                          context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
-                          if (widget.lead['id'] != null) {
-                            context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
-                          }
-                          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                          try {
+                            context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                            if (widget.lead['id'] != null) {
+                              context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
+                            }
+                            context.read<TelecallerCallbacksBloc>().add(const TelecallerCallbacksRequested());
+                          } catch (_) {}
+                          try {
+                            context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                            if (widget.lead['id'] != null) {
+                              context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
+                            }
+                            context.read<TelecallerCnrBloc>().add(const TelecallerCnrRequested());
+                          } catch (_) {}
                           _load();
                           widget.onOutcomeRecorded();
                         },
@@ -2258,11 +2268,20 @@ class _CnrCardState extends State<_CnrCard> {
                 clientName: name,
                 phone: phone,
                 onDone: () {
-                  context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
-                  if (widget.lead['id'] != null) {
-                    context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
-                  }
-                  context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                  try {
+                    context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(leadId));
+                    if (widget.lead['id'] != null) {
+                      context.read<TelecallerCallbacksBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
+                    }
+                    context.read<TelecallerCallbacksBloc>().add(const TelecallerCallbacksRequested());
+                  } catch (_) {}
+                  try {
+                    context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(leadId));
+                    if (widget.lead['id'] != null) {
+                      context.read<TelecallerCnrBloc>().add(TelecallerLeadRemoved(widget.lead['id'].toString()));
+                    }
+                    context.read<TelecallerCnrBloc>().add(const TelecallerCnrRequested());
+                  } catch (_) {}
                   _load();
                   widget.onOutcomeRecorded();
                 },
@@ -3055,12 +3074,17 @@ Future<void> _handleNotInterested(
                         return;
                       }
 
+                      final cleanLeadId = leadId.startsWith('auto_') ? leadId.substring(5) : leadId;
+                      final cleanUnifiedId = (unifiedLeadId != null && unifiedLeadId.startsWith('auto_'))
+                          ? unifiedLeadId.substring(5)
+                          : unifiedLeadId;
+
                       setDialogState(() => isSubmitting = true);
                       Navigator.pop(dialogCtx);
 
                       try {
                         final ok = await IntegrationService().updateLeadCampaignStatus(
-                          leadId,
+                          cleanLeadId,
                           'Not interested',
                           reason: note,
                         );
@@ -3069,14 +3093,14 @@ Future<void> _handleNotInterested(
                         }
 
                         IntegrationService().notifyOutcomeRecorded(
-                          leadId,
+                          cleanLeadId,
                           outcome: 'NOT_INTERESTED',
                           remarks: note,
                         );
 
-                        if (unifiedLeadId != null && unifiedLeadId.isNotEmpty && unifiedLeadId != leadId) {
+                        if (cleanUnifiedId != null && cleanUnifiedId.isNotEmpty && cleanUnifiedId != cleanLeadId) {
                           IntegrationService().notifyOutcomeRecorded(
-                            unifiedLeadId,
+                            cleanUnifiedId,
                             outcome: 'NOT_INTERESTED',
                             remarks: note,
                           );
@@ -3090,8 +3114,14 @@ Future<void> _handleNotInterested(
                           AppStatusSnackBar.show(
                             context,
                             message: '$clientName marked as Not Interested.',
-                            isSuccess: false,
+                            isSuccess: true,
                             backgroundColor: const Color(0xFFEF4444),
+                            actionLabel: 'View',
+                            onAction: () {
+                              try {
+                                context.go('/campaign/leads?view=not_interested');
+                              } catch (_) {}
+                            },
                             duration: const Duration(seconds: 5),
                           );
                         }

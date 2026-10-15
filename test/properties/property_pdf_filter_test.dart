@@ -123,6 +123,29 @@ void main() {
 
       expect(disabledAmenitiesConfig.isAmenityEnabled('Swimming Pool'), isFalse);
     });
+
+    test('Default sections contain no duplicate field IDs or duplicate labels', () {
+      final seenIds = <String>{};
+      final seenLabels = <String, String>{};
+
+      for (final section in PropertyPdfFilterConfig.defaultSections) {
+        for (final field in section.fields) {
+          expect(seenIds.contains(field.id), isFalse,
+              reason: 'Duplicate field ID found: ${field.id} in section ${section.id}');
+          seenIds.add(field.id);
+
+          expect(seenLabels.containsKey(field.label), isFalse,
+              reason: 'Duplicate field label "${field.label}" found in both ${seenLabels[field.label]} and ${section.id}');
+          seenLabels[field.label] = section.id;
+        }
+      }
+
+      // Explicitly check the fields reported by user
+      expect(seenLabels['Security Deposit'], equals('basic_details'));
+      expect(seenLabels['Furnishing'], equals('specifications'));
+      expect(seenLabels['Available From'], equals('specifications'));
+      expect(seenLabels['Parking Info'], equals('specifications'));
+    });
   });
 
   group('PropertySharePdf Generation Tests with Filter Config', () {
