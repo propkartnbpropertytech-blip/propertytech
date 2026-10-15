@@ -802,6 +802,9 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
     if (property.maintenance > 0) {
       basicItems.add(PropertyDetailItem('Maintenance', '₹${BudgetFormatter.format(property.maintenance)}/mo', Icons.build_circle_outlined));
     }
+    if (property.brokerage != null && property.brokerage! > 0) {
+      basicItems.add(PropertyDetailItem('Brokerage', '₹${BudgetFormatter.format(property.brokerage!)}', Icons.handshake_outlined));
+    }
 
     if (isUserAdminOrSuperAdmin && _isValidValue(property.createdByName)) {
       final showCreator = currentUser?.role == 'Super Admin' ||
