@@ -1597,6 +1597,8 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
       if (RoleGuard.isTelecaller(currentUserRole)) {
         TelecallerShiftManager.instance.init(userState.user.id);
+      } else {
+        TelecallerShiftManager.instance.dispose();
       }
     }
 
