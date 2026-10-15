@@ -255,24 +255,26 @@
   -->
   <script src="flutter_bootstrap.js" async></script>
 
-  <!-- Roakbot Chatbot Embed -->
+  <!-- Roakbot Dynamic Widget (Auto-syncs all updates) -->
   <style>
-    #roakbot-launcher {
-      display: none !important;
-    }
-    #roakbot-container {
+    #roakbot-launcher, #roakbot-container, #roakbot-invitation-bubble, #roakbot-branding-badge {
       pointer-events: auto !important;
       z-index: 999999 !important;
     }
   </style>
   <script>
     window.roakbotConfig = {
-      botId: "bot_84ce2455",
+      botId: "bot_fc456356",
       launcherPosition: "bottom_right",
       launcherAnimation: "rotate_fade",
       launcherAnimationDuration: 450,
+      launcherImageUrl: "https://res.cloudinary.com/haacwr5z/image/upload/v1792041589/roakbot/k4t0dfawrgayape2ztkr.gif",
+      invitationBubbleText: "👋 Need assistance? Tap to chat!",
+      showInvitationBubble: true,
+      launcherText: "👋 Need assistance? Tap to chat!",
+      primaryColor: "#0F172A",
     };
   </script>
-  <script src="https://roakbot.web.app/widget.js" async></script>
+  <script src="https://roakbot.web.app/widget.js" data-bot-id="bot_fc456356" async></script>
 </body>
 </html>

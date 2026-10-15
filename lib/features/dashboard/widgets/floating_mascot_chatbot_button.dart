@@ -15,6 +15,10 @@ class FloatingMascotChatbotButton extends StatefulWidget {
 class _FloatingMascotChatbotButtonState
     extends State<FloatingMascotChatbotButton>
     with TickerProviderStateMixin {
+  static const String _mascotGifUrl =
+      'https://res.cloudinary.com/haacwr5z/image/upload/v1792041589/roakbot/k4t0dfawrgayape2ztkr.gif';
+  static const Color _primaryColor = Color(0xFF0F172A);
+
   late final AnimationController _bobbingController;
   late final Animation<double> _bobbingAnimation;
 
@@ -71,6 +75,12 @@ class _FloatingMascotChatbotButtonState
 
   @override
   Widget build(BuildContext context) {
+    // On Web, the native Roakbot dynamic widget script from index.html automatically
+    // renders the floating mascot GIF button and invitation bubble with auto-sync.
+    if (kIsWeb) {
+      return const SizedBox.shrink();
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return AnimatedBuilder(
@@ -111,7 +121,7 @@ class _FloatingMascotChatbotButtonState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Need help? Chat with me!',
+                          '👋 Need assistance? Tap to chat!',
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
@@ -158,7 +168,7 @@ class _FloatingMascotChatbotButtonState
                           height: 58,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF6366F1).withValues(
+                            color: _primaryColor.withValues(
                               alpha: math.max(
                                 0.0,
                                 0.35 * (1.0 - _pulseController.value),
@@ -178,19 +188,14 @@ class _FloatingMascotChatbotButtonState
                           height: 60,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF6366F1), Color(0xFF3B82F6)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+                            color: _primaryColor,
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.3),
+                              color: Colors.white.withValues(alpha: 0.35),
                               width: 2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF6366F1)
-                                    .withValues(alpha: 0.4),
+                                color: _primaryColor.withValues(alpha: 0.45),
                                 blurRadius: 18,
                                 offset: const Offset(0, 6),
                               ),
@@ -204,17 +209,26 @@ class _FloatingMascotChatbotButtonState
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Mascot Robot Face Icon
-                              const Icon(
-                                Icons.smart_toy_rounded,
-                                color: Colors.white,
-                                size: 32,
+                              // Mascot GIF Image with fallback
+                              ClipOval(
+                                child: Image.network(
+                                  _mascotGifUrl,
+                                  width: 56,
+                                  height: 56,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(
+                                    Icons.smart_toy_rounded,
+                                    color: Colors.white,
+                                    size: 32,
+                                  ),
+                                ),
                               ),
 
                               // Online Active Indicator Badge
                               Positioned(
-                                top: 4,
-                                right: 4,
+                                top: 2,
+                                right: 2,
                                 child: Container(
                                   width: 12,
                                   height: 12,

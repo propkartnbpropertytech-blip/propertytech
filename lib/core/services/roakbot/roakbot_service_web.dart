@@ -3,8 +3,8 @@ import 'dart:html' as html;
 import 'package:url_launcher/url_launcher.dart';
 
 class RoakbotService {
-  static const String botId = 'bot_84ce2455';
-  static const String widgetUrl = 'https://roakbot.web.app/widget?botId=bot_84ce2455';
+  static const String botId = 'bot_fc456356';
+  static const String widgetUrl = 'https://roakbot.web.app/widget?botId=bot_fc456356';
 
   static bool get isWebWidgetAvailable => true;
 
