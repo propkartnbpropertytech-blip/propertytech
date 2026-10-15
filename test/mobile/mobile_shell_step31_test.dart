@@ -281,7 +281,7 @@ void main() {
       final queueAlias = MobileNavConfig.resolve(
           'Telecaller', '/telecaller/leads',
           canView: _all);
-      expect(queueAlias.title, 'Queue');
+      expect(queueAlias.title, 'My Calling');
       expect(queueAlias.isSecondary, isFalse);
 
       final unknown =

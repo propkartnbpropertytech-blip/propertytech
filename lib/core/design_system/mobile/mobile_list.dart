@@ -135,6 +135,8 @@ class MobileListItem extends StatelessWidget {
   final bool showChevron;
   final bool enabled;
   final int badgeCount;
+  final Color? iconColor;
+  final Color? titleColor;
 
   const MobileListItem({
     super.key,
@@ -146,11 +148,18 @@ class MobileListItem extends StatelessWidget {
     this.showChevron = true,
     this.enabled = true,
     this.badgeCount = 0,
+    this.iconColor,
+    this.titleColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final primary = CRMColors.primaryOf(context);
+    final effectiveIconColor = iconColor ?? primary;
+    final effectiveTitleColor = titleColor ??
+        (enabled
+            ? CRMColors.textOf(context)
+            : CRMColors.textMutedOf(context));
     final label = [
       title,
       if (subtitle != null && subtitle!.isNotEmpty) subtitle!,
@@ -178,10 +187,10 @@ class MobileListItem extends StatelessWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: primary.withValues(alpha: 0.12),
+                        color: effectiveIconColor.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(icon, size: 24, color: primary),
+                      child: Icon(icon, size: 24, color: effectiveIconColor),
                     ),
                   ),
                   const SizedBox(width: CRMSpacing.s),
@@ -195,9 +204,7 @@ class MobileListItem extends StatelessWidget {
                         Text(
                           title,
                           style: CRMTypography.cardTitle.copyWith(
-                            color: enabled
-                                ? CRMColors.textOf(context)
-                                : CRMColors.textMutedOf(context),
+                            color: effectiveTitleColor,
                           ),
                         ),
                         if (subtitle != null && subtitle!.isNotEmpty)

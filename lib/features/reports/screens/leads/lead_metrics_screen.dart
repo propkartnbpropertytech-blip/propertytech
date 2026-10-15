@@ -1,9 +1,16 @@
+/// ============================================================================
+/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
+/// All KPI metrics computed or displayed here MUST adhere to the
+/// Master KPI Rulebook: lib/core/constants/kpi_rulebook.dart and docs/KPIs.docx.
+/// ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../../core/design_system/widgets/app_status_snackbar.dart';
+import '../../../../core/security/role_guard.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../../bloc/reports_bloc.dart';
 import '../../bloc/reports_event.dart';
@@ -51,6 +58,15 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
   }
 
   Future<void> _saveConfig() async {
+    if (!RoleGuard.isAdmin(RoleGuard.currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Only administrators can update report metric configurations.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     // Persist reordered and updated KPI configs and section visibilities
@@ -76,24 +92,24 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
 
     if (mounted) {
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-              SizedBox(width: 10),
-              Text('Lead metrics & dashboard settings saved successfully!'),
-            ],
-          ),
-          backgroundColor: Color(0xFF16A34A),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 3),
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: 'Lead metrics & dashboard settings saved successfully!',
+        isSuccess: true,
       );
     }
   }
 
   void _resetToDefaults() {
+    if (!RoleGuard.isAdmin(RoleGuard.currentUser?.role)) {
+      AppStatusSnackBar.show(
+        context,
+        message: 'Only administrators can reset report metric configurations.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     final defaultConfig = ReportConfiguration.initial();
     final defaultKpis = List<ReportKpiConfig>.from(defaultConfig.kpiConfigs);
     defaultKpis.sort((a, b) => a.order.compareTo(b.order));
@@ -115,11 +131,10 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
       ));
     } catch (_) {}
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Configuration reset to system defaults. Click Save to persist.'),
-        duration: Duration(seconds: 2),
-      ),
+    AppStatusSnackBar.show(
+      context,
+      message: 'Configuration reset to system defaults. Click Save to persist.',
+      isSuccess: true,
     );
   }
 
@@ -164,6 +179,7 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isMobile = constraints.maxWidth < 700;
+                  final isAdmin = RoleGuard.isAdmin(RoleGuard.currentUser?.role);
                   final titleWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -191,6 +207,32 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                           color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                         ),
                       ),
+                      if (!isAdmin) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: CRMColors.warning.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: CRMColors.warning.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_outline_rounded, size: 14, color: CRMColors.warning),
+                              SizedBox(width: 5),
+                              Text(
+                                'Read-Only · Admin permissions required to modify metric layout',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: CRMColors.warning,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   );
 
@@ -199,7 +241,7 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                     runSpacing: 8,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: _resetToDefaults,
+                        onPressed: isAdmin ? _resetToDefaults : null,
                         icon: const Icon(Icons.restart_alt_rounded, size: 16),
                         label: const Text('Reset Defaults'),
                         style: OutlinedButton.styleFrom(
@@ -219,7 +261,7 @@ class _LeadMetricsScreenState extends State<LeadMetricsScreen> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _saveConfig,
+                        onPressed: (isAdmin && !_isSaving) ? _saveConfig : null,
                         icon: _isSaving
                             ? const SizedBox(
                                 width: 14,

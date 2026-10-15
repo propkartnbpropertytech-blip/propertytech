@@ -19,6 +19,9 @@ import 'sync_debug_screen.dart';
 import 'kpi_config_screen.dart';
 import '../widgets/permission_matrix_card.dart';
 import '../widgets/backup_management_card.dart';
+import '../widgets/page_control_settings_card.dart';
+import '../services/page_control_service.dart';
+import '../../../core/design_system/widgets/under_development_screen.dart';
 import '../../requirements/services/match_criteria_manager.dart';
 import '../services/upload_limits_manager.dart';
 import '../../../core/storage/isar_service.dart';
@@ -50,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     MatchCriteriaManager().addListener(_onCriteriaChanged);
     UploadLimitsManager().addListener(_onUploadLimitsChanged);
     UploadLimitsManager().fetchFromBackend(silent: true);
+    PageControlService.instance.addListener(_onThemeChanged);
   }
 
   void _onThemeChanged() {
@@ -96,6 +100,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeManager().removeListener(_onThemeChanged);
     MatchCriteriaManager().removeListener(_onCriteriaChanged);
     UploadLimitsManager().removeListener(_onUploadLimitsChanged);
+    PageControlService.instance.removeListener(_onThemeChanged);
     super.dispose();
   }
 
@@ -707,7 +712,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ? rawVersion
                   : AppConstants.appVersion;
               final rawBuild = snapshot.data?.buildNumber;
-              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6' && rawBuild != '7' && rawBuild != '8' && rawBuild != '9')
+              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '6' && rawBuild != '7' && rawBuild != '8' && rawBuild != '9' && rawBuild != '14')
                   ? rawBuild
                   : AppConstants.buildNumber;
 
@@ -859,12 +864,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Icon(Icons.cloud_done_rounded, size: 14, color: thresholdColor),
                 const SizedBox(width: 4),
-                Text(
-                  '$currentScore% Minimum (Team)',
-                  style: TextStyle(
-                    color: thresholdColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                Flexible(
+                  child: Text(
+                    '$currentScore% Minimum (Team)',
+                    style: TextStyle(
+                      color: thresholdColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -923,25 +932,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Match Threshold Cutoff',
-                          style: CRMTypography.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: CRMColors.textOf(context),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Match Threshold Cutoff',
+                            style: CRMTypography.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: CRMColors.textOf(context),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Properties scoring below this percentage will not qualify as matched listings',
-                          style: CRMTypography.caption.copyWith(
-                            color: CRMColors.textSecondaryOf(context),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Properties scoring below this percentage will not qualify as matched listings',
+                            style: CRMTypography.caption.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: CRMSpacing.s),
                     Text(
                       '$currentScore%',
                       style: TextStyle(
@@ -995,18 +1007,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('10% (Permissive)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                      Text('40% (Flexible)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                      Text('60% (Balanced)', style: CRMTypography.caption.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
-                      Text('80% (Strict)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                      Text('100% (Exact)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
-                    ],
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 450;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(isNarrow ? '10%' : '10% (Permissive)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                          Text(isNarrow ? '40%' : '40% (Flexible)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                          Text(isNarrow ? '60%' : '60% (Balanced)', style: CRMTypography.caption.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
+                          Text(isNarrow ? '80%' : '80% (Strict)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                          Text(isNarrow ? '100%' : '100% (Exact)', style: CRMTypography.caption.copyWith(fontSize: 11, color: CRMColors.textSecondaryOf(context))),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: CRMSpacing.l),
 
@@ -1453,6 +1470,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             fontWeight: FontWeight.bold,
             fontSize: 13,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
       child: Padding(
@@ -1508,25 +1527,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Images (0–100)',
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: CRMColors.textOf(context),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Images (0–100)',
+                        style: CRMTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: CRMColors.textOf(context),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Default: 30 images. Applies to Add Property after Save Changes.',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Default: 30 images. Applies to Add Property after Save Changes.',
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: CRMSpacing.s),
                 Text(
                   '$imageCount',
                   style: TextStyle(
@@ -1561,25 +1583,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Videos (0–20)',
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: CRMColors.textOf(context),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Videos (0–20)',
+                        style: CRMTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: CRMColors.textOf(context),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Default: 5 videos. Applies to Add Property after Save Changes.',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Default: 5 videos. Applies to Add Property after Save Changes.',
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: CRMSpacing.s),
                 Text(
                   '$videoCount',
                   style: TextStyle(
@@ -1641,11 +1666,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final authState = context.watch<AuthBloc>().state;
     String currentUserName = 'Guest';
     String currentUserEmail = '';
+    String currentUserRole = '';
     bool isAdminOrSuperAdmin = false;
     bool isSuperAdmin = false;
 
     if (authState is Authenticated) {
       currentUserEmail = authState.user.email;
+      currentUserRole = authState.user.role;
       final roleLower = authState.user.role.toLowerCase();
       isAdminOrSuperAdmin = roleLower.contains('admin');
       isSuperAdmin = roleLower == 'super admin';
@@ -1669,6 +1696,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const _SettingsNavItem(id: 'backups', label: 'Automated Backups', icon: Icons.cloud_download_rounded),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
+      if (isSuperAdmin)
+        const _SettingsNavItem(id: 'page_control', label: 'Page Control', icon: Icons.construction_rounded),
       const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
     ];
 
@@ -1679,7 +1708,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     Widget sectionContent() {
+      if (!isSuperAdmin &&
+          _activeSection != 'profile' &&
+          PageControlService.instance.isSettingsSectionUnderDevelopment(_activeSection, currentUserRole)) {
+        final ctrl = PageControlService.instance.getControlForSettingsSection(_activeSection);
+        final activeNav = sections.firstWhere(
+          (s) => s.id == _activeSection,
+          orElse: () => const _SettingsNavItem(id: '', label: 'Settings', icon: Icons.settings),
+        );
+        return UnderDevelopmentScreen(
+          pageTitle: ctrl?.title ?? activeNav.label,
+          route: ctrl?.route,
+          customMessage: ctrl?.message,
+          userRole: currentUserRole,
+          isEmbedded: true,
+        );
+      }
+
       switch (_activeSection) {
+        case 'page_control':
+          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
+          return const PageControlSettingsCard();
         case 'themes':
           return _buildThemesSection(isSuperAdmin: isSuperAdmin);
         case 'appearance':
@@ -1691,7 +1740,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         case 'upload_limits':
           return _buildUploadLimitsSection();
         case 'kpi_config':
-          return const KpiConfigScreen();
+          return const KpiConfigScreen(isEmbedded: true);
         case 'permissions':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const PermissionMatrixCard();
@@ -1723,6 +1772,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           isSuperAdmin: isSuperAdmin,
           currentUserName: currentUserName,
           currentUserEmail: currentUserEmail,
+          currentUserRole: currentUserRole,
         );
       }
       final activeNav = sections.firstWhere(
@@ -1740,6 +1790,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           showBack: true,
           onBack: () => setState(() => _mobileActiveSection = null),
           padding: const EdgeInsets.all(CRMSpacing.m),
+          scrollable: _mobileActiveSection != 'kpi_config',
           body: sectionContent(),
         ),
       );
@@ -1767,14 +1818,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: Column(
                               children: [
                                 for (final item in sections)
-                                  _buildSettingsNavTile(item),
+                                  _buildSettingsNavTile(
+                                    item,
+                                    userRole: currentUserRole,
+                                    isSuperAdmin: isSuperAdmin,
+                                  ),
                               ],
                             ),
                           ),
                         ),
                         const SizedBox(width: CRMSpacing.l),
                         Expanded(
-                          child: SingleChildScrollView(child: sectionContent()),
+                          child: _activeSection == 'kpi_config'
+                              ? sectionContent()
+                              : SingleChildScrollView(child: sectionContent()),
                         ),
                       ],
                     ),
@@ -1790,6 +1847,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool isSuperAdmin,
     required String currentUserName,
     required String currentUserEmail,
+    required String currentUserRole,
   }) {
     return MobileScreenScaffold(
       title: 'Settings',
@@ -1826,6 +1884,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.palette_outlined,
               title: 'Themes',
               subtitle: 'Presets & custom accent colors',
+              isUnderDev: !isSuperAdmin &&
+                  PageControlService.instance.isSettingsSectionUnderDevelopment('themes', currentUserRole),
               onTap: () {
                 _setActiveSection('themes');
                 setState(() => _mobileActiveSection = 'themes');
@@ -1836,6 +1896,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.tune_rounded,
               title: 'Appearance',
               subtitle: 'Dark mode, contrast & layout settings',
+              isUnderDev: !isSuperAdmin &&
+                  PageControlService.instance.isSettingsSectionUnderDevelopment('appearance', currentUserRole),
               onTap: () {
                 _setActiveSection('appearance');
                 setState(() => _mobileActiveSection = 'appearance');
@@ -1851,6 +1913,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.location_city_outlined,
               title: 'Locations',
               subtitle: 'Manage active operational micro-markets',
+              isUnderDev: !isSuperAdmin &&
+                  PageControlService.instance.isSettingsSectionUnderDevelopment('locations', currentUserRole),
               onTap: () {
                 _setActiveSection('locations');
                 setState(() => _mobileActiveSection = 'locations');
@@ -1862,6 +1926,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.bolt_rounded,
                 title: 'Run Match Criteria',
                 subtitle: 'Lead & property matching thresholds',
+                isUnderDev: !isSuperAdmin &&
+                    PageControlService.instance.isSettingsSectionUnderDevelopment('match_criteria', currentUserRole),
                 onTap: () {
                   _setActiveSection('match_criteria');
                   setState(() => _mobileActiveSection = 'match_criteria');
@@ -1872,6 +1938,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.photo_library_outlined,
                 title: 'Upload Limits',
                 subtitle: 'Images & video attachment thresholds',
+                isUnderDev: !isSuperAdmin &&
+                    PageControlService.instance.isSettingsSectionUnderDevelopment('upload_limits', currentUserRole),
                 onTap: () {
                   _setActiveSection('upload_limits');
                   setState(() => _mobileActiveSection = 'upload_limits');
@@ -1882,6 +1950,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.dashboard_customize_outlined,
                 title: 'KPI Configuration',
                 subtitle: 'Target thresholds & sales quotas',
+                isUnderDev: !isSuperAdmin &&
+                    PageControlService.instance.isSettingsSectionUnderDevelopment('kpi_config', currentUserRole),
                 onTap: () {
                   _setActiveSection('kpi_config');
                   setState(() => _mobileActiveSection = 'kpi_config');
@@ -1898,6 +1968,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.info_outline_rounded,
               title: 'System & About',
               subtitle: 'Version, build info & telemetry',
+              isUnderDev: !isSuperAdmin &&
+                  PageControlService.instance.isSettingsSectionUnderDevelopment('system', currentUserRole),
               onTap: () {
                 _setActiveSection('system');
                 setState(() => _mobileActiveSection = 'system');
@@ -1943,6 +2015,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() => _mobileActiveSection = 'audit');
                 },
               ),
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.construction_rounded,
+                title: 'Page Control',
+                subtitle: 'Role-based Under Development controls',
+                onTap: () {
+                  _setActiveSection('page_control');
+                  setState(() => _mobileActiveSection = 'page_control');
+                },
+              ),
             ],
           ]),
           const SizedBox(height: CRMSpacing.xxl),
@@ -1985,6 +2067,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    bool isUnderDev = false,
   }) {
     return InkWell(
       onTap: onTap,
@@ -1995,22 +2078,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: CRMColors.primary.withValues(alpha: 0.1),
+                color: isUnderDev
+                    ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
+                    : CRMColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(icon, color: CRMColors.primary, size: 20),
+              child: Icon(
+                icon,
+                color: isUnderDev ? const Color(0xFFD97706) : CRMColors.primary,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: CRMTypography.bodyMedium.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: CRMTypography.bodyMedium.copyWith(
+                            color: CRMColors.textOf(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isUnderDev) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'Under Dev',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFD97706),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -2035,8 +2154,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSettingsNavTile(_SettingsNavItem item) {
+  Widget _buildSettingsNavTile(
+    _SettingsNavItem item, {
+    String? userRole,
+    bool isSuperAdmin = false,
+  }) {
     final selected = item.id == _activeSection;
+    final isUnderDev = !isSuperAdmin &&
+        item.id != 'profile' &&
+        PageControlService.instance.isSettingsSectionUnderDevelopment(item.id, userRole);
     return InkWell(
       onTap: () => _setActiveSection(item.id),
       child: Container(
@@ -2051,7 +2177,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Icon(
               item.icon,
               size: 18,
-              color: selected ? CRMColors.primary : CRMColors.textMutedOf(context),
+              color: isUnderDev
+                  ? const Color(0xFFD97706)
+                  : (selected ? CRMColors.primary : CRMColors.textMutedOf(context)),
             ),
             const SizedBox(width: CRMSpacing.s),
             Expanded(
@@ -2065,6 +2193,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+            if (isUnderDev)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                    width: 0.8,
+                  ),
+                ),
+                child: const Text(
+                  'Under Dev',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFD97706),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

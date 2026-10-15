@@ -103,6 +103,7 @@ class ReportDataEngine {
     final summaryNotInterested = insightSummary?.notInterestedLeads.total ??
         filteredLeads.where((l) => l.status.toLowerCase().contains('not interested')).length;
     final summaryAssignedToSales = insightSummary?.assignedToSalesPickedUp.total ?? assignedCount;
+    final summarySiteVisitsDone = insightSummary?.siteVisitDone ?? insightSummary?.leadsPageKpis.siteVisitDone ?? visitsDoneCount;
 
     // Leads Page Pipeline Counts (Directly from Leads page records / insightSummary)
     final lpk = insightSummary?.leadsPageKpis;
@@ -125,7 +126,7 @@ class ReportDataEngine {
       l.status.trim().toLowerCase() == 'site visit' ||
       l.status.trim().toLowerCase() == 'site visit scheduled'
     ).length;
-    final leadsSiteVisitDoneCount = lpk?.siteVisitDone ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').length;
+    final leadsSiteVisitDoneCount = summarySiteVisitsDone;
     final leadsNegotiationCount = lpk?.negotiation ?? filteredLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').length;
     final leadsRejectedCount = lpk?.rejectedLeads ?? filteredLeads.where((l) => l.status.trim().toLowerCase().startsWith('rejected')).length;
     final leadsPageTotal = notStartedCount + callAttemptedLeadsCount + leadsFollowupsCount + leadsReFollowupsCount + leadsInterestedCount + leadsSiteVisitScheduledCount + leadsSiteVisitDoneCount + leadsNegotiationCount + leadsRejectedCount;
@@ -185,6 +186,11 @@ class ReportDataEngine {
       ReportKpiType.leadsAssignedToSales: KpiValue.create(
         count: summaryAssignedToSales,
         percentage: summaryTotalLeads == 0 ? 0.0 : (summaryAssignedToSales / summaryTotalLeads * 100),
+        denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
+      ),
+      ReportKpiType.siteVisitsDone: KpiValue.create(
+        count: summarySiteVisitsDone,
+        percentage: summaryTotalLeads == 0 ? 0.0 : (summarySiteVisitsDone / summaryTotalLeads * 100),
         denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
       ),
 
@@ -255,11 +261,6 @@ class ReportDataEngine {
         count: visitsScheduledCount,
         percentage: qualifiedCount == 0 ? 0.0 : (visitsScheduledCount / qualifiedCount * 100),
         denominatorLabel: '% of Qualified Leads ($qualifiedCount)',
-      ),
-      ReportKpiType.siteVisitsDone: KpiValue.create(
-        count: visitsDoneCount,
-        percentage: visitsScheduledCount == 0 ? 0.0 : (visitsDoneCount / visitsScheduledCount * 100),
-        denominatorLabel: '% of Scheduled Visits ($visitsScheduledCount)',
       ),
       ReportKpiType.convertedToWon: KpiValue.create(
         count: wonCount,
@@ -511,12 +512,17 @@ class ReportDataEngine {
     final List<TeamMemberRanking> salesRankings = [];
     int sRank = 1;
     for (final u in salesUsers) {
-      final uLeads = filteredLeads.where((l) => l.assignedTo == u.id || l.assigneeName == u.fullName).toList();
-      final uContacted = uLeads.where((l) => _isContacted(l)).length;
-      final uQualified = uLeads.where((l) => _isQualified(l)).length;
-      final uVisits = uLeads.where((l) => _isVisitScheduled(l) || _isVisitDone(l)).length;
-      final uWon = uLeads.where((l) => _isWon(l)).length;
-      final uConv = uLeads.isEmpty ? 0.0 : (uWon / uLeads.length * 100);
+      final uAssigned = filteredLeads.where((l) => l.assignedTo == u.id || l.assigneeName == u.fullName).toList();
+      final uCreated = filteredLeads.where((l) => l.createdBy == u.id || l.creatorName == u.fullName).toList();
+      final uTotalUnique = filteredLeads.where((l) =>
+          l.assignedTo == u.id || l.assigneeName == u.fullName ||
+          l.createdBy == u.id || l.creatorName == u.fullName).toList();
+
+      final uContacted = uTotalUnique.where((l) => _isContacted(l)).length;
+      final uQualified = uTotalUnique.where((l) => _isQualified(l)).length;
+      final uVisits = uTotalUnique.where((l) => _isVisitScheduled(l) || _isVisitDone(l)).length;
+      final uWon = uTotalUnique.where((l) => _isWon(l)).length;
+      final uConv = uTotalUnique.isEmpty ? 0.0 : (uWon / uTotalUnique.length * 100);
 
       salesRankings.add(
         TeamMemberRanking(
@@ -524,7 +530,9 @@ class ReportDataEngine {
           userId: u.id,
           userName: u.fullName.isNotEmpty ? u.fullName : u.email,
           role: 'Sales',
-          leadsCount: uLeads.length,
+          leadsCount: uTotalUnique.length,
+          assignedCount: uAssigned.length,
+          selfAddedCount: uCreated.length,
           contactedCount: uContacted,
           qualifiedCount: uQualified,
           siteVisitsCount: uVisits,

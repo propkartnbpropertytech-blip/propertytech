@@ -33,9 +33,17 @@ class MobileBackNavigation {
 /// `MobileNavConfig.resolve()`.
 class MobileShellTitle extends StatefulWidget {
   final String title;
+  final bool showBack;
+  final VoidCallback? onBack;
   final Widget child;
 
-  const MobileShellTitle({super.key, required this.title, required this.child});
+  const MobileShellTitle({
+    super.key,
+    required this.title,
+    this.showBack = false,
+    this.onBack,
+    required this.child,
+  });
 
   @override
   State<MobileShellTitle> createState() => _MobileShellTitleState();
@@ -58,7 +66,11 @@ class _MobileShellTitleState extends State<MobileShellTitle> {
   @override
   void didUpdateWidget(MobileShellTitle oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.title != widget.title) _claim();
+    if (oldWidget.title != widget.title ||
+        oldWidget.showBack != widget.showBack ||
+        oldWidget.onBack != widget.onBack) {
+      _claim();
+    }
   }
 
   @override
@@ -72,7 +84,12 @@ class _MobileShellTitleState extends State<MobileShellTitle> {
     if (controller == null) return;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted && identical(controller, _controller)) {
-        controller.claim(this, widget.title);
+        controller.claim(
+          this,
+          widget.title,
+          showBack: widget.showBack,
+          onBack: widget.onBack,
+        );
       }
     });
   }
@@ -124,6 +141,7 @@ class MobileScreenScaffold extends StatelessWidget {
   /// Top-bar actions; only used outside the shell.
   final List<Widget> actions;
   final bool showBack;
+  final bool? showBackInShell;
   final VoidCallback? onBack;
   final String backFallback;
 
@@ -142,6 +160,7 @@ class MobileScreenScaffold extends StatelessWidget {
     this.controller,
     this.actions = const [],
     this.showBack = true,
+    this.showBackInShell,
     this.onBack,
     this.backFallback = '/dashboard',
   });
@@ -192,7 +211,17 @@ class MobileScreenScaffold extends StatelessWidget {
     );
 
     if (inShell && title != null) {
-      scaffold = MobileShellTitle(title: title!, child: scaffold);
+      final effectiveInShellBack = showBackInShell ?? (onBack != null);
+      scaffold = MobileShellTitle(
+        title: title!,
+        showBack: effectiveInShellBack,
+        onBack: onBack ??
+            () => MobileBackNavigation.back(
+                  context,
+                  fallback: backFallback,
+                ),
+        child: scaffold,
+      );
     }
     return scaffold;
   }

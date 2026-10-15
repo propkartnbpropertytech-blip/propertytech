@@ -278,6 +278,7 @@ class RequirementLocalRepository {
 
   static final Map<String, RequirementLocal> inMemory = {};
   static final Map<String, Map<String, dynamic>> metaCustomFieldsById = {};
+  static final Map<String, String> rejectionRemarksById = {};
 
   static void rememberMetaCustomFields(String id, Map<String, dynamic>? meta) {
     if (id.trim().isEmpty || meta == null || meta.isEmpty) return;
@@ -285,6 +286,19 @@ class RequirementLocalRepository {
       ...?metaCustomFieldsById[id],
       ...meta,
     };
+  }
+
+  static void rememberRejectionRemark(String id, String? remark) {
+    if (id.trim().isEmpty) return;
+    if (remark == null || remark.trim().isEmpty) {
+      rejectionRemarksById.remove(id);
+    } else {
+      rejectionRemarksById[id] = remark.trim();
+    }
+  }
+
+  static String? getRejectionRemark(String id) {
+    return rejectionRemarksById[id];
   }
 
   Future<RequirementLocal?> getRequirementById(String id) async {
@@ -399,6 +413,9 @@ class RequirementLocalRepository {
               Map<String, dynamic>.from(map['metaCustomFields'] as Map),
             );
           }
+          if (map['rejectionRemark'] != null) {
+            rememberRejectionRemark(r.id, map['rejectionRemark']?.toString());
+          }
         }
         print("Loaded ${inMemory.length} requirements from local storage cache.");
       }
@@ -444,6 +461,8 @@ class RequirementLocalRepository {
         'nextFollowupDate': item.nextFollowupDate,
         if (metaCustomFieldsById[item.id] != null)
           'metaCustomFields': metaCustomFieldsById[item.id],
+        if (rejectionRemarksById[item.id] != null)
+          'rejectionRemark': rejectionRemarksById[item.id],
       })).toList();
       await prefs.setStringList('cached_requirements', jsonList);
     } catch (e) {
@@ -757,8 +776,11 @@ class LookupLocalRepository {
     }
   }
 
-  Future<void> saveLookups(List<LookupItemLocal> items) async {
+  Future<void> saveLookups(List<LookupItemLocal> items, {bool clearExisting = false}) async {
     if (kIsWeb) {
+      if (clearExisting) {
+        inMemory.clear();
+      }
       for (final item in items) {
         inMemory[item.id] = item;
       }
@@ -767,7 +789,26 @@ class LookupLocalRepository {
     }
 
     await _isar.writeTxn(() async {
+      if (clearExisting) {
+        await _isar.lookupItemLocals.clear();
+      }
       await _isar.lookupItemLocals.putAll(items);
+    });
+  }
+
+  Future<void> deleteLookups(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final idSet = ids.toSet();
+    if (kIsWeb) {
+      inMemory.removeWhere((k, v) => idSet.contains(k));
+      await _saveAllToPrefs();
+      return;
+    }
+
+    await _isar.writeTxn(() async {
+      for (final id in ids) {
+        await _isar.lookupItemLocals.filter().idEqualTo(id).deleteAll();
+      }
     });
   }
 

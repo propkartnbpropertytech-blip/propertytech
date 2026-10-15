@@ -13,17 +13,28 @@ import '../../../core/security/role_guard.dart';
 import '../../campaign/models/campaign_followup_model.dart';
 import '../../dashboard/widgets/stat_card.dart';
 import '../../dashboard/widgets/welcome_header.dart';
+import '../../../core/design_system/widgets/animated_count_roll.dart';
 import '../../integration/services/integration_service.dart';
+import '../../integration/models/integration_lead_model.dart';
 import '../bloc/telecaller_dashboard_bloc.dart';
 import '../data/telecaller_repository.dart';
+import '../widgets/telecaller_kpi_dialogs.dart';
+import 'telecaller_callbacks_screen.dart' show queueLeadType;
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 
 class TelecallerDashboardScreen extends StatelessWidget {
-  const TelecallerDashboardScreen({super.key});
+  final TelecallerDashboardBloc? bloc;
+  const TelecallerDashboardScreen({super.key, this.bloc});
 
   @override
   Widget build(BuildContext context) {
+    if (bloc != null) {
+      return BlocProvider<TelecallerDashboardBloc>.value(
+        value: bloc!,
+        child: const _TelecallerDashboardView(),
+      );
+    }
     return BlocProvider(
       create: (_) => TelecallerDashboardBloc()..add(TelecallerDashboardRequested()),
       child: const _TelecallerDashboardView(),
@@ -60,11 +71,25 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   static const int _followupsPerPage = 5;
   bool _loadingFollowups = false;
 
+  // Active callbacks preview state
+  List<dynamic> _callbacks = [];
+
+  // Active CNR leads preview state
+  List<dynamic> _cnrLeads = [];
+
   // Recent activity pagination state
   int _activityPage = 1;
   static const int _activityPerPage = 10;
 
   StreamSubscription<Map<String, dynamic>>? _leadEventsSub;
+
+  // Authoritative KPI state
+  String _kpiDateFilter = 'Today';
+  String? _customStartDate;
+  String? _customEndDate;
+  String _kpiLeadType = 'Both';
+  Map<String, dynamic> _kpiSummary = {};
+  bool _loadingKpis = false;
 
   @override
   void initState() {
@@ -72,20 +97,602 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     _loadPersonalNotes();
     _loadTransferredLeads();
     _loadFollowups();
+    _loadCallbacks();
+    _loadCnr();
+    _loadKpiSummary();
+    if (IntegrationService().leads.isEmpty) {
+      IntegrationService().fetchServerLeads(silent: true);
+    }
     IntegrationService().addListener(_onIntegrationChanged);
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
       if (!mounted) return;
       final type = event['type']?.toString();
       if (type == 'PEER_TRANSFER' || type == 'TRANSFER_COMPLETED' || type == 'OUTCOME_RECORDED' || type == 'FOLLOWUP_UPDATED' || type == 'STATUS_UPDATED') {
         _loadFollowups(forceRefresh: true);
+        _loadCallbacks();
+        _loadCnr();
         _loadTransferredLeads(_transferredPage);
+        _loadKpiSummary();
       }
     });
+  }
+
+  Future<void> _loadKpiSummary() async {
+    if (!mounted) return;
+    setState(() => _loadingKpis = true);
+    try {
+      final res = await _repository.getKpiSummary(
+        dateFilter: _kpiDateFilter,
+        startDate: _customStartDate,
+        endDate: _customEndDate,
+        leadType: _kpiLeadType,
+      );
+      if (mounted) {
+        setState(() {
+          _kpiSummary = res;
+          _loadingKpis = false;
+        });
+      }
+    } catch (e, stack) {
+      debugPrint('[TelecallerDashboard] _loadKpiSummary error: $e\n$stack');
+      if (!mounted) return;
+      setState(() => _loadingKpis = false);
+    }
+  }
+
+  void _selectDateFilter(String filter) {
+    if (_kpiDateFilter == filter && _customStartDate == null) return;
+    setState(() {
+      _kpiDateFilter = filter;
+      _customStartDate = null;
+      _customEndDate = null;
+    });
+    _loadKpiSummary();
+  }
+
+  void _selectLeadType(String leadType) {
+    if (_kpiLeadType == leadType) return;
+    setState(() {
+      _kpiLeadType = leadType;
+    });
+    _loadKpiSummary();
+  }
+
+  Future<void> _pickCustomDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 2),
+      initialDateRange: _customStartDate != null && _customEndDate != null
+          ? DateTimeRange(
+              start: DateTime.tryParse(_customStartDate!) ?? now.subtract(const Duration(days: 7)),
+              end: DateTime.tryParse(_customEndDate!) ?? now,
+            )
+          : DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+    );
+
+    if (!mounted) return;
+
+    if (picked != null) {
+      if (picked.start.isAfter(picked.end)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Start Date must be less than or equal to End Date.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
+
+      final startStr = DateFormat('yyyy-MM-dd').format(picked.start);
+      final endStr = DateFormat('yyyy-MM-dd').format(picked.end);
+
+      setState(() {
+        _kpiDateFilter = 'Custom Range';
+        _customStartDate = startStr;
+        _customEndDate = endStr;
+      });
+      _loadKpiSummary();
+    }
+  }
+
+  String _computeKpiDateRangeDisplay() {
+    if (_kpiSummary['filters'] is Map &&
+        _kpiSummary['filters']['dateRangeDisplay'] != null &&
+        _kpiSummary['filters']['dateRangeDisplay'].toString().trim().isNotEmpty) {
+      return _kpiSummary['filters']['dateRangeDisplay'].toString().trim();
+    }
+    final now = DateTime.now();
+    final formatter = DateFormat('dd MMM yyyy');
+    final filter = _kpiDateFilter.trim().toLowerCase();
+    if (filter == 'today') {
+      return 'Today: ${formatter.format(now)}';
+    } else if (filter == 'weekly') {
+      final start = now.subtract(const Duration(days: 7));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filter == 'monthly' || filter == 'this month') {
+      final start = now.subtract(const Duration(days: 30));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (filter == 'yearly' || filter == 'this year') {
+      final start = now.subtract(const Duration(days: 365));
+      return '${formatter.format(start)} – ${formatter.format(now)}';
+    } else if (_customStartDate != null && _customEndDate != null) {
+      final s = DateTime.tryParse(_customStartDate!);
+      final e = DateTime.tryParse(_customEndDate!);
+      if (s != null && e != null) {
+        return '${formatter.format(s)} – ${formatter.format(e)}';
+      }
+      return '$_customStartDate ~ $_customEndDate';
+    }
+    return '';
+  }
+
+  int get _followupsKpiCount {
+    final s = _kpiSummary['follow_ups'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    if (_followups.isEmpty) return 0;
+
+    final filtered = _followups.where((f) {
+      // 1. Lead Type Filter
+      if (_kpiLeadType == 'Listing') {
+        final lt = f.leadType.toLowerCase();
+        if (!lt.contains('listing') && !lt.contains('property')) return false;
+      } else if (_kpiLeadType == 'Requirement') {
+        final lt = f.leadType.toLowerCase();
+        if (!lt.contains('requirement')) return false;
+      }
+
+      // 2. Date Filter
+      return _matchesKpiDateFilter(f.scheduledAt);
+    }).toList();
+
+    return filtered.length;
+  }
+
+  bool _matchesKpiDateFilter(DateTime? date) {
+    if (date == null) return false;
+    final filter = _kpiDateFilter.trim().toLowerCase();
+    final now = DateTime.now();
+    final local = date.toLocal();
+
+    if (filter == 'today') {
+      return local.year == now.year && local.month == now.month && local.day == now.day;
+    } else if (filter == 'weekly') {
+      final startOf7Days = DateTime(now.year, now.month, now.day - 6);
+      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+      return !local.isBefore(startOf7Days) && !local.isAfter(endOfToday);
+    } else if (filter == 'monthly' || filter == 'this month') {
+      return local.year == now.year && local.month == now.month;
+    } else if (filter == 'yearly' || filter == 'this year') {
+      return local.year == now.year;
+    } else if (filter == 'custom' || filter == 'custom range') {
+      if (_customStartDate != null && _customEndDate != null) {
+        final s = DateTime.tryParse(_customStartDate!);
+        final e = DateTime.tryParse('${_customEndDate!} 23:59:59');
+        if (s != null && e != null) {
+          return !local.isBefore(s) && !local.isAfter(e);
+        }
+      }
+    }
+    return true;
+  }
+
+  int get _callbacksKpiCount {
+    final s = _kpiSummary['callbacks'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    if (_callbacks.isEmpty) return 0;
+
+    final valid = _callbacks.where((raw) {
+      if (raw is! Map) return false;
+      final lead = raw['lead'];
+      final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim();
+      if (cs == 'Property Listed' || cs == 'Listed' || cs == 'Archived') return false;
+      final leadId = (raw['lead_id'] ?? raw['id'] ?? '').toString();
+      final localLead = IntegrationService().getLeadById(leadId);
+      if (localLead != null && (localLead.campaignStatus == 'Property Listed' || localLead.campaignStatus == 'Listed' || localLead.campaignStatus == 'Archived')) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    final filtered = valid.where((raw) {
+      final isListing = queueLeadType(raw) == 'Property Listing';
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final scheduledStr = raw['scheduled_at']?.toString();
+      final dt = scheduledStr != null ? DateTime.tryParse(scheduledStr) : null;
+      return _matchesKpiDateFilter(dt);
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _cnrKpiCount {
+    final s = _kpiSummary['cnr'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    if (_cnrLeads.isEmpty) return 0;
+
+    final filtered = _cnrLeads.where((raw) {
+      final isListing = queueLeadType(raw) == 'Property Listing';
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final actStr = raw['last_activity_at']?.toString() ??
+          (raw['raw_json'] is Map ? raw['raw_json']['status_updated_at']?.toString() : null) ??
+          raw['updated_at']?.toString() ??
+          raw['created_at']?.toString();
+      final dt = actStr != null ? DateTime.tryParse(actStr) : null;
+      return _matchesKpiDateFilter(dt);
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _notInterestedKpiCount {
+    final s = _kpiSummary['not_interested'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) return 0;
+
+    final valid = leads.where((l) {
+      final cs = l.campaignStatus.trim().toLowerCase();
+      final isNI = cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified';
+      if (!isNI) return false;
+      final isArchived = cs == 'archived' ||
+          cs == 'property listed' ||
+          cs == 'listed' ||
+          l.importStatus.trim().toLowerCase() == 'archived';
+      return !isArchived;
+    }).toList();
+
+    final filtered = valid.where((l) {
+      final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = l.notInterestedAt ??
+          l.statusUpdatedAt ??
+          (raw['not_interested_at'] != null ? DateTime.tryParse(raw['not_interested_at'].toString()) : null) ??
+          (raw['status_updated_at'] != null ? DateTime.tryParse(raw['status_updated_at'].toString()) : null) ??
+          l.telecallerAssignedAt ??
+          l.receivedAt;
+      return _matchesKpiDateFilter(dt);
+    }).toList();
+
+    return filtered.length;
+  }
+
+  static bool _isLeadArchived(IntegrationLeadModel l) {
+    if (l.archivedAt != null) return true;
+    if (l.rawJson['archived_at'] != null && l.rawJson['archived_at'].toString().trim().isNotEmpty) return true;
+    final s = l.campaignStatus.trim().toLowerCase();
+    if (s == 'archived' || s == 'property listed' || s == 'listed') return true;
+    if (l.importStatus.trim().toLowerCase() == 'archived') return true;
+    return false;
+  }
+
+  static bool _isOpenUntouchedLead(IntegrationLeadModel l) {
+    if (_isLeadArchived(l)) return false;
+    final cs = l.campaignStatus.trim().toLowerCase();
+    if (cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified') return false;
+    if (cs == 'assigned' || l.importStatus.trim().toLowerCase() == 'imported') return false;
+    if (l.assignedTo != null && l.assignedTo!.isNotEmpty && l.assignedTo != 'Unassigned') return false;
+    if (cs == 'cnr' || (l.allocationStatus ?? '').toUpperCase() == 'CNR') return false;
+    if (cs == 'callback' || cs == 'call back' || (l.allocationStatus ?? '').toUpperCase() == 'CALLBACK') return false;
+    if (l.callbackScheduledAt != null && (l.callbackStatus?.toLowerCase() == 'pending')) return false;
+    if (cs == 'follow up' || cs == 'follow-up' || (l.allocationStatus ?? '').toUpperCase() == 'FOLLOWUP') return false;
+    if (l.followupScheduledAt != null) return false;
+    if (cs == 'interested' || cs == 'picked up') return false;
+    if (l.isInteracted || l.interactedAt != null) return false;
+    final attempts = int.tryParse(l.rawJson['call_attempt_count']?.toString() ?? '0') ?? 0;
+    if (attempts > 0) return false;
+    return cs == 'new' || cs.isEmpty;
+  }
+
+  int get _openLeadsKpiCount {
+    final s = _kpiSummary['open_leads'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) return 0;
+
+    final valid = leads.where((l) => _isOpenUntouchedLead(l)).toList();
+    final filtered = valid.where((l) {
+      final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = (raw['created_at'] != null ? DateTime.tryParse(raw['created_at'].toString()) : null) ?? l.receivedAt;
+      return _matchesKpiDateFilter(dt);
+    }).toList();
+
+    return filtered.length;
+  }
+
+  int get _archivedKpiCount {
+    final s = _kpiSummary['archived'];
+    if (s is int) return s;
+    if (s != null) {
+      final parsed = int.tryParse(s.toString());
+      if (parsed != null) return parsed;
+    }
+
+    final leads = IntegrationService().leads;
+    if (leads.isEmpty) return 0;
+
+    final valid = leads.where((l) => _isLeadArchived(l)).toList();
+    final filtered = valid.where((l) {
+      final isListing = l.leadType.toLowerCase().contains('listing') || l.leadType.toLowerCase().contains('property');
+      if (_kpiLeadType == 'Listing' && !isListing) return false;
+      if (_kpiLeadType == 'Requirement' && isListing) return false;
+      final raw = l.rawJson;
+      final dt = l.archivedAt ??
+          l.statusUpdatedAt ??
+          (raw['archived_at'] != null ? DateTime.tryParse(raw['archived_at'].toString()) : null) ??
+          (raw['status_updated_at'] != null ? DateTime.tryParse(raw['status_updated_at'].toString()) : null) ??
+          l.telecallerAssignedAt ??
+          l.receivedAt;
+      return _matchesKpiDateFilter(dt);
+    }).toList();
+
+    return filtered.length;
+  }
+
+  void _openOpenLeadsDrilldown() {
+    TelecallerKpiDialogs.showOpenLeadsDrilldown(
+      context,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openArchiveDrilldown() {
+    TelecallerKpiDialogs.showArchiveLeadsDrilldown(
+      context,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openFollowupsDrilldown() {
+    TelecallerKpiDialogs.showFollowupsDrilldown(
+      context,
+      followups: _followups,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openKpiDrilldown({required String category, required String title}) {
+    TelecallerKpiDialogs.showKpiLeadsDrilldown(
+      context,
+      category: category,
+      title: title,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  void _openSalesUsersDrilldown() {
+    TelecallerKpiDialogs.showSalesUsersBreakdown(
+      context,
+      dateFilter: _kpiDateFilter,
+      startDate: _customStartDate,
+      endDate: _customEndDate,
+      leadType: _kpiLeadType,
+    );
+  }
+
+  Widget _buildFilterPill(
+    String label,
+    bool isSelected,
+    VoidCallback onTap,
+    bool isDark,
+  ) {
+    final primaryColor = CRMColors.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? primaryColor
+                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKpiFilterBar(bool isDark) {
+    final primaryColor = CRMColors.primary;
+    final dateRangeText = _computeKpiDateRangeDisplay();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 1. Date Filter
+            Text(
+              'Date:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              height: 32,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildFilterPill('Today', _kpiDateFilter == 'Today', () => _selectDateFilter('Today'), isDark),
+                  _buildFilterPill('Weekly', _kpiDateFilter == 'Weekly', () => _selectDateFilter('Weekly'), isDark),
+                  _buildFilterPill('Monthly', _kpiDateFilter == 'Monthly', () => _selectDateFilter('Monthly'), isDark),
+                  _buildFilterPill('Yearly', _kpiDateFilter == 'Yearly', () => _selectDateFilter('Yearly'), isDark),
+                  _buildFilterPill(
+                    _kpiDateFilter.startsWith('Custom') && _customStartDate != null
+                        ? '$_customStartDate ~ $_customEndDate'
+                        : 'Custom Range',
+                    _kpiDateFilter.startsWith('Custom'),
+                    () => _pickCustomDateRange(),
+                    isDark,
+                  ),
+                ],
+              ),
+            ),
+            if (dateRangeText.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: primaryColor.withValues(alpha: isDark ? 0.35 : 0.2),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calendar_today_rounded, size: 12, color: primaryColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      dateRangeText,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: primaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Separator
+            Container(
+              height: 20,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+
+            // 2. Lead Type Filter
+            Text(
+              'Lead Type:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              height: 32,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildFilterPill('Both', _kpiLeadType == 'Both', () => _selectLeadType('Both'), isDark),
+                  _buildFilterPill('Listing', _kpiLeadType == 'Listing', () => _selectLeadType('Listing'), isDark),
+                  _buildFilterPill('Requirement', _kpiLeadType == 'Requirement', () => _selectLeadType('Requirement'), isDark),
+                ],
+              ),
+            ),
+
+            if (_loadingKpis) ...[
+              const SizedBox(width: 12),
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   void _onIntegrationChanged() {
     if (!mounted) return;
     _loadFollowups();
+    _loadCallbacks();
+    _loadCnr();
+    setState(() {});
   }
 
   @override
@@ -202,6 +809,30 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     } catch (_) {
       if (mounted) setState(() => _loadingFollowups = false);
     }
+  }
+
+  // --- CALLBACKS API ---
+  Future<void> _loadCallbacks() async {
+    try {
+      final list = await _repository.callbacks();
+      if (mounted) {
+        setState(() {
+          _callbacks = list;
+        });
+      }
+    } catch (_) {}
+  }
+
+  // --- CNR API ---
+  Future<void> _loadCnr() async {
+    try {
+      final list = await _repository.cnr();
+      if (mounted) {
+        setState(() {
+          _cnrLeads = list;
+        });
+      }
+    } catch (_) {}
   }
 
 
@@ -324,6 +955,10 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
             await Future.wait([
               _loadTransferredLeads(1),
               _loadFollowups(),
+              _loadCallbacks(),
+              _loadCnr(),
+              _loadKpiSummary(),
+              IntegrationService().fetchServerLeads(silent: true),
             ]);
           },
           child: ListView(
@@ -343,24 +978,116 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                 ),
               const SizedBox(height: 20),
 
+              // Date & Lead Type Filter Bar above KPIs
+              _buildKpiFilterBar(Theme.of(context).brightness == Brightness.dark),
+              const SizedBox(height: 16),
+
               LayoutBuilder(
                 builder: (context, constraints) {
                   const gap = 12.0;
                   final cols = constraints.maxWidth < 340
                       ? 1
-                      : (constraints.maxWidth < 900 ? 2 : (constraints.maxWidth / 220).floor().clamp(2, 5));
+                      : (constraints.maxWidth < 900 ? 2 : (constraints.maxWidth / 220).floor().clamp(2, 4));
                   final cardW = (constraints.maxWidth - gap * (cols - 1)) / cols;
                   final cards = <Widget>[
-                    _clickableKpi(context, 'My assigned leads', '${data['assignedLeads'] ?? 0}', Icons.assignment_outlined, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Uncontacted', '${data['uncontacted'] ?? 0}', Icons.mark_email_unread_outlined, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Callbacks', '${data['callbackCount'] ?? 0}', Icons.event_repeat, '/telecaller/callbacks', width: cardW),
-                    _clickableKpi(context, "Today's callbacks", '${data['todaysCallbacks'] ?? 0}', Icons.today_outlined, '/telecaller/callbacks', width: cardW),
-                    _clickableKpi(context, 'CNR / Retries', '${data['cnrCount'] ?? 0}', Icons.phone_missed_outlined, '/telecaller/cnr', width: cardW),
-                    _clickableKpi(context, 'Picked up', '${data['pickedUp'] ?? 0}', Icons.call_received, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Handed to Sales', '${data['handedToSales'] ?? 0}', Icons.handshake_outlined, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Not Interested', '${data['notInterestedCount'] ?? 0}', Icons.do_not_disturb_on_rounded, '/campaign/leads?view=not_interested', accentColor: const Color(0xFFEF4444), width: cardW),
-                    _clickableKpi(context, 'Workload', '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}', Icons.speed, '/telecaller/leads', width: cardW),
-                    _clickableKpi(context, 'Remaining Capacity', '${data['remainingCapacity'] ?? 0}', Icons.hourglass_bottom, '/telecaller/leads', width: cardW),
+                    _clickableKpi(
+                      context,
+                      'Total Leads',
+                      '${_kpiSummary['total_leads'] ?? 0}',
+                      Icons.assignment_outlined,
+                      onTap: () => _openKpiDrilldown(category: 'total', title: 'Total Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'New Leads Allocated',
+                      '${_kpiSummary['new_allocated'] ?? 0}',
+                      Icons.person_add_alt_1_outlined,
+                      accentColor: const Color(0xFF059669),
+                      onTap: () => _openKpiDrilldown(category: 'new_allocated', title: 'New Leads Allocated'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Old Leads Allocated',
+                      '${_kpiSummary['old_allocated'] ?? 0}',
+                      Icons.history_toggle_off_rounded,
+                      accentColor: const Color(0xFF6366F1),
+                      onTap: () => _openKpiDrilldown(category: 'old_allocated', title: 'Old Leads Allocated'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Open Leads',
+                      '$_openLeadsKpiCount',
+                      Icons.folder_open_rounded,
+                      accentColor: const Color(0xFF3B82F6),
+                      onTap: _openOpenLeadsDrilldown,
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Assigned to Sales',
+                      '${_kpiSummary['assigned_to_sales'] ?? 0}',
+                      Icons.handshake_outlined,
+                      accentColor: const Color(0xFF2563EB),
+                      onTap: () => _openKpiDrilldown(category: 'assigned_to_sales', title: 'Assigned to Sales'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Sales Users',
+                      '${_kpiSummary['sales_users_count'] ?? 0}',
+                      Icons.badge_outlined,
+                      accentColor: const Color(0xFF8B5CF6),
+                      onTap: () => _openSalesUsersDrilldown(),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Not Interested',
+                      '$_notInterestedKpiCount',
+                      Icons.do_not_disturb_on_rounded,
+                      accentColor: const Color(0xFFEF4444),
+                      onTap: () => _openKpiDrilldown(category: 'not_interested', title: 'Not Interested Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Callback',
+                      '$_callbacksKpiCount',
+                      Icons.event_repeat,
+                      accentColor: const Color(0xFFD97706),
+                      onTap: () => _openKpiDrilldown(category: 'callback', title: 'Callback Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'CNR',
+                      '$_cnrKpiCount',
+                      Icons.phone_missed_outlined,
+                      accentColor: const Color(0xFFEA580C),
+                      onTap: () => _openKpiDrilldown(category: 'cnr', title: 'CNR Leads'),
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Follow-Ups',
+                      '$_followupsKpiCount',
+                      Icons.schedule_rounded,
+                      accentColor: const Color(0xFFD97706),
+                      onTap: _openFollowupsDrilldown,
+                      width: cardW,
+                    ),
+                    _clickableKpi(
+                      context,
+                      'Archive',
+                      '$_archivedKpiCount',
+                      Icons.archive_outlined,
+                      accentColor: const Color(0xFF64748B),
+                      onTap: _openArchiveDrilldown,
+                      width: cardW,
+                    ),
                   ];
                   return Wrap(spacing: gap, runSpacing: gap, children: cards);
                 },
@@ -487,6 +1214,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         await Future.wait([
           _loadTransferredLeads(1),
           _loadFollowups(),
+          _loadCallbacks(),
+          _loadCnr(),
+          _loadKpiSummary(),
         ]);
       },
       body: Column(
@@ -507,8 +1237,12 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
           _buildMobileNextLeadCard(context, next),
           const SizedBox(height: 16),
 
-          // KPIs Grid (10 metrics)
-          _buildMobileKpiGrid(context, data),
+          // Date & Lead Type Filter Bar above KPIs
+          _buildMobileFilterBar(Theme.of(context).brightness == Brightness.dark),
+          const SizedBox(height: 16),
+
+          // KPIs Grid (8 metrics)
+          _buildMobileKpiGrid(context),
           const SizedBox(height: 20),
 
           // Followups preview
@@ -532,23 +1266,58 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   Widget _buildMobileNextLeadCard(BuildContext context, Map<String, dynamic>? next) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (next == null) {
-      return MobileCard(
-        title: 'Calling Queue',
-        subtitle: 'No pending leads in queue',
-        leading: CircleAvatar(
-          backgroundColor: CRMColors.primary.withValues(alpha: 0.1),
-          child: Icon(Icons.phone_in_talk_rounded, color: CRMColors.primary),
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E2430) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
         ),
-        trailing: SizedBox(
-          width: 130,
-          child: MobileActionButton.primary(
-            MobileAction(
-              label: 'Open Queue',
-              icon: Icons.arrow_forward_rounded,
-              onPressed: () => context.go('/telecaller/leads'),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: CRMColors.primary.withValues(alpha: 0.12),
+              child: Icon(Icons.phone_in_talk_rounded, color: CRMColors.primary, size: 20),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Calling Queue',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'No pending leads in queue',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => context.go('/telecaller/leads'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+              label: const Text('Open Queue', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
       );
     }
@@ -557,104 +1326,322 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     final phone = (next['phone'] ?? next['mobile'] ?? '').toString();
     final reqType = (next['lead_type'] ?? next['type'] ?? 'Requirement').toString();
 
-    return MobileCard(
-      title: name,
-      subtitle: phone.isNotEmpty ? phone : 'Next Lead to Call',
-      status: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFF6FF),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          reqType,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-        ),
-      ),
-      leading: CircleAvatar(
-        radius: 20,
-        backgroundColor: const Color(0xFF059669).withValues(alpha: 0.12),
-        child: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 20),
-      ),
-      trailing: SizedBox(
-        width: 120,
-        child: MobileActionButton.primary(
-          MobileAction(
-            label: 'Call Lead',
-            icon: Icons.call_rounded,
-            onPressed: () => context.go('/telecaller/leads'),
-          ),
-        ),
-      ),
+    return InkWell(
       onTap: () => context.go('/telecaller/leads'),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E2430) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: const Color(0xFF059669).withValues(alpha: 0.12),
+              child: const Icon(Icons.phone_forwarded_rounded, color: Color(0xFF059669), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          reqType,
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                        ),
+                      ),
+                      if (phone.isNotEmpty)
+                        Text(
+                          phone,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: () => context.go('/telecaller/leads'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF059669),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                minimumSize: const Size(0, 38),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              icon: const Icon(Icons.call_rounded, size: 16, color: Colors.white),
+              label: const Text(
+                'Call Lead',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildMobileKpiGrid(BuildContext context, Map<String, dynamic> data) {
+  Widget _buildMobileFilterBar(bool isDark) {
+    final primaryColor = CRMColors.primary;
+    final dateRangeText = _computeKpiDateRangeDisplay();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: Date Filter
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Date:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 32,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFilterPill('Today', _kpiDateFilter == 'Today', () => _selectDateFilter('Today'), isDark),
+                      _buildFilterPill('Weekly', _kpiDateFilter == 'Weekly', () => _selectDateFilter('Weekly'), isDark),
+                      _buildFilterPill('Monthly', _kpiDateFilter == 'Monthly', () => _selectDateFilter('Monthly'), isDark),
+                      _buildFilterPill('Yearly', _kpiDateFilter == 'Yearly', () => _selectDateFilter('Yearly'), isDark),
+                      _buildFilterPill(
+                        _kpiDateFilter.startsWith('Custom') && _customStartDate != null
+                            ? '$_customStartDate ~ $_customEndDate'
+                            : 'Custom Range',
+                        _kpiDateFilter.startsWith('Custom'),
+                        () => _pickCustomDateRange(),
+                        isDark,
+                      ),
+                    ],
+                  ),
+                ),
+                if (dateRangeText.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: isDark ? 0.2 : 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: primaryColor.withValues(alpha: isDark ? 0.35 : 0.2),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.calendar_today_rounded, size: 12, color: primaryColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          dateRangeText,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: primaryColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (_loadingKpis) ...[
+                  const SizedBox(width: 10),
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Row 2: Lead Type Filter
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Type:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 32,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFilterPill('Both', _kpiLeadType == 'Both', () => _selectLeadType('Both'), isDark),
+                      _buildFilterPill('Listing', _kpiLeadType == 'Listing', () => _selectLeadType('Listing'), isDark),
+                      _buildFilterPill('Requirement', _kpiLeadType == 'Requirement', () => _selectLeadType('Requirement'), isDark),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileKpiGrid(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final isVerySmall = width < 340;
 
     final kpis = <_MobileKpiItem>[
       _MobileKpiItem(
-        label: 'My assigned leads',
-        value: '${data['assignedLeads'] ?? 0}',
+        label: 'Total Leads',
+        value: '${_kpiSummary['total_leads'] ?? 0}',
         icon: Icons.assignment_outlined,
-        route: '/telecaller/leads',
+        onTap: () => _openKpiDrilldown(category: 'total', title: 'Total Leads'),
       ),
       _MobileKpiItem(
-        label: 'Uncontacted',
-        value: '${data['uncontacted'] ?? 0}',
-        icon: Icons.mark_email_unread_outlined,
-        route: '/telecaller/leads',
+        label: 'New Leads Allocated',
+        value: '${_kpiSummary['new_allocated'] ?? 0}',
+        icon: Icons.person_add_alt_1_outlined,
+        accentColor: const Color(0xFF059669),
+        onTap: () => _openKpiDrilldown(category: 'new_allocated', title: 'New Leads Allocated'),
       ),
       _MobileKpiItem(
-        label: 'Callbacks',
-        value: '${data['callbackCount'] ?? 0}',
-        icon: Icons.event_repeat,
-        route: '/telecaller/callbacks',
+        label: 'Old Leads Allocated',
+        value: '${_kpiSummary['old_allocated'] ?? 0}',
+        icon: Icons.history_toggle_off_rounded,
+        accentColor: const Color(0xFF6366F1),
+        onTap: () => _openKpiDrilldown(category: 'old_allocated', title: 'Old Leads Allocated'),
       ),
       _MobileKpiItem(
-        label: "Today's callbacks",
-        value: '${data['todaysCallbacks'] ?? 0}',
-        icon: Icons.today_outlined,
-        route: '/telecaller/callbacks',
+        label: 'Open Leads',
+        value: '$_openLeadsKpiCount',
+        icon: Icons.folder_open_rounded,
+        accentColor: const Color(0xFF3B82F6),
+        onTap: _openOpenLeadsDrilldown,
       ),
       _MobileKpiItem(
-        label: 'CNR / Retries',
-        value: '${data['cnrCount'] ?? 0}',
-        icon: Icons.phone_missed_outlined,
-        route: '/telecaller/cnr',
-      ),
-      _MobileKpiItem(
-        label: 'Picked up',
-        value: '${data['pickedUp'] ?? 0}',
-        icon: Icons.call_received,
-        route: '/telecaller/leads',
-      ),
-      _MobileKpiItem(
-        label: 'Handed to Sales',
-        value: '${data['handedToSales'] ?? 0}',
+        label: 'Assigned to Sales',
+        value: '${_kpiSummary['assigned_to_sales'] ?? 0}',
         icon: Icons.handshake_outlined,
-        route: '/telecaller/leads',
+        accentColor: const Color(0xFF2563EB),
+        onTap: () => _openKpiDrilldown(category: 'assigned_to_sales', title: 'Assigned to Sales'),
+      ),
+      _MobileKpiItem(
+        label: 'Sales Users',
+        value: '${_kpiSummary['sales_users_count'] ?? 0}',
+        icon: Icons.badge_outlined,
+        accentColor: const Color(0xFF8B5CF6),
+        onTap: () => _openSalesUsersDrilldown(),
       ),
       _MobileKpiItem(
         label: 'Not Interested',
-        value: '${data['notInterestedCount'] ?? 0}',
+        value: '$_notInterestedKpiCount',
         icon: Icons.do_not_disturb_on_rounded,
-        route: '/campaign/leads?view=not_interested',
         accentColor: const Color(0xFFEF4444),
+        onTap: () => _openKpiDrilldown(category: 'not_interested', title: 'Not Interested Leads'),
       ),
       _MobileKpiItem(
-        label: 'Workload',
-        value: '${data['currentWorkload'] ?? 0}/${data['maxCapacity'] ?? 0}',
-        icon: Icons.speed,
-        route: '/telecaller/leads',
+        label: 'Callback',
+        value: '$_callbacksKpiCount',
+        icon: Icons.event_repeat,
+        accentColor: const Color(0xFFD97706),
+        onTap: () => _openKpiDrilldown(category: 'callback', title: 'Callback Leads'),
       ),
       _MobileKpiItem(
-        label: 'Remaining Cap.',
-        value: '${data['remainingCapacity'] ?? 0}',
-        icon: Icons.hourglass_bottom,
-        route: '/telecaller/leads',
+        label: 'CNR',
+        value: '$_cnrKpiCount',
+        icon: Icons.phone_missed_outlined,
+        accentColor: const Color(0xFFEA580C),
+        onTap: () => _openKpiDrilldown(category: 'cnr', title: 'CNR Leads'),
+      ),
+      _MobileKpiItem(
+        label: 'Follow-Ups',
+        value: '$_followupsKpiCount',
+        icon: Icons.schedule_rounded,
+        accentColor: const Color(0xFFD97706),
+        onTap: _openFollowupsDrilldown,
+      ),
+      _MobileKpiItem(
+        label: 'Archive',
+        value: '$_archivedKpiCount',
+        icon: Icons.archive_outlined,
+        accentColor: const Color(0xFF64748B),
+        onTap: _openArchiveDrilldown,
       ),
     ];
 
@@ -673,16 +1660,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         return Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: kpis.map((kpi) => SizedBox(
-            width: cardW,
-            child: _buildMobileKpiCard(context, kpi),
-          )).toList(),
+          children: kpis.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final kpi = entry.value;
+            final isLastOdd = idx == kpis.length - 1 && kpis.length.isOdd;
+            return SizedBox(
+              width: isLastOdd ? constraints.maxWidth : cardW,
+              child: _buildMobileKpiCard(context, kpi, isFullWidth: isLastOdd),
+            );
+          }).toList(),
         );
       },
     );
   }
 
-  Widget _buildMobileKpiCard(BuildContext context, _MobileKpiItem item) {
+  Widget _buildMobileKpiCard(BuildContext context, _MobileKpiItem item, {bool isFullWidth = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = item.accentColor ?? CRMColors.primary;
 
@@ -691,7 +1683,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
       label: '${item.label}: ${item.value}',
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () => context.go(item.route),
+        onTap: item.onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -719,11 +1711,9 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      item.value,
+                    AnimatedCountRoll(
+                      value: item.value,
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -739,6 +1729,12 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   ],
                 ),
               ),
+              if (isFullWidth)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: isDark ? Colors.grey.shade500 : const Color(0xFF94A3B8),
+                  size: 20,
+                ),
             ],
           ),
         ),
@@ -841,12 +1837,13 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                         separatorBuilder: (context, index) => const SizedBox(height: 10),
                         itemBuilder: (context, i) {
                           final fu = pagedFollowups[i];
+                          final isDark = Theme.of(context).brightness == Brightness.dark;
                           return Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                             ),
                             child: LayoutBuilder(
                               builder: (context, constraints) {
@@ -856,7 +1853,11 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                   children: [
                                     Text(
                                       fu.clientName,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -881,14 +1882,14 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                     const SizedBox(height: 4),
                                     Text(
                                       DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt),
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
                                     ),
                                     if (fu.mobile.isNotEmpty)
-                                      Text(fu.mobile, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      Text(fu.mobile, style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600)),
                                     if (fu.remarks.isNotEmpty)
                                       Text(
                                         fu.remarks,
-                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                                        style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade300 : Colors.grey.shade700, fontStyle: FontStyle.italic),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -907,6 +1908,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                           if (await canLaunchUrl(uri)) await launchUrl(uri);
                                         },
                                       ),
+                                      const SizedBox(width: 4),
                                       _compactIconButton(
                                         icon: Icons.chat_outlined,
                                         color: const Color(0xFF25D366),
@@ -917,10 +1919,11 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                           if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
                                         },
                                       ),
+                                      const SizedBox(width: 4),
                                     ],
                                     _compactIconButton(
                                       icon: Icons.arrow_forward_ios_rounded,
-                                      color: Colors.grey,
+                                      color: isDark ? Colors.grey.shade400 : Colors.grey,
                                       tooltip: 'Open in Follow-ups tab',
                                       onPressed: () => context.go('/campaign/leads?view=followups'),
                                     ),
@@ -930,7 +1933,109 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      details,
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              fu.clientName,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14.5,
+                                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Wrap(
+                                            spacing: 6,
+                                            children: [
+                                              if (fu.isToday)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFEF3C7),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: const Text('Today', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                                                ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFEFF6FF),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(fu.leadType, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.access_time_rounded, size: 13, color: Color(0xFFD97706)),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            DateFormat('EEE, d MMM • h:mm a').format(fu.scheduledAt),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (fu.mobile.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.phone_outlined, size: 13, color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B)),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              fu.mobile,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      if (fu.remarks.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                          decoration: BoxDecoration(
+                                            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Icon(Icons.format_quote_rounded, size: 13, color: isDark ? Colors.grey.shade500 : const Color(0xFF94A3B8)),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: Text(
+                                                  fu.remarks,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: isDark ? Colors.grey.shade300 : const Color(0xFF334155),
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 8),
                                       Align(alignment: Alignment.centerRight, child: actions),
                                     ],
                                   );
@@ -1033,52 +2138,139 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                   final dt = DateTime.tryParse(lead['transferredAt'].toString());
                   if (dt != null) timeStr = DateFormat('d MMM, h:mm a').format(dt.toLocal());
                 }
+                final isDark = Theme.of(context).brightness == Brightness.dark;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Row 1: Index pill + Name + Lead Type badge
                         Row(
                           children: [
-                            Text('#$index', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '#$index',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.grey.shade300 : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 clientName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                leadType,
+                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(phone.isEmpty ? 'No phone' : phone, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                         const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
+                        // Row 2: Phone + Transferred to
+                        Row(
                           children: [
-                            Text(leadType, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
-                            Text('· $transferredTo', style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B))),
+                            if (phone.isNotEmpty) ...[
+                              Icon(Icons.phone_outlined, size: 13, color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Text(
+                                phone,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? Colors.grey.shade400 : const Color(0xFF475569),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            const Icon(Icons.person_outline_rounded, size: 14, color: Color(0xFF059669)),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                transferredTo,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
-                            child: const Text('View remarks'),
-                          ),
+                        const SizedBox(height: 8),
+                        // Row 3: Timestamp & View Remarks button
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.access_time_rounded, size: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                const SizedBox(width: 4),
+                                Text(
+                                  timeStr,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            InkWell(
+                              onTap: () => _showTransferRemarkDialog(context, clientName, remarks, transferredTo, timeStr),
+                              borderRadius: BorderRadius.circular(6),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF059669)),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'View remarks',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF059669),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1682,14 +2874,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     required Color color,
     required String tooltip,
     required VoidCallback onPressed,
+    Color? backgroundColor,
   }) {
-    return IconButton(
-      icon: Icon(icon, size: 18, color: color),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      onPressed: onPressed,
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundColor ?? color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: 17, color: color),
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+        onPressed: onPressed,
+      ),
     );
   }
 
@@ -1768,13 +2967,21 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
     );
   }
 
-  Widget _clickableKpi(BuildContext context, String title, String value, IconData icon, String route, {Color? accentColor, double width = 220}) {
+  Widget _clickableKpi(
+    BuildContext context,
+    String title,
+    String value,
+    IconData icon, {
+    VoidCallback? onTap,
+    Color? accentColor,
+    double width = 220,
+  }) {
     return SizedBox(
       width: width,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => context.go(route),
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: StatCard(
             title: title,
@@ -1825,14 +3032,14 @@ class _MobileKpiItem {
   final String label;
   final String value;
   final IconData icon;
-  final String route;
+  final VoidCallback onTap;
   final Color? accentColor;
 
   const _MobileKpiItem({
     required this.label,
     required this.value,
     required this.icon,
-    required this.route,
+    required this.onTap,
     this.accentColor,
   });
 }

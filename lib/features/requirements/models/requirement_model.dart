@@ -51,6 +51,8 @@ class RequirementModel {
   final Map<String, dynamic>? metaCustomFields;
   final String? leadQuality;
   final String? assignedTelecallerId;
+  final DateTime? salesAssignedAt;
+  final String? rejectionRemark;
 
   RequirementModel({
     required this.id,
@@ -103,11 +105,87 @@ class RequirementModel {
     this.metaCustomFields,
     this.leadQuality,
     this.assignedTelecallerId,
+    this.salesAssignedAt,
+    this.rejectionRemark,
   });
 
   bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
   String? get metaCampaignDisplayName => metaCampaignName ?? metaCampaignId;
   String? get metaAdDisplayName => metaAdName ?? metaAdId;
+
+  /// Returns true if this lead was manually created via "+ Add Lead" by a Salesperson, Telecaller, or Admin.
+  bool get isManuallyAdded {
+    // 1. Automated integration exclusion:
+    // If it has an external Meta Lead ID, Housing sync Lead ID, or Campaign integration info, it is NOT manually added.
+    if (isMetaLead ||
+        (metaLeadId != null && metaLeadId!.trim().isNotEmpty) ||
+        (metaCampaignId != null && metaCampaignId!.trim().isNotEmpty) ||
+        (metaCampaignName != null && metaCampaignName!.trim().isNotEmpty) ||
+        (metaPageId != null && metaPageId!.trim().isNotEmpty) ||
+        (metaFormId != null && metaFormId!.trim().isNotEmpty) ||
+        (metaAdId != null && metaAdId!.trim().isNotEmpty) ||
+        (metaAdName != null && metaAdName!.trim().isNotEmpty)) {
+      return false;
+    }
+
+    // Exclude automated pipelines (Webhook API, CSV/Batch imports, bots)
+    final src = leadSource?.trim().toLowerCase();
+    if (src != null && src.isNotEmpty) {
+      if (src == 'webhook api' ||
+          src == 'webhook' ||
+          src == 'api' ||
+          src.contains('webhook') ||
+          src.contains('campaign') ||
+          src.contains('sync') ||
+          src.contains('csv') ||
+          src.contains('excel') ||
+          src.contains('import') ||
+          src.contains('bot')) {
+        return false;
+      }
+    }
+
+    // Exclude external integration custom fields (Meta form/ad/campaign, Housing flat_id, webhook source)
+    if (metaCustomFields != null) {
+      final customSource = metaCustomFields!['source']?.toString().toLowerCase();
+      if (customSource != null &&
+          (customSource == 'webhook' ||
+           customSource == 'api' ||
+           customSource.contains('webhook') ||
+           customSource.contains('meta') ||
+           customSource.contains('facebook'))) {
+        return false;
+      }
+      if (metaCustomFields!['flat_id'] != null ||
+          metaCustomFields!['form_id'] != null ||
+          metaCustomFields!['ad_id'] != null ||
+          metaCustomFields!['campaign_id'] != null) {
+        return false;
+      }
+    }
+
+    // 2. Explicit manual flag set by "+ Add Lead" form:
+    if (metaCustomFields != null) {
+      final flag = metaCustomFields!['is_manually_added'];
+      if (flag == true || flag == 'true' || flag == 1) return true;
+      final createdVia = metaCustomFields!['created_via']?.toString().toLowerCase();
+      if (createdVia == 'add_lead' || createdVia == 'manual') return true;
+      final entrySource = metaCustomFields!['entry_source']?.toString().toLowerCase();
+      if (entrySource == 'manual') return true;
+    }
+
+    // 3. Any lead created directly in CRM (by Admin, Sales, Telecaller) with no automated integration IDs
+    if (createdBy != null && createdBy!.trim().isNotEmpty) {
+      return true;
+    }
+    if (creatorName != null &&
+        creatorName!.trim().isNotEmpty &&
+        creatorName!.trim().toLowerCase() != 'system') {
+      return true;
+    }
+
+    return false;
+  }
 
   String? get leadSourceDisplay {
     if (isMetaLead) {
@@ -254,23 +332,74 @@ class RequirementModel {
 
     // Handle target areas
     List<String> aIds = [];
-    if (json['areaIds'] != null) {
-      aIds = List<String>.from(json['areaIds']);
-    } else if (json['area_ids'] != null) {
-      aIds = List<String>.from(json['area_ids']);
-    } else if (json['area_id'] != null) {
-      aIds = [json['area_id'].toString()];
+    List<String> aNames = [];
+
+    // 1. Direct lists from backend mapping (areaIds, area_ids, areaNames, area_names)
+    if (json['areaIds'] != null && json['areaIds'] is List) {
+      aIds = List<String>.from(json['areaIds'].map((e) => e?.toString() ?? '')).where((s) => s.isNotEmpty).toList();
+    } else if (json['area_ids'] != null && json['area_ids'] is List) {
+      aIds = List<String>.from(json['area_ids'].map((e) => e?.toString() ?? '')).where((s) => s.isNotEmpty).toList();
     }
 
-    List<String> aNames = [];
-    if (json['areaNames'] != null) {
-      aNames = List<String>.from(json['areaNames']).where((s) => s.trim().isNotEmpty).toList();
-    } else if (json['area_names'] != null) {
-      aNames = List<String>.from(json['area_names']).where((s) => s.trim().isNotEmpty).toList();
-    } else if (json['area'] != null && json['area'] is Map) {
+    if (json['areaNames'] != null && json['areaNames'] is List) {
+      aNames = List<String>.from(json['areaNames'].map((e) => e?.toString() ?? '')).where((s) => s.trim().isNotEmpty).toList();
+    } else if (json['area_names'] != null && json['area_names'] is List) {
+      aNames = List<String>.from(json['area_names'].map((e) => e?.toString() ?? '')).where((s) => s.trim().isNotEmpty).toList();
+    }
+
+    // 2. Many-to-many relationship from Supabase / PostgREST (requirement_areas)
+    if (json['requirement_areas'] != null && json['requirement_areas'] is List) {
+      for (final item in json['requirement_areas']) {
+        if (item is Map) {
+          final String? id = (item['area_id'] ?? (item['area'] is Map ? item['area']['id'] : null))?.toString();
+          if (id != null && id.isNotEmpty && !aIds.contains(id)) {
+            aIds.add(id);
+          }
+          final String? name = (item['area'] is Map ? item['area']['area_name'] : (item['area_name'] ?? item['name']))?.toString().trim();
+          if (name != null && name.isNotEmpty && !aNames.contains(name)) {
+            aNames.add(name);
+          }
+        }
+      }
+    }
+
+    // 3. Fallback to joined area object or single area_id ONLY if no requirement_areas were found
+    if (aIds.isEmpty && json['area_id'] != null && json['area_id'].toString().isNotEmpty) {
+      final sId = json['area_id'].toString();
+      if (!aIds.contains(sId)) {
+        aIds.add(sId);
+      }
+    }
+    if (aNames.isEmpty && json['area'] != null && json['area'] is Map) {
       final aName = json['area']['area_name']?.toString().trim();
-      if (aName != null && aName.isNotEmpty) {
-        aNames = [aName];
+      if (aName != null && aName.isNotEmpty && !aNames.contains(aName)) {
+        aNames.add(aName);
+      }
+    }
+
+    // 4. If aIds has IDs but aNames is lacking names, resolve from LookupLocalRepository
+    if (aIds.isNotEmpty && aNames.length < aIds.length) {
+      for (final id in aIds) {
+        final lookupName = LookupLocalRepository.getLookupNameSync(id);
+        if (lookupName != null && lookupName.trim().isNotEmpty && !aNames.contains(lookupName.trim())) {
+          aNames.add(lookupName.trim());
+        }
+      }
+    }
+
+    // 4b. Also check metaCustomFields for target_area_names / area_names
+    if (aNames.isEmpty || aNames.length < aIds.length) {
+      final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+      if (meta is Map) {
+        final metaAreaNames = meta['target_area_names'] ?? meta['area_names'];
+        if (metaAreaNames is List && metaAreaNames.isNotEmpty) {
+          for (final an in metaAreaNames) {
+            final s = an?.toString().trim();
+            if (s != null && s.isNotEmpty && !aNames.contains(s)) {
+              aNames.add(s);
+            }
+          }
+        }
       }
     }
 
@@ -531,6 +660,27 @@ class RequirementModel {
                       json['metaCustomFields']['telecaller_by'])
                   : null))
           ?.toString(),
+      salesAssignedAt: () {
+        final raw = json['salesAssignedAt'] ??
+            json['sales_assigned_at'] ??
+            json['assignedAt'] ??
+            json['assigned_at'] ??
+            (json['meta_custom_fields'] is Map
+                ? (json['meta_custom_fields']['sales_assigned_at'] ??
+                    json['meta_custom_fields']['telecaller_assigned_at'] ??
+                    json['meta_custom_fields']['assigned_at'])
+                : null) ??
+            (json['metaCustomFields'] is Map
+                ? (json['metaCustomFields']['sales_assigned_at'] ??
+                    json['metaCustomFields']['telecaller_assigned_at'] ??
+                    json['metaCustomFields']['assigned_at'])
+                : null);
+        if (raw != null && raw.toString().trim().isNotEmpty) {
+          return DateTime.tryParse(raw.toString().trim());
+        }
+        return null;
+      }(),
+      rejectionRemark: (json['rejection_remark'] ?? json['rejectionRemark'])?.toString(),
     );
   }
 
@@ -585,6 +735,10 @@ class RequirementModel {
       'lead_quality': leadQuality,
       'assigned_telecaller_id': assignedTelecallerId,
       'assignedTelecallerId': assignedTelecallerId,
+      'sales_assigned_at': salesAssignedAt?.toIso8601String(),
+      'salesAssignedAt': salesAssignedAt?.toIso8601String(),
+      'rejection_remark': rejectionRemark,
+      'rejectionRemark': rejectionRemark,
     };
   }
 
@@ -650,6 +804,7 @@ class RequirementModel {
       if (metaAdName != null) 'meta_ad_name': metaAdName,
       if (metaCustomFields != null) 'meta_custom_fields': metaCustomFields,
       if (leadQuality != null) 'lead_quality': leadQuality,
+      if (rejectionRemark != null) 'rejection_remark': rejectionRemark,
     };
   }
 
@@ -733,29 +888,46 @@ class RequirementModel {
   bool get isAllAreas {
     if (areaIds.isEmpty && areaNames.isEmpty) return true;
     if (metaCustomFields != null &&
+        (metaCustomFields!['is_all_areas'] == false ||
+            metaCustomFields!['is_all_areas'] == 'false')) {
+      return false;
+    }
+    if (metaCustomFields != null &&
         (metaCustomFields!['is_all_areas'] == true ||
             metaCustomFields!['is_all_areas'] == 'true' ||
             metaCustomFields!['all_areas'] == true ||
             metaCustomFields!['all_areas'] == 'true')) {
       return true;
     }
-    if (areaNames.length >= 10 || areaIds.length >= 10) return true;
-    return areaNames.any((a) {
-      final l = a.trim().toLowerCase();
-      return l.isEmpty ||
-          l == 'all areas' ||
-          l == 'all' ||
-          l == 'any area' ||
-          l == 'any' ||
-          l == 'anywhere' ||
-          l == 'entire city' ||
-          l == 'all localities';
-    });
+    return areaNames.isNotEmpty &&
+        areaNames.every((a) {
+          final l = a.trim().toLowerCase();
+          return l == 'all areas' ||
+              l == 'all' ||
+              l == 'any area' ||
+              l == 'any' ||
+              l == 'anywhere' ||
+              l == 'entire city' ||
+              l == 'all localities';
+        });
   }
 
   String get displayAreasText {
     if (isAllAreas) return 'All Areas';
-    if (areaNames.isNotEmpty) return areaNames.join(', ');
+    if (areaNames.isNotEmpty) {
+      final specific = areaNames.where((n) {
+        final l = n.trim().toLowerCase();
+        return l.isNotEmpty &&
+            l != 'all' &&
+            l != 'all areas' &&
+            l != 'any' &&
+            l != 'any area' &&
+            l != 'anywhere';
+      }).toList();
+      if (specific.isNotEmpty) return specific.join(', ');
+      return areaNames.join(', ');
+    }
+    if (areaIds.isNotEmpty) return '${areaIds.length} areas';
     return 'All Areas';
   }
 
@@ -841,6 +1013,7 @@ class RequirementModel {
     Map<String, dynamic>? metaCustomFields,
     String? leadQuality,
     String? assignedTelecallerId,
+    String? rejectionRemark,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -893,6 +1066,8 @@ class RequirementModel {
       metaCustomFields: metaCustomFields ?? this.metaCustomFields,
       leadQuality: leadQuality ?? this.leadQuality,
       assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
+      salesAssignedAt: salesAssignedAt,
+      rejectionRemark: rejectionRemark ?? this.rejectionRemark,
     );
   }
 }

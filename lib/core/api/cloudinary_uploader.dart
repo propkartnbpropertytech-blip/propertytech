@@ -26,9 +26,19 @@ class CloudinaryUploader {
     final bool applyTransformation =
         resourceType == 'image' && !skipTransformation && !isPdf;
 
+    final bool isProfile = folder == 'profiles' ||
+        folder.startsWith('profiles/') ||
+        folder.startsWith('profile/');
+    final String sigEndpoint = isProfile
+        ? '/users/cloudinary-signature'
+        : '/properties/cloudinary-signature';
+    final String resolvedFallback = (isProfile && fallbackEndpoint == '/properties/upload-media')
+        ? '/users/upload-profile'
+        : fallbackEndpoint;
+
     try {
       final sigResponse = await DioClient.dio.post(
-        '/properties/cloudinary-signature',
+        sigEndpoint,
         data: {
           'resource_type': resourceType,
           'folder': folder,
@@ -39,9 +49,13 @@ class CloudinaryUploader {
           final data = sigResponse.data['data'] as Map<String, dynamic>;
           final String signature = data['signature'];
           final int timestamp = data['timestamp'];
-          final String apiKey = data['apiKey'];
-          final String cloudName = data['cloudName'];
-          final String targetFolder = data['folder'];
+          final String apiKey = (data['apiKey'] != null && data['apiKey'].toString().isNotEmpty)
+              ? data['apiKey'].toString()
+              : ApiConstants.cloudinaryApiKey;
+          final String cloudName = (data['cloudName'] != null && data['cloudName'].toString().isNotEmpty)
+              ? data['cloudName'].toString()
+              : ApiConstants.cloudinaryCloudName;
+          final String targetFolder = data['folder'] ?? folder;
           final String transformation = data['transformation'] ?? 'q_70';
 
           final cloudinaryUrl = 'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/upload';
@@ -100,7 +114,7 @@ class CloudinaryUploader {
         });
 
         final response = await DioClient.dio.post(
-          fallbackEndpoint,
+          resolvedFallback,
           data: formData,
         );
 
@@ -234,8 +248,13 @@ class CloudinaryUploader {
         return;
       }
 
+      final bool isProfile = url.contains('/profiles/') || url.contains('/profile/');
+      final String sigEndpoint = isProfile
+          ? '/users/cloudinary-signature'
+          : '/properties/cloudinary-signature';
+
       final sigResponse = await DioClient.dio.post(
-        '/properties/cloudinary-signature',
+        sigEndpoint,
         data: {
           'action': 'destroy',
           'public_id': publicId,
@@ -247,8 +266,12 @@ class CloudinaryUploader {
         final data = sigResponse.data['data'] as Map<String, dynamic>;
         final String signature = data['signature'];
         final int timestamp = data['timestamp'];
-        final String apiKey = data['apiKey'];
-        final String cloudName = data['cloudName'];
+        final String apiKey = (data['apiKey'] != null && data['apiKey'].toString().isNotEmpty)
+            ? data['apiKey'].toString()
+            : ApiConstants.cloudinaryApiKey;
+        final String cloudName = (data['cloudName'] != null && data['cloudName'].toString().isNotEmpty)
+            ? data['cloudName'].toString()
+            : ApiConstants.cloudinaryCloudName;
 
         final deleteUrl = 'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy';
 

@@ -13,6 +13,7 @@ import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/utils/budget_formatter.dart';
 import '../../properties/models/property_model.dart';
@@ -175,26 +176,22 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         }
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ok
-                ? (enabled
-                    ? 'Campaign access enabled for this workspace.'
-                    : 'Campaign access turned off. This admin keeps an empty campaign inbox.')
-                : 'Could not update campaign access.',
-          ),
-          backgroundColor: ok ? CRMColors.success : CRMColors.danger,
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: ok
+            ? (enabled
+                ? 'Campaign access enabled for this workspace.'
+                : 'Campaign access turned off. This admin keeps an empty campaign inbox.')
+            : 'Could not update campaign access.',
+        isSuccess: ok,
       );
     } catch (_) {
       if (!mounted) return;
       setState(() => _updatingAccess = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not update campaign access.'),
-          backgroundColor: CRMColors.danger,
-        ),
+      AppStatusSnackBar.show(
+        context,
+        message: 'Could not update campaign access.',
+        isSuccess: false,
       );
     }
   }
@@ -395,44 +392,12 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     return merged;
   }
 
-  int _pendingFollowupCount(List<Map<String, dynamic>> rows) {
-    return rows.where((row) {
-      final dt = _rowDate(row);
-      if (dt == null) return false;
-      return EmployeeActivity.isOpenFollowupStatus(
-            (row['status'] ?? '').toString(),
-          ) &&
-          EmployeeActivity.isDateOnOrAfterToday(dt);
-    }).length;
-  }
-
-  int _currentOverdueCount(List<Map<String, dynamic>> rows) {
-    return rows.where((row) {
-      final dt = _rowDate(row);
-      if (dt == null) return false;
-      return EmployeeActivity.isOpenFollowupStatus(
-            (row['status'] ?? '').toString(),
-          ) &&
-          EmployeeActivity.isDateBeforeToday(dt);
-    }).length;
-  }
-
   int _totalOverdueCount(List<Map<String, dynamic>> rows) {
     return rows.where((row) {
       final dt = _rowDate(row);
       if (dt == null) return false;
       return EmployeeActivity.isDateBeforeToday(dt);
     }).length;
-  }
-
-  int _openSiteVisitCount(List<Map<String, dynamic>> rows) {
-    return rows
-        .where(
-          (row) => EmployeeActivity.isOpenSiteVisitStatus(
-            (row['status'] ?? '').toString(),
-          ),
-        )
-        .length;
   }
 
   DateTime? _rowDate(Map<String, dynamic> row) {
@@ -476,8 +441,10 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open this action.')),
+      AppStatusSnackBar.show(
+        context,
+        message: 'Could not open this action.',
+        isSuccess: false,
       );
     }
   }
@@ -550,21 +517,17 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         child: BlocListener<UsersBloc, UsersState>(
           listener: (context, state) {
             if (state is UsersOperationSuccess) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: CRMColors.success,
-                  behavior: SnackBarBehavior.floating,
-                ),
+              AppStatusSnackBar.show(
+                context,
+                message: state.message,
+                isSuccess: true,
               );
               context.read<UsersBloc>().add(const FetchUsers());
             } else if (state is UsersError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: CRMColors.danger,
-                  behavior: SnackBarBehavior.floating,
-                ),
+              AppStatusSnackBar.show(
+                context,
+                message: state.message,
+                isSuccess: false,
               );
             }
           },
@@ -1538,7 +1501,7 @@ class _HoverFlipKpiState extends State<_HoverFlipKpi> {
             alignment: Alignment.topLeft,
             children: [
               ...previousChildren,
-              if (currentChild != null) currentChild,
+              ?currentChild,
             ],
           );
         },
@@ -1683,7 +1646,7 @@ class _ProfileSummaryCard extends StatelessWidget {
                     ),
                     Switch(
                       value: user.isActive,
-                      activeColor: CRMColors.primaryOf(context),
+                      activeThumbColor: CRMColors.primaryOf(context),
                       onChanged: onToggleActive,
                     ),
                   ],
@@ -1734,7 +1697,7 @@ class _ProfileSummaryCard extends StatelessWidget {
                 const Spacer(),
                 Switch(
                   value: user.isActive,
-                  activeColor: CRMColors.primaryOf(context),
+                  activeThumbColor: CRMColors.primaryOf(context),
                   onChanged: onToggleActive,
                 ),
               ],

@@ -906,13 +906,12 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
             bottomLeft: Radius.circular(isMe ? 14 : 2),
             bottomRight: Radius.circular(isMe ? 2 : 14),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: isMe
+              ? null
+              : Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  width: 0.5,
+                ),
         ),
         child: Column(
           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -979,11 +978,22 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
   }
 
   String _formatTime(DateTime date) {
+    final localTime = date.toLocal();
     final now = DateTime.now();
-    if (now.day == date.day && now.month == date.month && now.year == date.year) {
-      return DateFormat('h:mm a').format(date.toLocal());
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final msgDate = DateTime(localTime.year, localTime.month, localTime.day);
+
+    if (msgDate == today) {
+      return 'Today';
+    } else if (msgDate == yesterday) {
+      return 'Yesterday';
     } else {
-      return DateFormat('MMM d, h:mm a').format(date.toLocal());
+      if (localTime.year == now.year) {
+        return DateFormat('MMM d').format(localTime);
+      } else {
+        return DateFormat('MMM d, yyyy').format(localTime);
+      }
     }
   }
 }

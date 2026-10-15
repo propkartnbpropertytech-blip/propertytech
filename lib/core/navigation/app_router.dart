@@ -56,6 +56,8 @@ import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
 import 'mobile_system_back_handler.dart';
 import '../../features/team_messages/screens/team_messages_screen.dart';
+import '../../features/support/screens/support_screen.dart';
+import '../../features/support/screens/super_admin_support_dashboard_screen.dart';
 import 'audit_route_observer.dart';
 
 
@@ -86,21 +88,33 @@ class AppRouter {
 
   static String _getWebInitialLocation() {
     if (kIsWeb) {
+      // 1. Direct path check (from Path URL Strategy)
+      final path = Uri.base.path.trim();
+      if (path.isNotEmpty && path != '/' && !path.contains('/splash')) {
+        final sanitized = RoleGuard.sanitizeRedirectPath(path);
+        if (sanitized != null && sanitized.isNotEmpty) {
+          return sanitized;
+        }
+      }
+
+      // 2. Hash fragment check (for legacy hash links)
       String frag = Uri.base.fragment.trim();
       if (frag.startsWith('#')) {
         frag = frag.substring(1).trim();
       }
-      if (frag.isNotEmpty && !frag.contains('/splash') && !frag.contains('/login') && !frag.contains('/get-started')) {
+      if (frag.isNotEmpty && !frag.contains('/splash')) {
         final sanitized = RoleGuard.sanitizeRedirectPath(frag);
         if (sanitized != null && sanitized.isNotEmpty) {
           return sanitized;
         }
       }
+
       final fromParam = Uri.base.queryParameters['from'];
       final sanitizedFrom = RoleGuard.sanitizeRedirectPath(fromParam);
       if (sanitizedFrom != null && sanitizedFrom.isNotEmpty) {
         return sanitizedFrom;
       }
+      return '/get-started';
     }
     return '/splash';
   }
@@ -119,7 +133,7 @@ class AppRouter {
           final from = state.uri.queryParameters['from'];
           final sanitizedFrom = RoleGuard.sanitizeRedirectPath(from);
           if (sanitizedFrom != null) return sanitizedFrom;
-          return '/splash';
+          return kIsWeb ? '/get-started' : '/splash';
         },
       ),
       GoRoute(
@@ -132,6 +146,16 @@ class AppRouter {
           homeLocation: '/get-started',
           child: const GetStartedScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/landing',
+        redirect: (context, state) {
+          final from = state.uri.queryParameters['from'];
+          if (from != null && from.isNotEmpty) {
+            return '/get-started?from=${Uri.encodeComponent(from)}';
+          }
+          return '/get-started';
+        },
       ),
       GoRoute(
         path: '/terms-and-conditions',
@@ -369,6 +393,7 @@ class AppRouter {
               final group = state.uri.queryParameters['group'];
               final status = state.uri.queryParameters['status'];
               final mode = state.uri.queryParameters['mode'];
+              final section = state.uri.queryParameters['section'];
               if (mode != null && mode.isNotEmpty) {
                 ThemeManager().setRentMode(mode.toLowerCase() == 'rent');
               }
@@ -379,6 +404,7 @@ class AppRouter {
                   initialSubTab: subTab,
                   initialGroup: group,
                   initialStatus: status,
+                  initialSection: section,
                 ),
               );
             },
@@ -442,6 +468,22 @@ class AppRouter {
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const TeamMessagesScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/support',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: SupportScreen(
+                initialPageKey: state.uri.queryParameters['pageKey'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/support',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const SuperAdminSupportDashboardScreen(),
             ),
           ),
           GoRoute(
@@ -622,7 +664,7 @@ class AppRouter {
       final authState = authBloc.state;
       final loggingIn = state.matchedLocation == '/login';
       final onSplash = state.matchedLocation == '/splash';
-      final onGetStarted = state.matchedLocation == '/get-started';
+      final onGetStarted = state.matchedLocation == '/get-started' || state.matchedLocation == '/landing';
       final isPublicShare = state.matchedLocation.startsWith('/share/') || state.uri.path.startsWith('/share/');
       final onUsers = state.matchedLocation.startsWith('/users');
       final onAudit = state.matchedLocation.startsWith('/settings/audit-logs');
@@ -679,7 +721,7 @@ class AppRouter {
 
           if (kIsWeb) {
             final fragment = Uri.base.fragment;
-            if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started')) {
+            if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started') && !fragment.contains('/landing')) {
               final sanitizedFragment = RoleGuard.sanitizeRedirectPath(fragment, role: role);
               if (sanitizedFragment != null) return sanitizedFragment;
             }

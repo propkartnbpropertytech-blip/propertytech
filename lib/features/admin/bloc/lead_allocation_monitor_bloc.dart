@@ -1066,7 +1066,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Engine Control & Quick Actions Card
+          // 1. Header & Engine Control Card
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -1082,44 +1082,68 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
+                        child: Text(
+                          'Lead Allocation Monitoring',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: (isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
+                            width: 1.2,
+                          ),
+                        ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               isEngineOn ? Icons.check_circle : Icons.pause_circle_outline,
-                              size: 20,
+                              size: 15,
                               color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
                             ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                isEngineOn ? 'Engine: Active' : 'Engine: Paused',
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
+                            const SizedBox(width: 5),
+                            Text(
+                              isEngineOn ? 'Active' : 'Paused',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              height: 20,
+                              width: 32,
+                              child: FittedBox(
+                                fit: BoxFit.fill,
+                                child: Switch(
+                                  value: isEngineOn,
+                                  activeThumbColor: const Color(0xFF16A34A),
+                                  onChanged: (val) {
+                                    context.read<LeadAllocationMonitorBloc>().add(
+                                      ToggleAllocationEngineRequested(enabled: val),
+                                    );
+                                  },
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      Semantics(
-                        label: 'Toggle Allocation Engine',
-                        child: SizedBox(
-                          height: 36,
-                          child: Switch(
-                            value: isEngineOn,
-                            activeThumbColor: const Color(0xFF16A34A),
-                            onChanged: (val) {
-                              context.read<LeadAllocationMonitorBloc>().add(
-                                ToggleAllocationEngineRequested(enabled: val),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
                     ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Live visibility into lead distribution engine, queue depth, telecaller workload, and reassignment history.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
@@ -1130,45 +1154,20 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.orange.shade800,
                           side: BorderSide(color: Colors.orange.shade400),
-                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
                         icon: const Icon(Icons.timer_off_outlined, size: 16),
-                        label: const Text('Recover Stale'),
+                        label: const Text('Recover Stale Leads'),
                         onPressed: () => _confirmRecoverStaleLeads(context),
                       ),
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF16A34A),
-                          minimumSize: const Size(0, 48),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
-                        icon: const Icon(Icons.auto_mode, size: 16),
-                        label: Text('Allocate Untouched (${queue['unallocatedOldUntouchedCount'] ?? 0})'),
-                        onPressed: () => _confirmAllocateOldLeads(context, queue['unallocatedOldUntouchedCount'] ?? 0),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Session timeout row
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      const Text('Session Expiration:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                      DropdownButton<int>(
-                        value: [4, 8, 12, 24].contains(expirationHours) ? expirationHours : 8,
-                        underline: const SizedBox.shrink(),
-                        items: const [
-                          DropdownMenuItem(value: 4, child: Text('4 Hours')),
-                          DropdownMenuItem(value: 8, child: Text('8 Hours')),
-                          DropdownMenuItem(value: 12, child: Text('12 Hours')),
-                          DropdownMenuItem(value: 24, child: Text('24 Hours')),
-                        ],
-                        onChanged: (newHours) {
-                          if (newHours != null && newHours != expirationHours) {
-                            context.read<LeadAllocationMonitorBloc>().add(TokenExpirationUpdateRequested(newHours));
-                          }
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Refresh'),
+                        onPressed: () {
+                          context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
                         },
                       ),
                     ],
@@ -1177,9 +1176,21 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          if (state.error != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(state.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            ),
+          ],
+          const SizedBox(height: 14),
 
-          // Queue Depth Chips
+          // 2. Real-Time Queue Depth & Latency
+          const Text(
+            'Real-time Queue Depth & Latency',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1188,22 +1199,205 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
               _chip('> 5 min', '${queue['waitingOver5Minutes'] ?? 0}', Colors.orange),
               _chip('> 15 min', '${queue['waitingOver15Minutes'] ?? 0}', Colors.deepOrange),
               _chip('> 1 hour', '${queue['waitingOver1Hour'] ?? 0}', Colors.red),
-              _chip('Longest', '${queue['longestWaitingMinutes'] ?? 0}m', Colors.purple),
+              _chip('Longest wait', '${queue['longestWaitingMinutes'] ?? 0}m', Colors.purple),
               _chip('Old Untouched', '${queue['unallocatedOldUntouchedCount'] ?? 0}', Colors.teal),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          // Telecaller Workload Section
-          Text('Telecallers Workload (${telecallers.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
+          // 3. Old Untouched Leads Allocation Banner Card
+          Card(
+            elevation: 0,
+            color: isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFF0FDF4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: isDark ? const Color(0xFF047857) : const Color(0xFFBBF7D0)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.archive_outlined, color: Color(0xFF16A34A), size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Old Untouched Leads Allocation',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: isDark ? Colors.green.shade300 : const Color(0xFF14532D),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${queue['unallocatedOldUntouchedCount'] ?? 0} leads created before auto-allocation was enabled are currently waiting. Allocate them in batches to currently active telecallers.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.green.shade100 : const Color(0xFF166534),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF16A34A)),
+                      onPressed: () => _confirmAllocateOldLeads(context, queue['unallocatedOldUntouchedCount'] ?? 0),
+                      icon: const Icon(Icons.auto_mode, size: 16),
+                      label: Text('Allocate Leads (${queue['unallocatedOldUntouchedCount'] ?? 0})'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 4. Session & Token Expiration Card
+          Card(
+            elevation: 0,
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF4F46E5).withValues(alpha: 0.12),
+                        ),
+                        child: const Icon(Icons.timer_outlined, color: Color(0xFF4F46E5), size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: const [
+                                Text(
+                                  'Session & Token Expiration',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                                Chip(
+                                  label: Text('Auto-Logout', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              'Staff sessions automatically expire after the configured duration of inactivity or maximum lifespan.',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Shift Duration:',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: [4, 8, 12, 24].contains(expirationHours) ? expirationHours : 8,
+                            icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF4F46E5)),
+                            style: TextStyle(
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                            dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            items: const [
+                              DropdownMenuItem(value: 4, child: Text('4 Hours')),
+                              DropdownMenuItem(value: 8, child: Text('8 Hours (Standard Shift)')),
+                              DropdownMenuItem(value: 12, child: Text('12 Hours')),
+                              DropdownMenuItem(value: 24, child: Text('24 Hours')),
+                            ],
+                            onChanged: (newHours) {
+                              if (newHours != null && newHours != expirationHours) {
+                                context
+                                    .read<LeadAllocationMonitorBloc>()
+                                    .add(TokenExpirationUpdateRequested(newHours));
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // 5. Telecaller Workload Section
+          Text(
+            'Telecallers Workload & Status (${telecallers.length})',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Telecallers are sorted by lowest workload first. Round-robin assigns to the least busy active telecaller.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 10),
           for (final raw in telecallers)
-            _buildMobileTelecallerCard(context, raw as Map, telecallers, isDark),
-          const SizedBox(height: 16),
+            _buildMobileTelecallerCard(context, raw as Map, telecallers, isDark, state),
+          const SizedBox(height: 18),
 
-          // Recent Assignments Section
-          Text('Recent Assignments (${history.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
+          // 6. Recent Assignments Section
+          Text(
+            'Recent Assignments & Reassignments (${history.length})',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Last 20 lead routing events. Stale leads are automatically reassigned if untouched.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 10),
           if (history.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -1211,7 +1405,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
             )
           else
             for (final raw in history)
-              _buildMobileHistoryCard(context, raw as Map),
+              _buildMobileHistoryCard(context, raw as Map, telecallers, isDark),
         ],
       ),
     );
@@ -1222,13 +1416,18 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
     Map raw,
     List<dynamic> allTelecallers,
     bool isDark,
+    LeadAllocationMonitorState state,
   ) {
     final t = Map<String, dynamic>.from(raw);
     final status = (t['status'] ?? 'INACTIVE').toString();
     final isFresh = t['heartbeatFresh'] == true;
+    final isLoggedOut = status == 'LOGGED_OUT';
+    final isManuallyOff = t['isManuallyOff'] == true;
     final color = status == 'ACTIVE'
         ? (isFresh ? Colors.green : Colors.orange)
-        : (status == 'BREAK' ? Colors.blue : Colors.grey);
+        : (status == 'BREAK'
+            ? Colors.blue
+            : (status == 'LOGGED_OUT' ? const Color(0xFF64748B) : Colors.grey));
     final workload = (t['currentWorkload'] is int)
         ? t['currentWorkload'] as int
         : int.tryParse(t['currentWorkload']?.toString() ?? '0') ?? 0;
@@ -1236,61 +1435,294 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
         ? t['maxCapacity'] as int
         : int.tryParse(t['maxCapacity']?.toString() ?? '10') ?? 10;
     final progress = capacity > 0 ? (workload / capacity).clamp(0.0, 1.0) : 0.0;
+    final isOff = status == 'INACTIVE';
+    final isPaused = (status == 'BREAK' && isManuallyOff) || (isLoggedOut && isManuallyOff);
+    final backendRemainingSeconds = (t['remainingOffSeconds'] as num?)?.toInt() ?? 21600;
+    final fetchedAt = DateTime.tryParse(state.data['_fetchedAt']?.toString() ?? '') ?? DateTime.now();
+    final elapsedSinceFetch = DateTime.now().difference(fetchedAt).inSeconds;
+
+    final liveRemainingSeconds = isOff
+        ? (backendRemainingSeconds - elapsedSinceFetch).clamp(0, 21600)
+        : backendRemainingSeconds.clamp(0, 21600);
+
+    final isLimitExpired = t['limitReached'] == true || liveRemainingSeconds <= 0;
+
+    final ch = liveRemainingSeconds ~/ 3600;
+    final cm = (liveRemainingSeconds % 3600) ~/ 60;
+    final cs = liveRemainingSeconds % 60;
+    final counterFormatted = '${ch.toString().padLeft(2, '0')}:${cm.toString().padLeft(2, '0')}:${cs.toString().padLeft(2, '0')}';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: MobileCard(
-        title: t['name']?.toString() ?? 'Telecaller',
-        subtitle: 'Workload: $workload / $capacity Leads (${t['availableCapacity'] ?? 0} free)',
-        status: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            status,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
-          ),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Card(
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withValues(alpha: 0.4), width: 1.5),
         ),
-        metadata: [
-          isFresh ? 'Heartbeat: Fresh' : 'Heartbeat: Stale',
-          'New: ${t['newLeads'] ?? 0}',
-          'CNR: ${t['cnr'] ?? 0}',
-          'CB: ${t['callbacks'] ?? 0}',
-        ],
-        footer: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: progress.toDouble(),
-            minHeight: 6,
-            backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            valueColor: AlwaysStoppedAnimation<Color>(
-              progress >= 1.0
-                  ? Colors.red
-                  : progress >= 0.7
-                      ? Colors.orange
-                      : CRMColors.primary,
+        child: InkWell(
+          onTap: () {
+            TelecallerDetailDialog.show(
+              context,
+              telecallerId: t['id']?.toString() ?? '',
+              telecallerName: t['name']?.toString() ?? '',
+              allTelecallers: allTelecallers,
+              onLeadReassigned: () {
+                context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
+              },
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        t['name']?.toString() ?? 'Telecaller',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        status == 'LOGGED_OUT' ? 'LOGGED OUT' : status,
+                        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'Workload: $workload / $capacity Leads',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${t['availableCapacity'] ?? 0} free',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: (t['availableCapacity'] ?? 0) > 0 ? Colors.green.shade700 : Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress.toDouble(),
+                    minHeight: 6,
+                    backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      progress >= 1.0
+                          ? Colors.red
+                          : progress >= 0.7
+                              ? Colors.orange
+                              : CRMColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Heartbeat: ${isFresh ? "Fresh" : "Stale"} · '
+                  'New: ${t['newLeads'] ?? 0} · CNR: ${t['cnr'] ?? 0} · CB: ${t['callbacks'] ?? 0}',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Active Toggle:',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isLoggedOut
+                                  ? (isDark ? const Color(0xFF334155).withValues(alpha: 0.5) : const Color(0xFFE2E8F0))
+                                  : (status == 'ACTIVE'
+                                      ? Colors.green.withValues(alpha: 0.15)
+                                      : (status == 'BREAK'
+                                          ? (isManuallyOff ? Colors.amber.withValues(alpha: 0.15) : Colors.blue.withValues(alpha: 0.15))
+                                          : Colors.red.withValues(alpha: 0.15))),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: isLoggedOut
+                                        ? const Color(0xFF64748B)
+                                        : (status == 'ACTIVE'
+                                            ? Colors.green
+                                            : (status == 'BREAK'
+                                                ? (isManuallyOff ? Colors.amber.shade700 : Colors.blue)
+                                                : Colors.red)),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isLoggedOut
+                                      ? 'Logged Out'
+                                      : (status == 'ACTIVE'
+                                          ? 'ON'
+                                          : (status == 'BREAK'
+                                              ? (isManuallyOff ? 'OFF (Break)' : 'ON (Break)')
+                                              : 'OFF')),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isLoggedOut
+                                        ? const Color(0xFF64748B)
+                                        : (status == 'ACTIVE'
+                                            ? Colors.green.shade800
+                                            : (status == 'BREAK'
+                                                ? (isManuallyOff ? Colors.amber.shade900 : Colors.blue.shade800)
+                                                : Colors.red.shade800)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isLimitExpired
+                                    ? Icons.error_outline_rounded
+                                    : (isPaused
+                                        ? Icons.pause_circle_outline_rounded
+                                        : Icons.timer_outlined),
+                                size: 11,
+                                color: isLimitExpired
+                                    ? Colors.red
+                                    : (isPaused
+                                        ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB))
+                                        : (isOff
+                                            ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706))
+                                            : const Color(0xFF64748B))),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isLimitExpired
+                                    ? '00:00:00 (Limit Reached)'
+                                    : (isPaused
+                                        ? '$counterFormatted (Paused)'
+                                        : (isOff
+                                            ? '$counterFormatted left'
+                                            : '$counterFormatted (Stopped)')),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                  color: isLimitExpired
+                                      ? Colors.red
+                                      : (isPaused
+                                          ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
+                                          : (isOff
+                                              ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+                                              : const Color(0xFF64748B))),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          Text(
+                            isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(liveRemainingSeconds)} / 6h',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isLimitExpired
+                                  ? Colors.red
+                                  : (liveRemainingSeconds < 3600 ? Colors.orange : Colors.green.shade700),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Sales: ${t['salesTransfers'] ?? 0}',
+                      style: TextStyle(fontSize: 12, color: CRMColors.primary, fontWeight: FontWeight.w600),
+                    ),
+                    const Row(
+                      children: [
+                        Text(
+                          'View Details',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                        ),
+                        Icon(Icons.chevron_right, size: 14, color: Color(0xFF64748B)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
-        onTap: () {
-          TelecallerDetailDialog.show(
-            context,
-            telecallerId: t['id']?.toString() ?? '',
-            telecallerName: t['name']?.toString() ?? '',
-            allTelecallers: allTelecallers,
-            onLeadReassigned: () {
-              context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
-            },
-          );
-        },
       ),
     );
   }
 
-  static Widget _buildMobileHistoryCard(BuildContext context, Map raw) {
+  static Widget _buildMobileHistoryCard(
+    BuildContext context,
+    Map raw,
+    List<dynamic> telecallers,
+    bool isDark,
+  ) {
     final h = Map<String, dynamic>.from(raw);
+    final leadId = h['lead_id']?.toString() ?? '';
     final type = h['assignment_type']?.toString() ?? 'ASSIGNMENT';
     final destId = h['to_telecaller_id']?.toString() ?? '';
     final destName = h['to_telecaller_name']?.toString() ?? destId;
@@ -1307,47 +1739,134 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: MobileCard(
-        title: leadName,
-        subtitle: movement,
-        status: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: (isPeer
-                    ? const Color(0xFF0284C7)
-                    : (isOld ? Colors.amber.shade800 : Colors.blue))
-                .withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: isPeer
+                ? const Color(0xFF0284C7).withValues(alpha: 0.45)
+                : (isOld ? Colors.amber.shade200 : const Color(0xFFE2E8F0)),
+            width: isPeer || isOld ? 1.5 : 1.0,
           ),
-          child: Text(
-            type,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: isPeer
-                  ? const Color(0xFF0284C7)
-                  : (isOld ? Colors.amber.shade800 : Colors.blue),
+        ),
+        child: InkWell(
+          onTap: () => _showLeadDetailsDialog(context, h),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: (isPeer
+                              ? const Color(0xFF0284C7)
+                              : (isOld ? Colors.amber : Colors.blue))
+                          .withValues(alpha: 0.15),
+                      child: Icon(
+                        isPeer
+                            ? Icons.swap_horiz_rounded
+                            : (isOld ? Icons.history : Icons.person_outline),
+                        color: isPeer
+                            ? const Color(0xFF0369A1)
+                            : (isOld ? Colors.amber.shade800 : Colors.blue.shade700),
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 4,
+                            runSpacing: 2,
+                            children: [
+                              Text(
+                                leadName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                              ),
+                              const Icon(Icons.arrow_forward, size: 13, color: Colors.grey),
+                              Text(
+                                movement,
+                                style: TextStyle(fontWeight: FontWeight.w600, color: CRMColors.primary, fontSize: 13.5),
+                              ),
+                            ],
+                          ),
+                          if (isPeer || isOld) ...[
+                            const SizedBox(height: 4),
+                            if (isPeer)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
+                                ),
+                                child: const Text(
+                                  'Telecaller transfer',
+                                  style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            if (isOld)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.amber.shade400),
+                                ),
+                                child: Text(
+                                  'Old Untouched',
+                                  style: TextStyle(fontSize: 10, color: Colors.amber.shade900, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  isPeer
+                      ? 'Moved between telecallers · ${h['lead_phone'] ?? ''} · $date${(h['reason']?.toString().isNotEmpty == true) ? ' · ${h['reason']}' : ''}'
+                      : '${h['lead_campaign'] != null && h['lead_campaign'].toString().isNotEmpty ? h['lead_campaign'] : "Meta Ads"} · ${h['lead_phone'] ?? ""} · Assigned: $date',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _showLeadDetailsDialog(context, h),
+                      icon: const Icon(Icons.info_outline, size: 14),
+                      label: const Text('Details'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: () => _reassign(context, leadId, telecallers),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      ),
+                      child: const Text('Reassign'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
-        leading: CircleAvatar(
-          radius: 18,
-          backgroundColor: (isPeer
-                  ? const Color(0xFF0284C7)
-                  : (isOld ? Colors.amber : Colors.blue))
-              .withValues(alpha: 0.15),
-          child: Icon(
-            isPeer
-                ? Icons.swap_horiz_rounded
-                : (isOld ? Icons.history : Icons.person_outline),
-            color: isPeer
-                ? const Color(0xFF0369A1)
-                : (isOld ? Colors.amber.shade800 : Colors.blue.shade700),
-            size: 18,
-          ),
-        ),
-        metadata: date.isNotEmpty ? [date] : const [],
-        onTap: () => _showLeadDetailsDialog(context, h),
       ),
     );
   }

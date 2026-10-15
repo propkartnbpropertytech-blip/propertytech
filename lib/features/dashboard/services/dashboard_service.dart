@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../models/kpi_models.dart';
+import '../models/area_analytics_model.dart';
 
 class DashboardService {
   final ApiClient _apiClient = ApiClient();
@@ -148,12 +149,14 @@ class DashboardService {
   Future<InventoryPropertiesResponse> getInventoryProperties({
     required String status,
     required KpiFilterParams params,
+    String? areaId,
     int page = 1,
     int limit = 20,
   }) async {
     try {
       final q = params.toQueryParams();
       q['status'] = status;
+      if (areaId != null && areaId.isNotEmpty) q['areaId'] = areaId;
       q['page'] = page;
       q['limit'] = limit;
       final response = await _apiClient.get(
@@ -188,16 +191,52 @@ class DashboardService {
   Future<LeadsListResponse> getLeadsList({
     String? source,
     required KpiFilterParams params,
+    String? areaId,
+    String? stage,
+    bool? isDealWon,
     int page = 1,
     int limit = 25,
   }) async {
     try {
       final q = params.toQueryParams();
       if (source != null && source.isNotEmpty) q['source'] = source;
+      if (areaId != null && areaId.isNotEmpty) q['areaId'] = areaId;
+      if (stage != null && stage.isNotEmpty) q['stage'] = stage;
+      if (isDealWon != null) q['isDealWon'] = isDealWon.toString();
       q['page'] = page;
       q['limit'] = limit;
       final response = await _apiClient.get(
         '/dashboard/leads-list',
+        queryParameters: q,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return LeadsListResponse.fromJson(response.data['data'] as Map<String, dynamic>);
+      }
+      return const LeadsListResponse();
+    } catch (_) {
+      return const LeadsListResponse();
+    }
+  }
+
+  Future<LeadsListResponse> getNotInterestedLeads({
+    required KpiFilterParams params,
+    String? sourceFilter,
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final q = params.toQueryParams();
+      q['page'] = page;
+      q['limit'] = limit;
+      if (sourceFilter != null && sourceFilter.trim().isNotEmpty) {
+        q['sourceFilter'] = sourceFilter.trim();
+      }
+      if (search != null && search.trim().isNotEmpty) {
+        q['search'] = search.trim();
+      }
+      final response = await _apiClient.get(
+        '/dashboard/not-interested-leads',
         queryParameters: q,
       );
       if (response.data is Map<String, dynamic> && response.data['success'] == true) {
@@ -249,6 +288,7 @@ class DashboardService {
     String telecallerId, {
     String category = 'all',
     String leadType = 'Both',
+    String? tab,
     String? search,
     int page = 1,
     int limit = 25,
@@ -260,6 +300,9 @@ class DashboardService {
       q['leadType'] = leadType;
       q['page'] = page;
       q['limit'] = limit;
+      if (tab != null && tab.trim().isNotEmpty) {
+        q['tab'] = tab.trim();
+      }
       if (search != null && search.trim().isNotEmpty) {
         q['search'] = search.trim();
       }
@@ -455,4 +498,293 @@ class DashboardService {
       return false;
     }
   }
+
+  Future<List<KpiRegistryItem>> getKpiRegistry({
+    String? search,
+    String? page,
+    String? role,
+    String? status,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/kpi-registry',
+        queryParameters: {
+          if (search != null && search.isNotEmpty) 'search': search,
+          if (page != null && page.isNotEmpty && page != 'All') 'page': page,
+          if (role != null && role.isNotEmpty && role != 'All') 'role': role,
+          if (status != null && status.isNotEmpty && status != 'All') 'status': status.toLowerCase(),
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((c) => KpiRegistryItem.fromJson(Map<String, dynamic>.from(c)))
+                .toList() ??
+            [];
+        if (list.isNotEmpty) return list;
+        if ((search == null || search.isEmpty) &&
+            (page == null || page == 'All') &&
+            (role == null || role == 'All') &&
+            (status == null || status == 'All')) {
+          return KpiRegistryItem.canonicalDefaults;
+        }
+        return list;
+      }
+      return KpiRegistryItem.canonicalDefaults;
+    } catch (e) {
+      debugPrint('[getKpiRegistry] Error: $e');
+      return KpiRegistryItem.canonicalDefaults;
+    }
+  }
+
+  Future<KpiRegistryItem?> createKpiRegistryItem(Map<String, dynamic> data) async {
+    try {
+      final response = await _apiClient.post(
+        '/dashboard/kpi-registry',
+        data,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return KpiRegistryItem.fromJson(Map<String, dynamic>.from(response.data['data']));
+      }
+      return null;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] ?? e.message;
+      throw ApiException(message: msg?.toString() ?? 'Failed to register KPI.');
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<KpiRegistryItem?> updateKpiRegistryItem(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _apiClient.put(
+        '/dashboard/kpi-registry/$id',
+        data,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return KpiRegistryItem.fromJson(Map<String, dynamic>.from(response.data['data']));
+      }
+      return null;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] ?? e.message;
+      throw ApiException(message: msg?.toString() ?? 'Failed to update KPI.');
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<bool> toggleKpiRegistryStatus(String id, bool isEnabled) async {
+    try {
+      final response = await _apiClient.patch(
+        '/dashboard/kpi-registry/$id/status',
+        {'is_enabled': isEnabled},
+      );
+      return response.data is Map<String, dynamic> && response.data['success'] == true;
+    } catch (e) {
+      debugPrint('[toggleKpiRegistryStatus] Error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteKpiRegistryItem(String id) async {
+    try {
+      final response = await _apiClient.delete('/dashboard/kpi-registry/$id');
+      return response.data is Map<String, dynamic> && response.data['success'] == true;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] ?? e.message;
+      throw ApiException(message: msg?.toString() ?? 'Failed to delete KPI.');
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> getKpiBuilderMetadata() async {
+    try {
+      final response = await _apiClient.get('/dashboard/kpi-builder/metadata');
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return Map<String, dynamic>.from(response.data['data'] ?? {});
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getKpiBuilderMetadata] Error: $e');
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> getKpiDrilldownData(
+    String kpiKey, {
+    Map<String, dynamic>? filters,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/drilldown/$kpiKey',
+        queryParameters: filters,
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return Map<String, dynamic>.from(response.data['data'] ?? {});
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getKpiDrilldownData] Error: $e');
+      return {};
+    }
+  }
+
+  Future<List<KpiAuditLogItem>> getKpiAuditLogs({String? kpiId}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/kpi-audit-logs',
+        queryParameters: {
+          if (kpiId != null && kpiId.isNotEmpty) 'kpiId': kpiId,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((c) => KpiAuditLogItem.fromJson(Map<String, dynamic>.from(c)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getKpiAuditLogs] Error: $e');
+      return [];
+    }
+  }
+
+  Future<List<AreaCountItem>> getInventoryByArea({String? businessType}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/inventory-by-area',
+        queryParameters: {
+          if (businessType != null && businessType.isNotEmpty)
+            'businessType': businessType,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((item) => AreaCountItem.fromJson(Map<String, dynamic>.from(item)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getInventoryByArea] Error: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<AreaCountItem>> getLeadsByArea({required String type}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/leads-by-area',
+        queryParameters: {
+          'type': type,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        final list = (response.data['data'] as List?)
+                ?.map((item) => AreaCountItem.fromJson(Map<String, dynamic>.from(item)))
+                .toList() ??
+            [];
+        return list;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[getLeadsByArea] Error: $e');
+      rethrow;
+    }
+  }
+
+  Future<LocalityIntelligenceData> getLocalityIntelligence({String? businessType}) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/locality-intelligence',
+        queryParameters: {
+          if (businessType != null && businessType.isNotEmpty)
+            'businessType': businessType,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return LocalityIntelligenceData.fromJson(
+          Map<String, dynamic>.from(response.data['data'] as Map),
+        );
+      }
+      return const LocalityIntelligenceData();
+    } catch (e) {
+      debugPrint('[getLocalityIntelligence] Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch Authoritative Lead Lifecycle Breakdown from /api/v1/dashboard/lifecycle-breakdown
+  Future<Map<String, dynamic>> getLifecycleBreakdown({
+    String dateFilter = 'Weekly',
+    String? startDate,
+    String? endDate,
+    String leadType = 'Both',
+    String? source,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/lifecycle-breakdown',
+        queryParameters: {
+          'dateFilter': dateFilter,
+          if (startDate != null) 'startDate': startDate,
+          if (endDate != null) 'endDate': endDate,
+          'leadType': leadType,
+          if (source != null) 'source': source,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return (response.data['data'] as Map<String, dynamic>?) ?? {};
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getLifecycleBreakdown] Error: $e');
+      return {};
+    }
+  }
+
+  /// Fetch individual lifecycle lead records and multi-table pipeflow steps
+  Future<Map<String, dynamic>> getLifecycleLeads({
+    String? stage,
+    String? salesUserId,
+    String? telecallerId,
+    String leadType = 'Both',
+    String dateFilter = 'All Time',
+    String? startDate,
+    String? endDate,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/dashboard/lifecycle-leads',
+        queryParameters: {
+          if (stage != null) 'stage': stage,
+          if (salesUserId != null) 'salesUserId': salesUserId,
+          if (telecallerId != null) 'telecallerId': telecallerId,
+          'leadType': leadType,
+          'dateFilter': dateFilter,
+          if (startDate != null) 'startDate': startDate,
+          if (endDate != null) 'endDate': endDate,
+          'page': page,
+          'limit': limit,
+          if (search != null && search.isNotEmpty) 'search': search,
+        },
+      );
+      if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+        return (response.data['data'] as Map<String, dynamic>?) ?? {};
+      }
+      return {};
+    } catch (e) {
+      debugPrint('[getLifecycleLeads] Error: $e');
+      return {};
+    }
+  }
 }
+
+
+

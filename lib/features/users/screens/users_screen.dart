@@ -16,9 +16,9 @@ import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/api/cloudinary_uploader.dart';
-import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:go_router/go_router.dart';
@@ -162,7 +162,7 @@ class _UsersScreenState extends State<UsersScreen> {
                   isMobile ? CRMBorderRadius.m : CRMBorderRadius.dialog,
                 ),
                 side: BorderSide(
-                  color: CRMColors.borderOf(context).withOpacity(0.5),
+                  color: CRMColors.borderOf(context).withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -212,7 +212,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                     border: Border.all(
                                       color: CRMColors.borderOf(
                                         context,
-                                      ).withOpacity(0.6),
+                                      ).withValues(alpha: 0.6),
                                       width: 2,
                                     ),
                                     boxShadow: CRMShadows.soft,
@@ -325,10 +325,12 @@ class _UsersScreenState extends State<UsersScreen> {
                                 RegExp(r'\D'),
                                 '',
                               );
-                              if (digits.isEmpty)
+                              if (digits.isEmpty) {
                                 return 'Phone number required';
-                              if (digits.length != 10)
+                              }
+                              if (digits.length != 10) {
                                 return 'Enter a valid 10-digit mobile';
+                              }
                               return null;
                             },
                           ),
@@ -421,7 +423,7 @@ class _UsersScreenState extends State<UsersScreen> {
                             ),
                             const SizedBox(height: CRMSpacing.xs),
                             DropdownButtonFormField<String>(
-                              value: localSelectedRoleId,
+                              initialValue: localSelectedRoleId,
                               dropdownColor: CRMColors.cardBgOf(context),
                               style: CRMTypography.body.copyWith(
                                 color: CRMColors.textOf(context),
@@ -530,16 +532,10 @@ class _UsersScreenState extends State<UsersScreen> {
                                                         cleanInputMobile;
                                                   });
                                               if (exists) {
-                                                ScaffoldMessenger.of(
+                                                AppStatusSnackBar.show(
                                                   context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'A sales user with this mobile number already exists.',
-                                                    ),
-                                                    backgroundColor:
-                                                        CRMColors.danger,
-                                                  ),
+                                                  message: 'A sales user with this mobile number already exists.',
+                                                  isSuccess: false,
                                                 );
                                                 return;
                                               }
@@ -547,16 +543,10 @@ class _UsersScreenState extends State<UsersScreen> {
                                               final emailExists = usersState.users
                                                   .any((u) => u.email.trim().toLowerCase() == emailController.text.trim().toLowerCase());
                                               if (emailExists) {
-                                                ScaffoldMessenger.of(
+                                                AppStatusSnackBar.show(
                                                   context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'A sales user with this email address already exists.',
-                                                    ),
-                                                    backgroundColor:
-                                                        CRMColors.danger,
-                                                  ),
+                                                  message: 'A sales user with this email address already exists.',
+                                                  isSuccess: false,
                                                 );
                                                 return;
                                               }
@@ -695,21 +685,17 @@ class _UsersScreenState extends State<UsersScreen> {
       body: BlocListener<UsersBloc, UsersState>(
         listener: (context, state) {
           if (state is UsersOperationSuccess) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.message),
-                backgroundColor: CRMColors.success,
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: state.message,
+              isSuccess: true,
             );
             _triggerFetch();
           } else if (state is UsersError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Error: ${state.message}"),
-                backgroundColor: CRMColors.danger,
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppStatusSnackBar.show(
+              context,
+              message: "Error: ${state.message}",
+              isSuccess: false,
             );
           }
         },
@@ -860,7 +846,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         CRMBorderRadius.input,
                       ),
                       borderSide: BorderSide(
-                        color: CRMColors.borderOf(context).withOpacity(0.6),
+                        color: CRMColors.borderOf(context).withValues(alpha: 0.6),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
@@ -868,7 +854,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         CRMBorderRadius.input,
                       ),
                       borderSide: BorderSide(
-                        color: CRMColors.borderOf(context).withOpacity(0.6),
+                        color: CRMColors.borderOf(context).withValues(alpha: 0.6),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -970,7 +956,7 @@ class _UsersScreenState extends State<UsersScreen> {
       width: 200,
       height: 44,
       child: DropdownButtonFormField<T>(
-        value: value,
+        initialValue: value,
         isExpanded: true,
         dropdownColor: CRMColors.cardBgOf(context),
         style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
@@ -988,13 +974,13 @@ class _UsersScreenState extends State<UsersScreen> {
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.input),
             borderSide: BorderSide(
-              color: CRMColors.borderOf(context).withOpacity(0.6),
+              color: CRMColors.borderOf(context).withValues(alpha: 0.6),
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CRMBorderRadius.input),
             borderSide: BorderSide(
-              color: CRMColors.borderOf(context).withOpacity(0.6),
+              color: CRMColors.borderOf(context).withValues(alpha: 0.6),
             ),
           ),
           focusedBorder: OutlineInputBorder(
@@ -1152,7 +1138,7 @@ class _UsersScreenState extends State<UsersScreen> {
         color: CRMColors.cardBgOf(context),
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         border: Border.all(
-          color: CRMColors.borderOf(context).withOpacity(0.55),
+          color: CRMColors.borderOf(context).withValues(alpha: 0.55),
           width: 0.5,
         ),
         boxShadow: CRMShadows.soft,
@@ -1191,7 +1177,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 color: CRMColors.cardBgOf(context),
                 border: Border(
                   top: BorderSide(
-                    color: CRMColors.borderOf(context).withOpacity(0.5),
+                    color: CRMColors.borderOf(context).withValues(alpha: 0.5),
                     width: 0.5,
                   ),
                 ),
@@ -1204,8 +1190,8 @@ class _UsersScreenState extends State<UsersScreen> {
                       children: [
                         CircleAvatar(
                           backgroundColor: isAdmin
-                              ? CRMColors.info.withOpacity(0.1)
-                              : CRMColors.primary.withOpacity(0.1),
+                              ? CRMColors.info.withValues(alpha: 0.1)
+                              : CRMColors.primary.withValues(alpha: 0.1),
                           radius: 16,
                           backgroundImage: (user.profilePhoto != null &&
                                   user.profilePhoto!.isNotEmpty)
@@ -1249,8 +1235,8 @@ class _UsersScreenState extends State<UsersScreen> {
                       ),
                       decoration: BoxDecoration(
                         color: isAdmin
-                            ? CRMColors.info.withOpacity(0.12)
-                            : CRMColors.primary.withOpacity(0.12),
+                            ? CRMColors.info.withValues(alpha: 0.12)
+                            : CRMColors.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(
                           CRMBorderRadius.round,
                         ),
@@ -1291,7 +1277,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     alignment: Alignment.centerLeft,
                     child: Switch(
                       value: user.isActive,
-                      activeColor: CRMColors.primary,
+                      activeTrackColor: CRMColors.primary,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       onChanged: (val) {
                         context.read<UsersBloc>().add(
@@ -1376,7 +1362,7 @@ class _UsersScreenState extends State<UsersScreen> {
         color: CRMColors.cardBgOf(context),
         borderRadius: BorderRadius.circular(CRMBorderRadius.card),
         border: Border.all(
-          color: CRMColors.borderOf(context).withOpacity(0.55),
+          color: CRMColors.borderOf(context).withValues(alpha: 0.55),
           width: 0.5,
         ),
         boxShadow: CRMShadows.soft,
@@ -1388,8 +1374,8 @@ class _UsersScreenState extends State<UsersScreen> {
             children: [
               CircleAvatar(
                 backgroundColor: isAdmin
-                    ? CRMColors.info.withOpacity(0.1)
-                    : CRMColors.primary.withOpacity(0.1),
+                    ? CRMColors.info.withValues(alpha: 0.1)
+                    : CRMColors.primary.withValues(alpha: 0.1),
                 radius: 18,
                 backgroundImage: (user.profilePhoto != null && user.profilePhoto!.isNotEmpty)
                     ? NetworkImage(user.profilePhoto!)
@@ -1433,8 +1419,8 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
                 decoration: BoxDecoration(
                   color: isAdmin
-                      ? CRMColors.info.withOpacity(0.12)
-                      : CRMColors.primary.withOpacity(0.12),
+                      ? CRMColors.info.withValues(alpha: 0.12)
+                      : CRMColors.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(CRMBorderRadius.round),
                 ),
                 child: Text(
@@ -1448,7 +1434,7 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
           const SizedBox(height: CRMSpacing.m),
           Divider(
-            color: CRMColors.borderOf(context).withOpacity(0.5),
+            color: CRMColors.borderOf(context).withValues(alpha: 0.5),
             height: 1,
           ),
           const SizedBox(height: CRMSpacing.s),
@@ -1490,7 +1476,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     scale: 0.85,
                     child: Switch(
                       value: user.isActive,
-                      activeColor: CRMColors.primary,
+                      activeTrackColor: CRMColors.primary,
                       onChanged: (val) {
                         context.read<UsersBloc>().add(
                           ToggleUserStatusRequested(id: user.id, isActive: val),
@@ -1504,7 +1490,7 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
           const SizedBox(height: CRMSpacing.s),
           Divider(
-            color: CRMColors.borderOf(context).withOpacity(0.5),
+            color: CRMColors.borderOf(context).withValues(alpha: 0.5),
             height: 1,
           ),
           const SizedBox(height: CRMSpacing.s),
@@ -1562,120 +1548,6 @@ class _UsersScreenState extends State<UsersScreen> {
           );
   }
 
-  Widget _buildPasswordResetsSection() {
-    if (_passwordResets.isEmpty) return const SizedBox.shrink();
-
-    return CRMCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.vpn_key_rounded,
-                color: CRMColors.warning,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                "Pending Password Reset Requests (${_passwordResets.length})",
-                style: CRMTypography.sectionTitle.copyWith(
-                  color: CRMColors.text,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.m),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _passwordResets.length,
-            separatorBuilder: (context, index) =>
-                Divider(color: CRMColors.border.withOpacity(0.5)),
-            itemBuilder: (context, index) {
-              final r = _passwordResets[index];
-              final userName = r['userName'] ?? '';
-              final userEmail = r['userEmail'] ?? '';
-              final roleName = r['roleName'] ?? '';
-              final createdAtStr = r['createdAt'] ?? '';
-
-              String timeDisplay = 'recently';
-              try {
-                final dt = DateTime.parse(createdAtStr);
-                final diff = DateTime.now().difference(dt);
-                if (diff.inMinutes < 60) {
-                  timeDisplay = '${diff.inMinutes}m ago';
-                } else if (diff.inHours < 24) {
-                  timeDisplay = '${diff.inHours}h ago';
-                } else {
-                  timeDisplay = '${diff.inDays}d ago';
-                }
-              } catch (_) {}
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                userName,
-                                style: CRMTypography.bodyMedium.copyWith(
-                                  color: CRMColors.text,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 1.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: CRMColors.warning.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  roleName,
-                                  style: CRMTypography.caption.copyWith(
-                                    color: CRMColors.warning,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            "$userEmail • Requested $timeDisplay",
-                            style: CRMTypography.caption.copyWith(
-                              color: CRMColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    CRMButton(
-                      label: "Reset Password",
-                      variant: CRMButtonVariant.primary,
-                      onPressed: () => _showResetPasswordDialog(r),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showResetPasswordDialog(dynamic request) {
     final formKey = GlobalKey<FormState>();
     final passwordController = TextEditingController();
@@ -1694,7 +1566,7 @@ class _UsersScreenState extends State<UsersScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(CRMBorderRadius.dialog),
                 side: BorderSide(
-                  color: CRMColors.borderOf(context).withOpacity(0.5),
+                  color: CRMColors.borderOf(context).withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -1790,21 +1662,17 @@ class _UsersScreenState extends State<UsersScreen> {
                                             },
                                           );
 
-                                          Navigator.pop(dialogContext);
+                                          if (dialogContext.mounted) {
+                                            Navigator.pop(dialogContext);
+                                          }
 
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "Password updated successfully.",
-                                              ),
-                                              backgroundColor:
-                                                  CRMColors.success,
-                                              behavior:
-                                                  SnackBarBehavior.floating,
-                                            ),
-                                          );
+                                          if (context.mounted) {
+                                            AppStatusSnackBar.show(
+                                              context,
+                                              message: "Password updated successfully.",
+                                              isSuccess: true,
+                                            );
+                                          }
 
                                           _fetchPasswordResets();
                                           _triggerFetch();
@@ -1820,16 +1688,13 @@ class _UsersScreenState extends State<UsersScreen> {
                                                 e.message ??
                                                 errorMsg;
                                           }
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text("Error: $errorMsg"),
-                                              backgroundColor: CRMColors.danger,
-                                              behavior:
-                                                  SnackBarBehavior.floating,
-                                            ),
-                                          );
+                                          if (context.mounted) {
+                                            AppStatusSnackBar.show(
+                                              context,
+                                              message: "Error: $errorMsg",
+                                              isSuccess: false,
+                                            );
+                                          }
                                         }
                                       }
                                     },
@@ -1860,7 +1725,7 @@ class _UsersScreenState extends State<UsersScreen> {
           color: CRMColors.cardBgOf(context),
           borderRadius: BorderRadius.circular(CRMBorderRadius.m),
           border: Border.all(
-            color: CRMColors.borderOf(context).withOpacity(0.5),
+            color: CRMColors.borderOf(context).withValues(alpha: 0.5),
             width: 0.5,
           ),
           boxShadow: CRMShadows.soft,
@@ -1907,7 +1772,7 @@ class _UsersScreenState extends State<UsersScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: isSelected
-                ? CRMColors.primaryOf(context).withOpacity(0.1)
+                ? CRMColors.primaryOf(context).withValues(alpha: 0.1)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(CRMBorderRadius.s),
             border: Border(
@@ -2008,7 +1873,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 child: Column(
                   children: [
                     Icon(Icons.check_circle_outline_rounded,
-                        size: 48, color: CRMColors.success.withOpacity(0.8)),
+                        size: 48, color: CRMColors.success.withValues(alpha: 0.8)),
                     const SizedBox(height: 12),
                     Text(
                       "No Pending Password Reset Requests",
@@ -2034,7 +1899,7 @@ class _UsersScreenState extends State<UsersScreen> {
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _passwordResets.length,
               separatorBuilder: (context, index) =>
-                  Divider(color: CRMColors.borderOf(context).withOpacity(0.5)),
+                  Divider(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
               itemBuilder: (context, index) {
                 final r = _passwordResets[index];
                 final userName = r['userName'] ?? '';
@@ -2060,7 +1925,7 @@ class _UsersScreenState extends State<UsersScreen> {
                   child: Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: CRMColors.warning.withOpacity(0.15),
+                        backgroundColor: CRMColors.warning.withValues(alpha: 0.15),
                         child: Text(
                           userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
                           style: const TextStyle(
@@ -2090,7 +1955,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                     vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: CRMColors.warning.withOpacity(0.15),
+                                    color: CRMColors.warning.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
@@ -2243,12 +2108,10 @@ class _UsersScreenState extends State<UsersScreen> {
         errorMsg = e.toString().replaceAll("Exception: ", "");
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
-            backgroundColor: CRMColors.danger,
-            behavior: SnackBarBehavior.floating,
-          ),
+        AppStatusSnackBar.show(
+          context,
+          message: errorMsg,
+          isSuccess: false,
         );
       }
     } finally {

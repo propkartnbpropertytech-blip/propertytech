@@ -92,7 +92,7 @@ enum ReportKpiType {
       case ReportKpiType.siteVisitsScheduled:
         return 'Site Visits Scheduled';
       case ReportKpiType.siteVisitsDone:
-        return 'Site Visits Done';
+        return 'Site Visit Done';
       case ReportKpiType.convertedToWon:
         return 'Converted to Won';
       case ReportKpiType.callAttempted:
@@ -161,7 +161,7 @@ enum ReportKpiType {
       case ReportKpiType.siteVisitsScheduled:
         return Icons.calendar_month_rounded;
       case ReportKpiType.siteVisitsDone:
-        return Icons.event_available_rounded;
+        return Icons.location_on_rounded;
       case ReportKpiType.convertedToWon:
         return Icons.emoji_events_rounded;
       case ReportKpiType.callAttempted:
@@ -229,7 +229,7 @@ enum ReportKpiType {
       case ReportKpiType.siteVisitsScheduled:
         return const Color(0xFF7C3AED);
       case ReportKpiType.siteVisitsDone:
-        return const Color(0xFF9333EA);
+        return const Color(0xFFEC4899);
       case ReportKpiType.convertedToWon:
         return const Color(0xFF16A34A);
       case ReportKpiType.callAttempted:
@@ -255,6 +255,7 @@ enum ReportKpiType {
       case ReportKpiType.campaignFollowupLeads:
       case ReportKpiType.notInterestedLeads:
       case ReportKpiType.leadsAssignedToSalesPickedUp:
+      case ReportKpiType.siteVisitsDone:
         return '% of Total Leads';
 
       case ReportKpiType.leadsNotStarted:

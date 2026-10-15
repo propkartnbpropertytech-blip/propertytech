@@ -40,6 +40,9 @@ import '../../../features/shell/mobile/mobile_nav_config.dart';
 import '../../../features/telecaller/widgets/telecaller_availability_toggle.dart';
 import '../mobile/mobile_layout.dart';
 import '../mobile/mobile_top_bar.dart';
+import '../../../../features/settings/services/page_control_service.dart';
+import '../../../../features/settings/models/page_control_model.dart';
+import 'under_development_screen.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -126,6 +129,7 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (authState is Authenticated) {
         TelecallerHeartbeatService.instance.start(authState);
         unawaited(PermissionMatrixService.instance.syncFromBackend());
+        unawaited(PageControlService.instance.fetchControls(silent: true));
       }
       _notificationsTimer?.cancel();
       _notificationsTimer = Timer.periodic(const Duration(seconds: 25), (
@@ -137,10 +141,23 @@ class _CRMAppShellState extends State<CRMAppShell>
         }
       });
     });
+    PageControlService.instance.addListener(_onPageControlChanged);
+    PageControlService.instance.fetchControls(silent: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant CRMAppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    PageControlService.instance.fetchControls(silent: true);
+  }
+
+  void _onPageControlChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    PageControlService.instance.removeListener(_onPageControlChanged);
     _entryController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -1583,8 +1600,20 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     }
 
+    Widget contentChild = widget.child;
+    if (PageControlService.instance.isRouteUnderDevelopment(location, currentUserRole)) {
+      final control = PageControlService.instance.getControlForRoute(location, currentUserRole);
+      contentChild = UnderDevelopmentScreen(
+        pageTitle: control?.title ?? 'This Page',
+        route: control?.route ?? location,
+        customMessage: control?.message,
+        userRole: currentUserRole,
+        isEmbedded: false,
+      );
+    }
+
     if (isMobile) {
-      return _buildMobileShell(context, location, currentUserRole);
+      return _buildMobileShell(context, location, currentUserRole, contentChild);
     }
 
     final showSidebar = isDesktop || isTablet;
@@ -1697,7 +1726,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                               },
                             ),
                           ),
-                          Expanded(child: widget.child),
+                          Expanded(child: contentChild),
                         ],
                       ),
                     ),
@@ -1722,6 +1751,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     BuildContext context,
     String location,
     String role,
+    Widget contentChild,
   ) {
     final isTelecaller = RoleGuard.isTelecaller(role);
     final searchOpen =
@@ -1795,7 +1825,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                       onClose: _closeMobileSearch,
                     )
                   : null,
-              child: widget.child,
+              child: contentChild,
             ),
           ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),

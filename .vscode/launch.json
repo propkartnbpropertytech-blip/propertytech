@@ -7,7 +7,8 @@
       "type": "dart",
       "program": "lib/main.dart",
       "args": [
-        "--dart-define-from-file=env/local.env"
+        "--dart-define-from-file=env/local.env",
+        "--no-web-resources-cdn"
       ]
     },
     {
@@ -16,7 +17,8 @@
       "type": "dart",
       "program": "lib/main.dart",
       "args": [
-        "--dart-define-from-file=env/production.env"
+        "--dart-define-from-file=env/production.env",
+        "--no-web-resources-cdn"
       ]
     }
   ]

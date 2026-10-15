@@ -71,16 +71,21 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
         );
         var items = _keptForCurrentTelecaller(serverItems);
 
-        // Filter out any archived / property listed leads as safety check
+        // Filter out any archived / property listed / not interested leads as safety check
         items = items.where((raw) {
           if (raw is! Map) return false;
           final lead = raw['lead'];
-          final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim();
-          if (cs == 'Property Listed' || cs == 'Listed' || cs == 'Archived') return false;
+          final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim().toLowerCase();
+          if (cs == 'property listed' || cs == 'listed' || cs == 'archived' || cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified') return false;
+          final alloc = ((lead is Map ? lead['allocation_status'] : null) ?? raw['allocation_status'] ?? '').toString().trim().toUpperCase();
+          if (alloc == 'RELEASED' && (cs == 'not interested' || cs == 'not_interested')) return false;
           final leadId = (raw['lead_id'] ?? raw['id'] ?? '').toString();
           final localLead = IntegrationService().getLeadById(leadId);
-          if (localLead != null && (localLead.campaignStatus == 'Property Listed' || localLead.campaignStatus == 'Listed' || localLead.campaignStatus == 'Archived')) {
-            return false;
+          if (localLead != null) {
+            final lcs = localLead.campaignStatus.trim().toLowerCase();
+            if (lcs == 'property listed' || lcs == 'listed' || lcs == 'archived' || lcs == 'not interested' || lcs == 'not_interested' || lcs == 'disqualified') {
+              return false;
+            }
           }
           return true;
         }).toList();
@@ -92,7 +97,8 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
         }).toSet();
 
         final localCbLeads = IntegrationService().leads.where((l) {
-          if (l.campaignStatus == 'Property Listed' || l.campaignStatus == 'Listed' || l.campaignStatus == 'Archived') {
+          final lcs = l.campaignStatus.trim().toLowerCase();
+          if (lcs == 'property listed' || lcs == 'listed' || lcs == 'archived' || lcs == 'not interested' || lcs == 'not_interested' || lcs == 'disqualified') {
             return false;
           }
           final isCb = l.campaignStatus == 'Callback' || l.campaignStatus == 'Call Back' || l.allocationStatus == 'CALLBACK';
@@ -173,7 +179,9 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
     });
 
     on<TelecallerLeadRemoved>((event, emit) {
-      final target = event.leadId.trim().toLowerCase();
+      final rawTarget = event.leadId.trim().toLowerCase();
+      final strippedTarget = rawTarget.startsWith('auto_') ? rawTarget.substring(5) : rawTarget;
+      final autoTarget = 'auto_$strippedTarget';
       final filtered = state.items.where((raw) {
         if (raw is! Map) return true;
         final id = (raw['id'] ?? '').toString().trim().toLowerCase();
@@ -181,7 +189,10 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
         final legacyId = (raw['legacy_integration_lead_id'] ?? raw['legacyIntegrationLeadId'] ?? '').toString().trim().toLowerCase();
         final nested = raw['lead'];
         final nestedId = nested is Map ? (nested['id'] ?? nested['lead_id'] ?? nested['leadId'] ?? '').toString().trim().toLowerCase() : '';
-        return id != target && leadId != target && legacyId != target && nestedId != target;
+        return id != rawTarget && id != strippedTarget && id != autoTarget &&
+               leadId != rawTarget && leadId != strippedTarget && leadId != autoTarget &&
+               legacyId != rawTarget && legacyId != strippedTarget &&
+               nestedId != rawTarget && nestedId != strippedTarget;
       }).toList();
       emit(TelecallerListState(items: filtered, loading: false));
     });
@@ -216,7 +227,26 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
           source: event.source,
           telecallerId: telecallerId,
         );
-        final items = _keptForCurrentTelecaller(serverItems);
+        var items = _keptForCurrentTelecaller(serverItems);
+
+        // Filter out any archived / property listed / not interested leads as safety check
+        items = items.where((raw) {
+          if (raw is! Map) return false;
+          final lead = raw['lead'];
+          final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim().toLowerCase();
+          if (cs == 'property listed' || cs == 'listed' || cs == 'archived' || cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified') return false;
+          final alloc = ((lead is Map ? lead['allocation_status'] : null) ?? raw['allocation_status'] ?? '').toString().trim().toUpperCase();
+          if (alloc == 'RELEASED' && (cs == 'not interested' || cs == 'not_interested')) return false;
+          final leadId = (raw['lead_id'] ?? raw['id'] ?? raw['legacy_integration_lead_id'] ?? '').toString();
+          final localLead = IntegrationService().getLeadById(leadId);
+          if (localLead != null) {
+            final lcs = localLead.campaignStatus.trim().toLowerCase();
+            if (lcs == 'property listed' || lcs == 'listed' || lcs == 'archived' || lcs == 'not interested' || lcs == 'not_interested' || lcs == 'disqualified') {
+              return false;
+            }
+          }
+          return true;
+        }).toList();
 
         // Merge local in-memory leads marked as CNR so they appear immediately
         final existingIds = items.map((raw) {
@@ -225,6 +255,10 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
         }).toSet();
 
         final localCnrLeads = IntegrationService().leads.where((l) {
+          final lcs = l.campaignStatus.trim().toLowerCase();
+          if (lcs == 'property listed' || lcs == 'listed' || lcs == 'archived' || lcs == 'not interested' || lcs == 'not_interested' || lcs == 'disqualified') {
+            return false;
+          }
           final isCnr = l.campaignStatus == 'CNR' || l.allocationStatus == 'CNR';
           if (!isCnr) return false;
           final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
@@ -292,7 +326,9 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
     });
 
     on<TelecallerLeadRemoved>((event, emit) {
-      final target = event.leadId.trim().toLowerCase();
+      final rawTarget = event.leadId.trim().toLowerCase();
+      final strippedTarget = rawTarget.startsWith('auto_') ? rawTarget.substring(5) : rawTarget;
+      final autoTarget = 'auto_$strippedTarget';
       final filtered = state.items.where((raw) {
         if (raw is! Map) return true;
         final id = (raw['id'] ?? '').toString().trim().toLowerCase();
@@ -300,7 +336,10 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
         final legacyId = (raw['legacy_integration_lead_id'] ?? raw['legacyIntegrationLeadId'] ?? '').toString().trim().toLowerCase();
         final nested = raw['lead'];
         final nestedId = nested is Map ? (nested['id'] ?? nested['lead_id'] ?? nested['leadId'] ?? '').toString().trim().toLowerCase() : '';
-        return id != target && leadId != target && legacyId != target && nestedId != target;
+        return id != rawTarget && id != strippedTarget && id != autoTarget &&
+               leadId != rawTarget && leadId != strippedTarget && leadId != autoTarget &&
+               legacyId != rawTarget && legacyId != strippedTarget &&
+               nestedId != rawTarget && nestedId != strippedTarget;
       }).toList();
       emit(TelecallerListState(items: filtered, loading: false));
     });

@@ -50,6 +50,7 @@ class PropertyModel {
   final String? remarks;
   final String? blockWing;
   final String? flatNo;
+  final String? section;
   final String? googlePlaceId;
   final String? brokerageTypeId;
   final String? brokerageTypeName;
@@ -115,6 +116,7 @@ class PropertyModel {
     this.remarks,
     this.blockWing,
     this.flatNo,
+    this.section,
     required this.isVerified,
     required this.createdBy,
     required this.createdByName,
@@ -334,6 +336,7 @@ class PropertyModel {
       remarks: json['remarks'] as String?,
       blockWing: json['block_wing'] as String?,
       flatNo: json['flat_no'] as String?,
+      section: json['section'] as String?,
       isVerified: json['is_verified'] as bool? ?? false,
       createdBy: json['created_by'] as String? ?? '',
       createdByName: creator != null ? creator['full_name'] as String? ?? '' : '',
@@ -387,6 +390,7 @@ class PropertyModel {
       'remarks': remarks,
       'block_wing': blockWing,
       'flat_no': flatNo,
+      'section': section,
       'amenities': amenities,
       'images': images,
       'videos': videos,
@@ -444,6 +448,7 @@ class PropertyModel {
     String? remarks,
     String? blockWing,
     String? flatNo,
+    String? section,
     String? googlePlaceId,
     String? brokerageTypeId,
     String? brokerageTypeName,
@@ -509,6 +514,7 @@ class PropertyModel {
       remarks: remarks ?? this.remarks,
       blockWing: blockWing ?? this.blockWing,
       flatNo: flatNo ?? this.flatNo,
+      section: section ?? this.section,
       googlePlaceId: googlePlaceId ?? this.googlePlaceId,
       brokerageTypeId: brokerageTypeId ?? this.brokerageTypeId,
       brokerageTypeName: brokerageTypeName ?? this.brokerageTypeName,

@@ -4,7 +4,9 @@ import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../models/business_insight_summary.dart';
+import '../models/report_date_range.dart';
 import '../services/business_insight_service.dart';
+import 'report_date_filter_bar.dart';
 
 // ============================================================================
 // 1. LEAD SOURCE GRID VIEW (Total Leads Click)
@@ -33,7 +35,6 @@ class LeadSourceGridView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
 
     final meta = summary.sources['meta'] ?? const SourceSummary(total: 0, propertyListing: 0, requirement: 0);
@@ -49,47 +50,26 @@ class LeadSourceGridView extends StatelessWidget {
         const SizedBox(height: CRMSpacing.m),
 
         // Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Total Leads by Source',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Overall: ${summary.totalLeads} total leads across all acquisition channels (including rejected & not interested).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Total Leads by Source',
+          subtitle: 'Overall: ${summary.totalLeads} total leads across all acquisition channels (including rejected & not interested).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                'Total Leads: ${summary.totalLeads}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            child: Text(
+              'Total Leads: ${summary.totalLeads}',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.l),
 
@@ -221,40 +201,47 @@ class LeadSourceGridView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: color, size: 24),
                       ),
-                      child: Icon(icon, color: color, size: 24),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                          ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 10),
                 Text(
                   '$count',
                   style: TextStyle(
@@ -484,49 +471,28 @@ class _SourceLeadsDetailViewState extends State<SourceLeadsDetailView> with Sing
         const SizedBox(height: CRMSpacing.m),
 
         // Title Row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${widget.source} Leads',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isManual
-                      ? 'Total: ${s.total} manually added leads (${s.requirement} Requirement, ${s.rejected} Rejected).'
-                      : 'Total: ${s.total} leads (${s.propertyListing} Property Listing, ${s.requirement} Requirement, ${s.notInterested} Not Interested).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: '${widget.source} Leads',
+          subtitle: isManual
+              ? 'Total: ${s.total} manually added leads (${s.requirement} Requirement, ${s.rejected} Rejected).'
+              : 'Total: ${s.total} leads (${s.propertyListing} Property Listing, ${s.requirement} Requirement, ${s.notInterested} Not Interested).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                'Total: ${s.total}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            child: Text(
+              'Total: ${s.total}',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -585,6 +551,8 @@ class PropertyListingLeadsView extends StatefulWidget {
   final VoidCallback onBack;
   final DateTime? from;
   final DateTime? to;
+  final ReportDateRange? dateRange;
+  final ValueChanged<ReportDateRange>? onDateRangeChanged;
 
   const PropertyListingLeadsView({
     super.key,
@@ -592,6 +560,8 @@ class PropertyListingLeadsView extends StatefulWidget {
     required this.onBack,
     this.from,
     this.to,
+    this.dateRange,
+    this.onDateRangeChanged,
   });
 
   @override
@@ -604,7 +574,6 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final prop = widget.summary.propertyListingLeads;
     final kpis = prop.getKpisForSource(_selectedSource);
 
@@ -615,48 +584,38 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
         _buildBreadcrumb(context, 'Overall Business Insights', widget.onBack),
         const SizedBox(height: CRMSpacing.m),
 
+        // Date Filter Bar
+        if (widget.dateRange != null && widget.onDateRangeChanged != null) ...[
+          ReportDateFilterBar(
+            activeRange: widget.dateRange!,
+            onRangeChanged: widget.onDateRangeChanged!,
+          ),
+          const SizedBox(height: CRMSpacing.m),
+        ],
+
         // Title
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Property Listing Leads',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), and Webhook (${prop.bySource['webhook'] ?? 0}).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Property Listing Leads',
+          subtitle: (prop.bySource['manual'] ?? 0) > 0
+              ? 'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), Webhook (${prop.bySource['webhook'] ?? 0}), and Manual (${prop.bySource['manual'] ?? 0}).'
+              : 'Overall count from Meta (${prop.bySource['meta'] ?? 0}), Housing (${prop.bySource['housing'] ?? 0}), and Webhook (${prop.bySource['webhook'] ?? 0}).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                '${_selectedSource == 'All' ? 'Total' : _selectedSource} Listing Leads: ${kpis.totalListingLeads}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0284C7),
-                ),
+            child: Text(
+              '${_selectedSource == 'All' ? 'Total' : _selectedSource} Listing: ${kpis.totalListingLeads}',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0284C7),
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -668,6 +627,8 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
             _buildSourceChip('Meta', 'Meta', prop.bySource['meta'] ?? 0),
             _buildSourceChip('Housing', 'Housing', prop.bySource['housing'] ?? 0),
             _buildSourceChip('Webhook', 'Webhook', prop.bySource['webhook'] ?? 0),
+            if ((prop.bySource['manual'] ?? 0) > 0)
+              _buildSourceChip('Manual', 'Manual', prop.bySource['manual'] ?? 0),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -828,10 +789,10 @@ class _PropertyListingLeadsViewState extends State<PropertyListingLeadsView> {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       color: isSelected ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                     ),
@@ -864,6 +825,8 @@ class RequirementLeadsView extends StatefulWidget {
   final VoidCallback onBack;
   final DateTime? from;
   final DateTime? to;
+  final ReportDateRange? dateRange;
+  final ValueChanged<ReportDateRange>? onDateRangeChanged;
 
   const RequirementLeadsView({
     super.key,
@@ -871,6 +834,8 @@ class RequirementLeadsView extends StatefulWidget {
     required this.onBack,
     this.from,
     this.to,
+    this.dateRange,
+    this.onDateRangeChanged,
   });
 
   @override
@@ -883,7 +848,6 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final req = widget.summary.requirementLeads;
     final kpis = req.getKpisForSource(_selectedSource);
 
@@ -894,48 +858,38 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
         _buildBreadcrumb(context, 'Overall Business Insights', widget.onBack),
         const SizedBox(height: CRMSpacing.m),
 
+        // Date Filter Bar
+        if (widget.dateRange != null && widget.onDateRangeChanged != null) ...[
+          ReportDateFilterBar(
+            activeRange: widget.dateRange!,
+            onRangeChanged: widget.onDateRangeChanged!,
+          ),
+          const SizedBox(height: CRMSpacing.m),
+        ],
+
         // Title
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Requirement Leads',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), and Webhook (${req.bySource['webhook'] ?? 0}).',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Requirement Leads',
+          subtitle: (req.bySource['manual'] ?? 0) > 0
+              ? 'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), Webhook (${req.bySource['webhook'] ?? 0}), and Manual (${req.bySource['manual'] ?? 0}).'
+              : 'Overall count from Meta (${req.bySource['meta'] ?? 0}), Housing (${req.bySource['housing'] ?? 0}), and Webhook (${req.bySource['webhook'] ?? 0}).',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D9488).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                '${_selectedSource == 'All' ? 'Total' : _selectedSource} Requirement Leads: ${kpis.totalRequirementLeads}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0D9488),
-                ),
+            child: Text(
+              '${_selectedSource == 'All' ? 'Total' : _selectedSource} Req: ${kpis.totalRequirementLeads}',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0D9488),
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -947,6 +901,8 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
             _buildSourceChip('Meta', 'Meta', req.bySource['meta'] ?? 0),
             _buildSourceChip('Housing', 'Housing', req.bySource['housing'] ?? 0),
             _buildSourceChip('Webhook', 'Webhook', req.bySource['webhook'] ?? 0),
+            if ((req.bySource['manual'] ?? 0) > 0)
+              _buildSourceChip('Manual', 'Manual', req.bySource['manual'] ?? 0),
           ],
         ),
         const SizedBox(height: CRMSpacing.m),
@@ -1107,10 +1063,10 @@ class _RequirementLeadsViewState extends State<RequirementLeadsView> {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       color: isSelected ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                     ),
@@ -1152,7 +1108,6 @@ class TelecallersListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
     final telecallers = summary.telecallers;
 
@@ -1164,47 +1119,26 @@ class TelecallersListView extends StatelessWidget {
         const SizedBox(height: CRMSpacing.m),
 
         // Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Telecallers Performance & Leads',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Total Active Telecallers: ${telecallers.totalCount}. Select a telecaller to inspect assigned lead breakdowns.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Telecallers Performance & Leads',
+          subtitle: 'Total Active Telecallers: ${telecallers.totalCount}. Select a telecaller to inspect assigned lead breakdowns.',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                'Telecallers: ${telecallers.totalCount}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+            child: Text(
+              'Telecallers: ${telecallers.totalCount}',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: primaryColor,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: CRMSpacing.l),
 
@@ -1257,43 +1191,50 @@ class TelecallersListView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: primaryColor.withValues(alpha: 0.15),
-                      child: Text(
-                        tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
+                Expanded(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: primaryColor.withValues(alpha: 0.15),
+                        child: Text(
+                          tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: primaryColor,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          tc.name,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                          ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tc.name,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              tc.email,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        Text(
-                          tc.email,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -1488,116 +1429,128 @@ class _TelecallerDetailViewState extends State<TelecallerDetailView> with Single
         const SizedBox(height: CRMSpacing.m),
 
         // Telecaller Header
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 650;
+
+            return Container(
+              padding: EdgeInsets.all(isMobile ? 14 : 20),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      CircleAvatar(
-                        radius: 26,
-                        backgroundColor: primaryColor.withValues(alpha: 0.15),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: isMobile ? 22 : 26,
+                              backgroundColor: primaryColor.withValues(alpha: 0.15),
+                              child: Text(
+                                tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                                style: TextStyle(
+                                  fontSize: isMobile ? 18 : 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: primaryColor,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: isMobile ? 10 : 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    tc.name,
+                                    style: TextStyle(
+                                      fontSize: isMobile ? 17 : 20,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.3,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    tc.email,
+                                    style: TextStyle(
+                                      fontSize: isMobile ? 12 : 13,
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: isMobile ? 6 : 8),
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
+                        ),
                         child: Text(
-                          tc.name.isNotEmpty ? tc.name[0].toUpperCase() : 'T',
+                          isMobile ? 'Assigned: ${tc.totalLeads}' : 'Assigned Leads: ${tc.totalLeads}',
                           style: TextStyle(
-                            fontSize: 22,
+                            fontSize: isMobile ? 12 : 14,
                             fontWeight: FontWeight.bold,
                             color: primaryColor,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            tc.name,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            tc.email,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: primaryColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      'Assigned Leads: ${tc.totalLeads}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: primaryColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 14),
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
 
-              // Source filters
-              Row(
-                children: [
-                  const Text(
-                    'Source Filter:',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(width: 10),
+                  // Source filters
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      const Text(
+                        'Source Filter:',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
                       _buildSourceFilterChip('All Sources', 'All', tc.sources['all']?.total ?? tc.totalLeads),
                       _buildSourceFilterChip('Meta', 'Meta', tc.sources['meta']?.total ?? 0),
                       _buildSourceFilterChip('Housing', 'Housing', tc.sources['housing']?.total ?? 0),
                       _buildSourceFilterChip('Webhook', 'Webhook', tc.sources['webhook']?.total ?? 0),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-              // Status Counts Chips for this telecaller
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildStatusChip('CNR: ${tc.statusCounts.cnr}', const Color(0xFFE11D48)),
-                  _buildStatusChip('Callback: ${tc.statusCounts.callback}', const Color(0xFFD97706)),
-                  _buildStatusChip('Contacted: ${tc.statusCounts.contacted}', const Color(0xFF2563EB)),
-                  _buildStatusChip('Handed to Sales: ${tc.statusCounts.handedToSales}', const Color(0xFF16A34A)),
-                  _buildStatusChip('Not Interested: ${tc.statusCounts.notInterested}', const Color(0xFFDC2626)),
+                  // Status Counts Chips for this telecaller
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildStatusChip('CNR: ${tc.statusCounts.cnr}', const Color(0xFFE11D48)),
+                      _buildStatusChip('Callback: ${tc.statusCounts.callback}', const Color(0xFFD97706)),
+                      _buildStatusChip('Contacted: ${tc.statusCounts.contacted}', const Color(0xFF2563EB)),
+                      _buildStatusChip('Handed to Sales: ${tc.statusCounts.handedToSales}', const Color(0xFF16A34A)),
+                      _buildStatusChip('Not Interested: ${tc.statusCounts.notInterested}', const Color(0xFFDC2626)),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         ),
         const SizedBox(height: CRMSpacing.m),
 
@@ -1757,7 +1710,7 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
       telecallerId: widget.telecallerId,
       from: widget.from,
       to: widget.to,
-      limit: 1000,
+      limit: 5000,
       offset: 0,
     );
 
@@ -1807,68 +1760,141 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Table Toolbar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (val) {
-                      setState(() {
-                        _searchQuery = val;
-                        _page = 0;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'Search leads by customer, phone, status, or assignee...',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          LayoutBuilder(
+            builder: (context, boxConstraints) {
+              final isNarrow = boxConstraints.maxWidth < 450;
+              if (isNarrow) {
+                return Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        onChanged: (val) {
+                          setState(() {
+                            _searchQuery = val;
+                            _page = 0;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search leads...',
+                          hintStyle: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          ),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _page = 0;
+                                    });
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ),
                       ),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 16),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _searchQuery = '';
-                                  _page = 0;
-                                });
-                              },
-                            )
-                          : null,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${filtered.length} Leads',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh_rounded, size: 20),
+                            tooltip: 'Refresh Leads',
+                            onPressed: _fetchLeads,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (val) {
+                          setState(() {
+                            _searchQuery = val;
+                            _page = 0;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search leads by customer, phone, status, or assignee...',
+                          hintStyle: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          ),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _page = 0;
+                                    });
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: 'Refresh Leads',
+                      onPressed: _fetchLeads,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${filtered.length} Leads',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded),
-                  tooltip: 'Refresh Leads',
-                  onPressed: _fetchLeads,
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${filtered.length} Leads',
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
           const Divider(height: 1),
 
@@ -1897,8 +1923,21 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
               ),
             )
           else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 650;
+                if (isMobile) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Column(
+                      children: pageLeads
+                          .map((lead) => _buildMobileLeadItem(context, lead, isDark, primaryColor))
+                          .toList(),
+                    ),
+                  );
+                }
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowColor: WidgetStateProperty.all(
                   isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
@@ -2016,15 +2055,20 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                   );
                 }).toList(),
               ),
-            ),
+            );
+          },
+        ),
 
           // Pagination Bar
           if (totalPages > 1) ...[
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   Text(
                     'Showing ${startIdx + 1}–${(startIdx + _pageSize).clamp(0, filtered.length)} of ${filtered.length}',
@@ -2034,6 +2078,7 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                     ),
                   ),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
                         icon: const Icon(Icons.chevron_left_rounded),
@@ -2051,6 +2096,122 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLeadItem(
+    BuildContext context,
+    BusinessInsightLead lead,
+    bool isDark,
+    Color primaryColor,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  lead.customerName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildStageBadge(lead.stage, lead.rejectionReason),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (lead.phone.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.phone_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
+                    const SizedBox(width: 3),
+                    Text(
+                      lead.phone,
+                      style: TextStyle(fontSize: 11.5, color: CRMColors.textSecondaryOf(context)),
+                    ),
+                  ],
+                ),
+              _buildSourceBadge(lead.source),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  lead.leadType,
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                ),
+              ),
+            ],
+          ),
+          if ((lead.telecallerName != null && lead.telecallerName!.isNotEmpty) ||
+              (lead.salespersonName != null && lead.salespersonName!.isNotEmpty)) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                if (lead.telecallerName != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.headset_mic_rounded, size: 12, color: primaryColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        lead.telecallerName!,
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                if (lead.salespersonName != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.person_rounded, size: 12, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 4),
+                      Text(
+                        lead.salespersonName!,
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ],
+          if ((widget.kpi == 'not_interested' || widget.kpi == 'rejected') &&
+              ((lead.notInterestedRemark != null && lead.notInterestedRemark!.isNotEmpty) ||
+               (lead.rejectionReason != null && lead.rejectionReason!.isNotEmpty))) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Remark: ${lead.notInterestedRemark ?? lead.rejectionReason}',
+              style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ],
@@ -2094,17 +2255,50 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
     Color fg = const Color(0xFF475569);
     String label = stage.replaceAll('_', ' ');
 
-    if (rejectionReason != null && rejectionReason.isNotEmpty) {
+    final s = stage.toLowerCase();
+    final bool isActuallyRejected = s.startsWith('reject') ||
+        (rejectionReason != null && rejectionReason.isNotEmpty && (s.contains('reject') || rejectionReason.toLowerCase().startsWith('reject')));
+
+    if (isActuallyRejected) {
       bg = const Color(0xFFDC2626).withValues(alpha: 0.12);
       fg = const Color(0xFFDC2626);
-      label = rejectionReason.replaceAll('_', ' ');
-    } else if (stage == 'WON') {
+      label = (rejectionReason != null && rejectionReason.isNotEmpty)
+          ? rejectionReason.replaceAll('_', ' ')
+          : label;
+    } else if (s.contains('won')) {
       bg = const Color(0xFF16A34A).withValues(alpha: 0.12);
       fg = const Color(0xFF16A34A);
-    } else if (stage == 'LOST') {
+    } else if (s.contains('lost') || s.contains('not interested')) {
       bg = const Color(0xFFDC2626).withValues(alpha: 0.12);
       fg = const Color(0xFFDC2626);
-    } else if (stage == 'NEW') {
+    } else if (s.contains('allocated')) {
+      bg = const Color(0xFF0F766E).withValues(alpha: 0.12);
+      fg = const Color(0xFF0F766E);
+    } else if (s.contains('visit')) {
+      bg = const Color(0xFF9333EA).withValues(alpha: 0.12);
+      fg = const Color(0xFF9333EA);
+    } else if (s.contains('follow')) {
+      bg = const Color(0xFF0D9488).withValues(alpha: 0.12);
+      fg = const Color(0xFF0D9488);
+    } else if (s.contains('negotiation')) {
+      bg = const Color(0xFFF59E0B).withValues(alpha: 0.12);
+      fg = const Color(0xFFF59E0B);
+    } else if (s.contains('listed')) {
+      bg = const Color(0xFF16A34A).withValues(alpha: 0.12);
+      fg = const Color(0xFF16A34A);
+    } else if (s.contains('cnr')) {
+      bg = const Color(0xFFEA580C).withValues(alpha: 0.12);
+      fg = const Color(0xFFEA580C);
+    } else if (s.contains('callback')) {
+      bg = const Color(0xFF2563EB).withValues(alpha: 0.12);
+      fg = const Color(0xFF2563EB);
+    } else if (s.contains('interested')) {
+      bg = const Color(0xFF16A34A).withValues(alpha: 0.12);
+      fg = const Color(0xFF16A34A);
+    } else if (s.contains('assigned') || s.contains('sales')) {
+      bg = const Color(0xFF2563EB).withValues(alpha: 0.12);
+      fg = const Color(0xFF2563EB);
+    } else if (s == 'new') {
       bg = const Color(0xFF0284C7).withValues(alpha: 0.12);
       fg = const Color(0xFF0284C7);
     }
@@ -2148,5 +2342,84 @@ Widget _buildBreadcrumb(BuildContext context, String previousLabel, VoidCallback
         ],
       ),
     ),
+  );
+}
+
+// Helper Responsive Drilldown Header
+Widget _buildDrilldownHeader({
+  required BuildContext context,
+  required String title,
+  required String subtitle,
+  required Widget badge,
+}) {
+  final isDark = ThemeManager().isDarkMode;
+
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final isMobile = constraints.maxWidth < 650;
+      if (isMobile) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                badge,
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        );
+      }
+
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          badge,
+        ],
+      );
+    },
   );
 }

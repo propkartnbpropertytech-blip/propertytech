@@ -145,7 +145,7 @@ class MobileNavConfig {
         _home,
         MobileNavItem(
           id: 'queue',
-          label: 'Queue',
+          label: 'My Calling',
           icon: Icons.phone_in_talk_outlined,
           selectedIcon: Icons.phone_in_talk_rounded,
           route: '/campaign/leads',
@@ -237,6 +237,18 @@ class MobileNavConfig {
       icon: Icons.delete_outline_rounded,
       route: '/bin',
     );
+    const support = MobileMoreEntry(
+      id: 'support',
+      label: 'Support',
+      icon: Icons.support_agent_rounded,
+      route: '/support',
+    );
+    const adminSupport = MobileMoreEntry(
+      id: 'admin_support',
+      label: 'Issue Management',
+      icon: Icons.admin_panel_settings_outlined,
+      route: '/admin/support',
+    );
 
     if (RoleGuard.isTelecaller(role)) {
       sections = const [
@@ -256,7 +268,7 @@ class MobileNavConfig {
           library,
           messages,
         ]),
-        MobileMoreSection(title: 'Account', entries: [profile, settings, bin]),
+        MobileMoreSection(title: 'Account', entries: [profile, support, settings, bin]),
       ];
     } else if (RoleGuard.isAdmin(role)) {
       sections = [
@@ -265,7 +277,7 @@ class MobileNavConfig {
             id: 'queue',
             label: 'Calling queue',
             icon: Icons.phone_in_talk_outlined,
-            route: '/campaign/leads',
+            route: '/campaign/meta',
           ),
           MobileMoreEntry(
             id: 'connections',
@@ -308,7 +320,9 @@ class MobileNavConfig {
               route: '/reports/leads/super-admin-metrics',
             ),
         ]),
-        const MobileMoreSection(title: 'Workspace', entries: [
+        MobileMoreSection(title: 'Workspace', entries: [
+          support,
+          if (RoleGuard.isSuperAdmin(role)) adminSupport,
           library,
           bin,
           MobileMoreEntry(
@@ -331,7 +345,7 @@ class MobileNavConfig {
     } else {
       sections = const [
         MobileMoreSection(title: 'Work', entries: [library, messages]),
-        MobileMoreSection(title: 'Account', entries: [profile, settings, bin]),
+        MobileMoreSection(title: 'Account', entries: [profile, support, settings, bin]),
       ];
     }
 
@@ -362,6 +376,29 @@ class MobileNavConfig {
         title: tabs[tabIndex].label,
         isSecondary: false,
         backFallback: homeRoute,
+      );
+    }
+
+    if (location == '/settings/location-config' ||
+        location.startsWith('/settings/location-config/')) {
+      final moreIndex = tabs.indexWhere((t) => t.id == 'more');
+      return MobileLocationInfo(
+        selectedIndex: moreIndex,
+        title: 'Location Config',
+        isSecondary: true,
+        backFallback: '/settings',
+      );
+    }
+
+    if (location.startsWith('/campaign/meta') ||
+        location.startsWith('/campaign/leads') ||
+        location.startsWith('/campaign/housing')) {
+      final moreIndex = tabs.indexWhere((t) => t.id == 'more');
+      return MobileLocationInfo(
+        selectedIndex: moreIndex,
+        title: 'Calling queue',
+        isSecondary: true,
+        backFallback: moreRoute,
       );
     }
 

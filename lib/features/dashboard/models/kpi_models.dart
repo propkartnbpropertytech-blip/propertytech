@@ -1,45 +1,635 @@
+/// ============================================================================
+/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
+/// All data models and JSON serializations in this file MUST conform to the
+/// Master KPI Rulebook: `lib/core/constants/kpi_rulebook.dart` and `docs/KPIs.docx`.
+/// ============================================================================
 class KpiConfigItem {
+  final String? id;
   final String kpiKey;
   final String kpiLabel;
   final bool isEnabled;
   final int displayOrder;
+  final bool isSystem;
+  final String icon;
+  final bool isClickable;
+  final List<String> pages;
+  final String uiComponent;
+  final String displayFormat;
+  final Map<String, dynamic> drilldownConfig;
 
   const KpiConfigItem({
+    this.id,
     required this.kpiKey,
     required this.kpiLabel,
     required this.isEnabled,
     required this.displayOrder,
+    this.isSystem = false,
+    this.icon = 'insights_rounded',
+    this.isClickable = true,
+    this.pages = const ['Admin Dashboard'],
+    this.uiComponent = 'KPI Card',
+    this.displayFormat = 'Count',
+    this.drilldownConfig = const {'layout': 'default', 'components': []},
   });
 
   factory KpiConfigItem.fromJson(Map<String, dynamic> json) {
     return KpiConfigItem(
+      id: json['id']?.toString(),
       kpiKey: json['kpi_key']?.toString() ?? '',
       kpiLabel: json['kpi_label']?.toString() ?? json['kpi_key']?.toString() ?? '',
       isEnabled: json['is_enabled'] != false,
       displayOrder: (json['display_order'] as num?)?.toInt() ?? 1,
+      isSystem: json['is_system'] == true,
+      icon: json['icon']?.toString() ?? 'insights_rounded',
+      isClickable: json['is_clickable'] != false,
+      pages: (json['pages'] as List?)?.map((p) => p.toString()).toList() ?? const ['Admin Dashboard'],
+      uiComponent: json['ui_component']?.toString() ?? 'KPI Card',
+      displayFormat: json['display_format']?.toString() ?? 'Count',
+      drilldownConfig: json['drilldown_config'] is Map
+          ? Map<String, dynamic>.from(json['drilldown_config'])
+          : const {'layout': 'default', 'components': []},
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      if (id != null) 'id': id,
       'kpi_key': kpiKey,
       'kpi_label': kpiLabel,
+      'is_enabled': isEnabled,
+      'display_order': displayOrder,
+      'is_system': isSystem,
+      'icon': icon,
+      'is_clickable': isClickable,
+      'pages': pages,
+      'ui_component': uiComponent,
+      'display_format': displayFormat,
+      'drilldown_config': drilldownConfig,
+    };
+  }
+
+  KpiConfigItem copyWith({
+    String? id,
+    String? kpiKey,
+    String? kpiLabel,
+    bool? isEnabled,
+    int? displayOrder,
+    bool? isSystem,
+    String? icon,
+    bool? isClickable,
+    List<String>? pages,
+    String? uiComponent,
+    String? displayFormat,
+    Map<String, dynamic>? drilldownConfig,
+  }) {
+    return KpiConfigItem(
+      id: id ?? this.id,
+      kpiKey: kpiKey ?? this.kpiKey,
+      kpiLabel: kpiLabel ?? this.kpiLabel,
+      isEnabled: isEnabled ?? this.isEnabled,
+      displayOrder: displayOrder ?? this.displayOrder,
+      isSystem: isSystem ?? this.isSystem,
+      icon: icon ?? this.icon,
+      isClickable: isClickable ?? this.isClickable,
+      pages: pages ?? this.pages,
+      uiComponent: uiComponent ?? this.uiComponent,
+      displayFormat: displayFormat ?? this.displayFormat,
+      drilldownConfig: drilldownConfig ?? this.drilldownConfig,
+    );
+  }
+}
+
+class KpiRegistryItem {
+  final String id;
+  final String? organizationId;
+  final String kpiKey;
+  final String kpiLabel;
+  final String whyDoWeHaveIt;
+  final String? description;
+  final String dataSource;
+  final String entityTable;
+  final String primaryField;
+  final String aggregation;
+  final List<dynamic> conditionsJson;
+  final String dateField;
+  final String? relationships;
+  final String databaseMappingDescription;
+  final List<String> pages;
+  final String uiComponent;
+  final String displayFormat;
+  final String icon;
+  final bool isClickable;
+  final String drilldownType;
+  final String? drilldownRoute;
+  final String? drilldownApi;
+  final bool secondLevelEnabled;
+  final String? drilldownMappingDescription;
+  final Map<String, dynamic> drilldownConfig;
+  final String? parentKpiId;
+  final String lifecycleStatus;
+  final bool adminVisible;
+  final bool telecallerVisible;
+  final bool salesVisible;
+  final bool isSystem;
+  final bool isEnabled;
+  final int displayOrder;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const KpiRegistryItem({
+    required this.id,
+    this.organizationId,
+    required this.kpiKey,
+    required this.kpiLabel,
+    required this.whyDoWeHaveIt,
+    this.description,
+    this.dataSource = 'leads',
+    this.entityTable = 'leads',
+    this.primaryField = 'id',
+    this.aggregation = 'COUNT',
+    this.conditionsJson = const [],
+    this.dateField = 'created_at',
+    this.relationships,
+    this.databaseMappingDescription = '',
+    this.pages = const ['Admin Dashboard'],
+    this.uiComponent = 'KPI Card',
+    this.displayFormat = 'Count',
+    this.icon = 'insights_rounded',
+    this.isClickable = true,
+    this.drilldownType = 'Modal',
+    this.drilldownRoute,
+    this.drilldownApi,
+    this.secondLevelEnabled = false,
+    this.drilldownMappingDescription,
+    this.drilldownConfig = const {'layout': 'default', 'components': []},
+    this.parentKpiId,
+    this.lifecycleStatus = 'active',
+    this.adminVisible = true,
+    this.telecallerVisible = false,
+    this.salesVisible = false,
+    this.isSystem = false,
+    this.isEnabled = true,
+    this.displayOrder = 1,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory KpiRegistryItem.fromJson(Map<String, dynamic> json) {
+    return KpiRegistryItem(
+      id: json['id']?.toString() ?? '',
+      organizationId: json['organization_id']?.toString(),
+      kpiKey: json['kpi_key']?.toString() ?? '',
+      kpiLabel: json['kpi_label']?.toString() ?? json['kpi_key']?.toString() ?? '',
+      whyDoWeHaveIt: json['why_do_we_have_it']?.toString() ?? '',
+      description: json['description']?.toString(),
+      dataSource: json['data_source']?.toString() ?? 'leads',
+      entityTable: json['entity_table']?.toString() ?? 'leads',
+      primaryField: json['primary_field']?.toString() ?? 'id',
+      aggregation: json['aggregation']?.toString() ?? 'COUNT',
+      conditionsJson: json['conditions_json'] is List ? (json['conditions_json'] as List) : const [],
+      dateField: json['date_field']?.toString() ?? 'created_at',
+      relationships: json['relationships']?.toString(),
+      databaseMappingDescription: json['database_mapping_description']?.toString() ?? '',
+      pages: (json['pages'] as List?)?.map((p) => p.toString()).toList() ?? const ['Admin Dashboard'],
+      uiComponent: json['ui_component']?.toString() ?? 'KPI Card',
+      displayFormat: json['display_format']?.toString() ?? 'Count',
+      icon: json['icon']?.toString() ?? 'insights_rounded',
+      isClickable: json['is_clickable'] != false,
+      drilldownType: json['drilldown_type']?.toString() ?? 'Modal',
+      drilldownRoute: json['drilldown_route']?.toString(),
+      drilldownApi: json['drilldown_api']?.toString(),
+      secondLevelEnabled: json['second_level_enabled'] == true,
+      drilldownMappingDescription: json['drilldown_mapping_description']?.toString(),
+      drilldownConfig: json['drilldown_config'] is Map
+          ? Map<String, dynamic>.from(json['drilldown_config'])
+          : const {'layout': 'default', 'components': []},
+      parentKpiId: json['parent_kpi_id']?.toString(),
+      lifecycleStatus: json['lifecycle_status']?.toString() ?? 'active',
+      adminVisible: json['admin_visible'] != false,
+      telecallerVisible: json['telecaller_visible'] == true,
+      salesVisible: json['sales_visible'] == true,
+      isSystem: json['is_system'] == true || isCanonicalKey(json['kpi_key']?.toString()),
+      isEnabled: json['is_enabled'] != false,
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? 1,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (id.isNotEmpty) 'id': id,
+      'kpi_key': kpiKey,
+      'kpi_label': kpiLabel,
+      'why_do_we_have_it': whyDoWeHaveIt,
+      if (description != null) 'description': description,
+      'data_source': dataSource,
+      'entity_table': entityTable,
+      'primary_field': primaryField,
+      'aggregation': aggregation,
+      'conditions_json': conditionsJson,
+      'date_field': dateField,
+      if (relationships != null) 'relationships': relationships,
+      'database_mapping_description': databaseMappingDescription,
+      'pages': pages,
+      'ui_component': uiComponent,
+      'display_format': displayFormat,
+      'icon': icon,
+      'is_clickable': isClickable,
+      'drilldown_type': drilldownType,
+      if (drilldownRoute != null) 'drilldown_route': drilldownRoute,
+      if (drilldownApi != null) 'drilldown_api': drilldownApi,
+      'second_level_enabled': secondLevelEnabled,
+      if (drilldownMappingDescription != null) 'drilldown_mapping_description': drilldownMappingDescription,
+      'drilldown_config': drilldownConfig,
+      if (parentKpiId != null) 'parent_kpi_id': parentKpiId,
+      'lifecycle_status': lifecycleStatus,
+      'admin_visible': adminVisible,
+      'telecaller_visible': telecallerVisible,
+      'sales_visible': salesVisible,
       'is_enabled': isEnabled,
       'display_order': displayOrder,
     };
   }
 
-  KpiConfigItem copyWith({
+  KpiRegistryItem copyWith({
+    String? id,
+    String? organizationId,
     String? kpiKey,
     String? kpiLabel,
+    String? whyDoWeHaveIt,
+    String? description,
+    String? dataSource,
+    String? entityTable,
+    String? primaryField,
+    String? aggregation,
+    List<dynamic>? conditionsJson,
+    String? dateField,
+    String? relationships,
+    String? databaseMappingDescription,
+    List<String>? pages,
+    String? uiComponent,
+    String? displayFormat,
+    String? icon,
+    bool? isClickable,
+    String? drilldownType,
+    String? drilldownRoute,
+    String? drilldownApi,
+    bool? secondLevelEnabled,
+    String? drilldownMappingDescription,
+    Map<String, dynamic>? drilldownConfig,
+    String? parentKpiId,
+    String? lifecycleStatus,
+    bool? adminVisible,
+    bool? telecallerVisible,
+    bool? salesVisible,
+    bool? isSystem,
     bool? isEnabled,
     int? displayOrder,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
-    return KpiConfigItem(
+    return KpiRegistryItem(
+      id: id ?? this.id,
+      organizationId: organizationId ?? this.organizationId,
       kpiKey: kpiKey ?? this.kpiKey,
       kpiLabel: kpiLabel ?? this.kpiLabel,
+      whyDoWeHaveIt: whyDoWeHaveIt ?? this.whyDoWeHaveIt,
+      description: description ?? this.description,
+      dataSource: dataSource ?? this.dataSource,
+      entityTable: entityTable ?? this.entityTable,
+      primaryField: primaryField ?? this.primaryField,
+      aggregation: aggregation ?? this.aggregation,
+      conditionsJson: conditionsJson ?? this.conditionsJson,
+      dateField: dateField ?? this.dateField,
+      relationships: relationships ?? this.relationships,
+      databaseMappingDescription: databaseMappingDescription ?? this.databaseMappingDescription,
+      pages: pages ?? this.pages,
+      uiComponent: uiComponent ?? this.uiComponent,
+      displayFormat: displayFormat ?? this.displayFormat,
+      icon: icon ?? this.icon,
+      isClickable: isClickable ?? this.isClickable,
+      drilldownType: drilldownType ?? this.drilldownType,
+      drilldownRoute: drilldownRoute ?? this.drilldownRoute,
+      drilldownApi: drilldownApi ?? this.drilldownApi,
+      secondLevelEnabled: secondLevelEnabled ?? this.secondLevelEnabled,
+      drilldownMappingDescription: drilldownMappingDescription ?? this.drilldownMappingDescription,
+      drilldownConfig: drilldownConfig ?? this.drilldownConfig,
+      parentKpiId: parentKpiId ?? this.parentKpiId,
+      lifecycleStatus: lifecycleStatus ?? this.lifecycleStatus,
+      adminVisible: adminVisible ?? this.adminVisible,
+      telecallerVisible: telecallerVisible ?? this.telecallerVisible,
+      salesVisible: salesVisible ?? this.salesVisible,
+      isSystem: isSystem ?? this.isSystem,
       isEnabled: isEnabled ?? this.isEnabled,
       displayOrder: displayOrder ?? this.displayOrder,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  static const Set<String> canonicalKeys = {
+    'available_inventory',
+    'total_leads',
+    'telecallers',
+    'leads_allocated',
+    'old_leads_allocated',
+    'assigned_to_sales',
+    'site_visits_done',
+    'deal_won',
+    'sales_users',
+    'rejected_after_site_visit',
+    'not_interested',
+    'cnr',
+    'locality_inventory',
+    'locality_leads',
+    'locality_demand_ratio',
+    'lead_sources_reconciliation',
+    // Group A – Inventory Sourcing
+    'properties_by_sales_available',
+    'properties_by_sales_total',
+    'properties_by_telecaller_available',
+    'properties_by_telecaller_total',
+    'properties_by_admin_available',
+    'properties_by_admin_total',
+    'total_portfolio',
+    'rented_out_count',
+    'sold_out_count',
+    'rental_count',
+    'resale_count',
+    // Group B – Manual Leads
+    'manual_leads_total',
+    'manual_leads_by_sales',
+    'manual_leads_by_telecaller',
+    'manual_leads_by_admin',
+    // Group C – Sales Pipeline
+    'active_requirements',
+    'allocation_telecaller',
+    'allocation_self',
+    'followup_active',
+    'refollowup_active',
+    'site_visits_scheduled',
+    'site_visits_done_req',
+    'sales_rejection_count',
+    'deals_won_count',
+    // Group D – Qualified Leads
+    'qualified_interested',
+    'want_rent_count',
+    'want_list_count',
+    'want_resale_count',
+    'active_in_sales_count',
+  };
+
+
+  static bool isCanonicalKey(String? key) =>
+      key != null && canonicalKeys.contains(key.trim().toLowerCase());
+
+  static List<KpiRegistryItem> get canonicalDefaults => const [
+        KpiRegistryItem(
+          id: 'available_inventory',
+          kpiKey: 'available_inventory',
+          kpiLabel: 'Available Inventory',
+          whyDoWeHaveIt: 'Tracks active, marketable properties ready for immediate tenant or buyer placement.',
+          dataSource: 'properties',
+          entityTable: 'properties',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'home_work_rounded',
+          isClickable: true,
+          adminVisible: true,
+          salesVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 1,
+        ),
+        KpiRegistryItem(
+          id: 'total_leads',
+          kpiKey: 'total_leads',
+          kpiLabel: 'Total Leads',
+          whyDoWeHaveIt: 'Measures total top-of-funnel inbound volume across all advertising & organic channels.',
+          dataSource: 'leads',
+          entityTable: 'leads',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'assignment_rounded',
+          isClickable: true,
+          adminVisible: true,
+          telecallerVisible: true,
+          salesVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 2,
+        ),
+        KpiRegistryItem(
+          id: 'telecallers',
+          kpiKey: 'telecallers',
+          kpiLabel: 'Telecallers',
+          whyDoWeHaveIt: 'Measures telecalling capacity and operational workforce handling intake calls.',
+          dataSource: 'users',
+          entityTable: 'users',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'support_agent_rounded',
+          isClickable: true,
+          adminVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 3,
+        ),
+        KpiRegistryItem(
+          id: 'leads_allocated',
+          kpiKey: 'leads_allocated',
+          kpiLabel: 'New Leads Allocated',
+          whyDoWeHaveIt: 'Tracks fresh, first-time leads assigned to telecallers during the period.',
+          dataSource: 'leads',
+          entityTable: 'leads',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'assignment_ind_rounded',
+          isClickable: true,
+          adminVisible: true,
+          telecallerVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 4,
+        ),
+        KpiRegistryItem(
+          id: 'old_leads_allocated',
+          kpiKey: 'old_leads_allocated',
+          kpiLabel: 'Old Leads Allocated',
+          whyDoWeHaveIt: 'Monitors follow-ups and recycled pipeline leads re-assigned to telecallers.',
+          dataSource: 'leads',
+          entityTable: 'leads',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'history_rounded',
+          isClickable: true,
+          adminVisible: true,
+          telecallerVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 5,
+        ),
+        KpiRegistryItem(
+          id: 'assigned_to_sales',
+          kpiKey: 'assigned_to_sales',
+          kpiLabel: 'Assigned to Sales',
+          whyDoWeHaveIt: 'Evaluates lead qualification yield transferred from telecallers to field sales.',
+          dataSource: 'requirements',
+          entityTable: 'requirements',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'badge_rounded',
+          isClickable: true,
+          adminVisible: true,
+          salesVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 6,
+        ),
+        KpiRegistryItem(
+          id: 'site_visits_done',
+          kpiKey: 'site_visits_done',
+          kpiLabel: 'Site Visits Done',
+          whyDoWeHaveIt: 'Tracks physically conducted in-person property walkthroughs.',
+          dataSource: 'site_visits',
+          entityTable: 'site_visits',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'location_on_rounded',
+          isClickable: true,
+          adminVisible: true,
+          salesVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 7,
+        ),
+        KpiRegistryItem(
+          id: 'deal_won',
+          kpiKey: 'deal_won',
+          kpiLabel: 'Deal Won',
+          whyDoWeHaveIt: 'Measures ultimate commercial conversion and revenue generation.',
+          dataSource: 'requirements',
+          entityTable: 'requirements',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'emoji_events_rounded',
+          isClickable: true,
+          adminVisible: true,
+          salesVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 8,
+        ),
+        KpiRegistryItem(
+          id: 'sales_users',
+          kpiKey: 'sales_users',
+          kpiLabel: 'Sales Users',
+          whyDoWeHaveIt: 'Tracks active sales managers and closing executives available in the field.',
+          dataSource: 'users',
+          entityTable: 'users',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'groups_rounded',
+          isClickable: true,
+          adminVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 9,
+        ),
+        KpiRegistryItem(
+          id: 'rejected_after_site_visit',
+          kpiKey: 'rejected_after_site_visit',
+          kpiLabel: 'Rejected After Site Visit',
+          whyDoWeHaveIt: 'Measures visit fallout to identify mismatched buyer expectations or pricing gaps.',
+          dataSource: 'site_visits',
+          entityTable: 'site_visits',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'cancel_rounded',
+          isClickable: true,
+          adminVisible: true,
+          salesVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 10,
+        ),
+        KpiRegistryItem(
+          id: 'not_interested',
+          kpiKey: 'not_interested',
+          kpiLabel: 'Not Interested',
+          whyDoWeHaveIt: 'Monitors early campaign lead fallout and disqualified lead volume.',
+          dataSource: 'leads',
+          entityTable: 'leads',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'phone_disabled_rounded',
+          isClickable: true,
+          adminVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 11,
+        ),
+        KpiRegistryItem(
+          id: 'cnr',
+          kpiKey: 'cnr',
+          kpiLabel: 'CNR (No Response)',
+          whyDoWeHaveIt: 'Monitors unreached lead volume where client could not be contacted.',
+          dataSource: 'leads',
+          entityTable: 'leads',
+          primaryField: 'id',
+          aggregation: 'COUNT',
+          icon: 'phone_missed_rounded',
+          isClickable: true,
+          adminVisible: true,
+          telecallerVisible: true,
+          isSystem: true,
+          isEnabled: true,
+          displayOrder: 12,
+        ),
+      ];
+}
+
+class KpiAuditLogItem {
+  final String id;
+  final String? organizationId;
+  final String? kpiId;
+  final String? kpiLabel;
+  final String? kpiKey;
+  final String action;
+  final String? performedByName;
+  final String? performedByEmail;
+  final Map<String, dynamic>? oldConfig;
+  final Map<String, dynamic>? newConfig;
+  final DateTime? createdAt;
+
+  const KpiAuditLogItem({
+    required this.id,
+    this.organizationId,
+    this.kpiId,
+    this.kpiLabel,
+    this.kpiKey,
+    required this.action,
+    this.performedByName,
+    this.performedByEmail,
+    this.oldConfig,
+    this.newConfig,
+    this.createdAt,
+  });
+
+  factory KpiAuditLogItem.fromJson(Map<String, dynamic> json) {
+    return KpiAuditLogItem(
+      id: json['id']?.toString() ?? '',
+      organizationId: json['organization_id']?.toString(),
+      kpiId: json['kpi_id']?.toString(),
+      kpiLabel: json['kpi_label']?.toString(),
+      kpiKey: json['kpi_key']?.toString(),
+      action: json['action']?.toString() ?? 'UPDATED',
+      performedByName: json['performed_by_name']?.toString(),
+      performedByEmail: json['performed_by_email']?.toString(),
+      oldConfig: json['old_config'] is Map ? Map<String, dynamic>.from(json['old_config']) : null,
+      newConfig: json['new_config'] is Map ? Map<String, dynamic>.from(json['new_config']) : null,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
     );
   }
 }
@@ -47,6 +637,8 @@ class KpiConfigItem {
 class DashboardKpiCounts {
   final int availableInventory;
   final int totalLeads;
+  final int allAvailableInventory;
+  final int allTotalLeads;
   final int telecallers;
   final int leadsAllocated;
   final int oldLeadsAllocated;
@@ -55,10 +647,51 @@ class DashboardKpiCounts {
   final int rejectedAfterSiteVisit;
   final int dealWon;
   final int salesUsers;
+  final int notInterested;
+  final int cnr;
+
+  // ── Group A: Inventory Sourcing (KPIs 1-7) ────────────────────────────────
+  final int propertiesBySalesAvailable;
+  final int propertiesBySalesTotal;
+  final int propertiesByTelecallerAvailable;
+  final int propertiesByTelecallerTotal;
+  final int propertiesByAdminAvailable;
+  final int propertiesByAdminTotal;
+  final int totalPortfolio;
+  final int rentedOutCount;
+  final int soldOutCount;
+  final int rentalCount;
+  final int resaleCount;
+
+  // ── Group B: Manual / Direct Leads (KPIs 8-11) ────────────────────────────
+  final int manualLeadsTotal;
+  final int manualLeadsBySales;
+  final int manualLeadsByTelecaller;
+  final int manualLeadsByAdmin;
+
+  // ── Group C: Sales Team Pipeline (KPIs 12-19) ─────────────────────────────
+  final int activeRequirements;
+  final int allocationTelecaller;
+  final int allocationSelf;
+  final int followupActive;
+  final int refollowupActive;
+  final int siteVisitsScheduled;
+  final int siteVisitsDoneReq;
+  final int salesRejectionCount;
+  final int dealsWonCount;
+
+  // ── Group D: Qualified Interested Leads (KPIs 20-24) ─────────────────────
+  final int qualifiedInterested;
+  final int wantRentCount;
+  final int wantListCount;
+  final int wantResaleCount;
+  final int activeInSalesCount;
 
   const DashboardKpiCounts({
     this.availableInventory = 0,
     this.totalLeads = 0,
+    this.allAvailableInventory = 0,
+    this.allTotalLeads = 0,
     this.telecallers = 0,
     this.leadsAllocated = 0,
     this.oldLeadsAllocated = 0,
@@ -67,12 +700,51 @@ class DashboardKpiCounts {
     this.rejectedAfterSiteVisit = 0,
     this.dealWon = 0,
     this.salesUsers = 0,
+    this.notInterested = 0,
+    this.cnr = 0,
+    // Group A
+    this.propertiesBySalesAvailable = 0,
+    this.propertiesBySalesTotal = 0,
+    this.propertiesByTelecallerAvailable = 0,
+    this.propertiesByTelecallerTotal = 0,
+    this.propertiesByAdminAvailable = 0,
+    this.propertiesByAdminTotal = 0,
+    this.totalPortfolio = 0,
+    this.rentedOutCount = 0,
+    this.soldOutCount = 0,
+    this.rentalCount = 0,
+    this.resaleCount = 0,
+    // Group B
+    this.manualLeadsTotal = 0,
+    this.manualLeadsBySales = 0,
+    this.manualLeadsByTelecaller = 0,
+    this.manualLeadsByAdmin = 0,
+    // Group C
+    this.activeRequirements = 0,
+    this.allocationTelecaller = 0,
+    this.allocationSelf = 0,
+    this.followupActive = 0,
+    this.refollowupActive = 0,
+    this.siteVisitsScheduled = 0,
+    this.siteVisitsDoneReq = 0,
+    this.salesRejectionCount = 0,
+    this.dealsWonCount = 0,
+    // Group D
+    this.qualifiedInterested = 0,
+    this.wantRentCount = 0,
+    this.wantListCount = 0,
+    this.wantResaleCount = 0,
+    this.activeInSalesCount = 0,
   });
 
   factory DashboardKpiCounts.fromJson(Map<String, dynamic> json) {
     return DashboardKpiCounts(
       availableInventory: (json['available_inventory'] as num?)?.toInt() ?? 0,
       totalLeads: (json['total_leads'] as num?)?.toInt() ?? 0,
+      allAvailableInventory: (json['all_available_inventory'] as num?)?.toInt() ??
+          (json['global_available_inventory'] as num?)?.toInt() ?? 0,
+      allTotalLeads: (json['all_total_leads'] as num?)?.toInt() ??
+          (json['global_total_leads'] as num?)?.toInt() ?? 0,
       telecallers: (json['telecallers'] as num?)?.toInt() ?? 0,
       leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? (json['new_leads_allocated'] as num?)?.toInt() ?? 0,
       oldLeadsAllocated: (json['old_leads_allocated'] as num?)?.toInt() ?? 0,
@@ -81,13 +753,50 @@ class DashboardKpiCounts {
       rejectedAfterSiteVisit: (json['rejected_after_site_visit'] as num?)?.toInt() ?? 0,
       dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
       salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
+      notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,
+      cnr: (json['cnr'] as num?)?.toInt() ?? 0,
+      // Group A
+      propertiesBySalesAvailable: (json['properties_by_sales_available'] as num?)?.toInt() ?? 0,
+      propertiesBySalesTotal: (json['properties_by_sales_total'] as num?)?.toInt() ?? 0,
+      propertiesByTelecallerAvailable: (json['properties_by_telecaller_available'] as num?)?.toInt() ?? 0,
+      propertiesByTelecallerTotal: (json['properties_by_telecaller_total'] as num?)?.toInt() ?? 0,
+      propertiesByAdminAvailable: (json['properties_by_admin_available'] as num?)?.toInt() ?? 0,
+      propertiesByAdminTotal: (json['properties_by_admin_total'] as num?)?.toInt() ?? 0,
+      totalPortfolio: (json['total_portfolio'] as num?)?.toInt() ?? 0,
+      rentedOutCount: (json['rented_out_count'] as num?)?.toInt() ?? 0,
+      soldOutCount: (json['sold_out_count'] as num?)?.toInt() ?? 0,
+      rentalCount: (json['rental_count'] as num?)?.toInt() ?? 0,
+      resaleCount: (json['resale_count'] as num?)?.toInt() ?? 0,
+      // Group B
+      manualLeadsTotal: (json['manual_leads_total'] as num?)?.toInt() ?? 0,
+      manualLeadsBySales: (json['manual_leads_by_sales'] as num?)?.toInt() ?? 0,
+      manualLeadsByTelecaller: (json['manual_leads_by_telecaller'] as num?)?.toInt() ?? 0,
+      manualLeadsByAdmin: (json['manual_leads_by_admin'] as num?)?.toInt() ?? 0,
+      // Group C
+      activeRequirements: (json['active_requirements'] as num?)?.toInt() ?? 0,
+      allocationTelecaller: (json['allocation_telecaller'] as num?)?.toInt() ?? 0,
+      allocationSelf: (json['allocation_self'] as num?)?.toInt() ?? 0,
+      followupActive: (json['followup_active'] as num?)?.toInt() ?? 0,
+      refollowupActive: (json['refollowup_active'] as num?)?.toInt() ?? 0,
+      siteVisitsScheduled: (json['site_visits_scheduled'] as num?)?.toInt() ?? 0,
+      siteVisitsDoneReq: (json['site_visits_done_req'] as num?)?.toInt() ?? 0,
+      salesRejectionCount: (json['sales_rejection_count'] as num?)?.toInt() ?? 0,
+      dealsWonCount: (json['deals_won_count'] as num?)?.toInt() ?? 0,
+      // Group D
+      qualifiedInterested: (json['qualified_interested'] as num?)?.toInt() ?? 0,
+      wantRentCount: (json['want_rent_count'] as num?)?.toInt() ?? 0,
+      wantListCount: (json['want_list_count'] as num?)?.toInt() ?? 0,
+      wantResaleCount: (json['want_resale_count'] as num?)?.toInt() ?? 0,
+      activeInSalesCount: (json['active_in_sales_count'] as num?)?.toInt() ?? 0,
     );
   }
 }
 
+
 class DashboardKpisResponse {
   final List<KpiConfigItem> config;
   final DashboardKpiCounts counts;
+  final Map<String, dynamic> rawCounts;
   final Map<String, dynamic> filters;
   final String? dateRangeDisplay;
   final Map<String, dynamic>? dateRange;
@@ -95,10 +804,17 @@ class DashboardKpisResponse {
   const DashboardKpisResponse({
     this.config = const [],
     this.counts = const DashboardKpiCounts(),
+    this.rawCounts = const {},
     this.filters = const {},
     this.dateRangeDisplay,
     this.dateRange,
   });
+
+  int getDynamicCount(String key) {
+    final val = rawCounts[key];
+    if (val is num) return val.toInt();
+    return int.tryParse(val?.toString() ?? '') ?? 0;
+  }
 
   factory DashboardKpisResponse.fromJson(Map<String, dynamic> json) {
     final cfgList = (json['config'] as List?)
@@ -114,6 +830,7 @@ class DashboardKpisResponse {
     return DashboardKpisResponse(
       config: cfgList,
       counts: DashboardKpiCounts.fromJson(countsMap),
+      rawCounts: countsMap,
       filters: json['filters'] is Map ? Map<String, dynamic>.from(json['filters']) : {},
       dateRangeDisplay: dateRangeMap?['display']?.toString(),
       dateRange: dateRangeMap,
@@ -343,6 +1060,8 @@ class LeadListItem {
   final String? configuration;
   final String? locality;
   final String? campaignName;
+  final String? followupStatus;
+  final String? followupScheduledAt;
   final Map<String, dynamic>? rawJson;
 
   const LeadListItem({
@@ -387,6 +1106,8 @@ class LeadListItem {
     this.configuration,
     this.locality,
     this.campaignName,
+    this.followupStatus,
+    this.followupScheduledAt,
     this.rawJson,
   });
 
@@ -481,6 +1202,8 @@ class LeadListItem {
       configuration: json['configuration']?.toString(),
       locality: json['locality']?.toString(),
       campaignName: json['campaign_name']?.toString(),
+      followupStatus: json['followup_status']?.toString() ?? json['follow_up_status']?.toString(),
+      followupScheduledAt: json['followup_scheduled_at']?.toString() ?? json['follow_up_scheduled_at']?.toString(),
       rawJson: parsedRaw,
     );
   }
@@ -491,12 +1214,18 @@ class LeadsListResponse {
   final int total;
   final int page;
   final int limit;
+  final int? metaCount;
+  final int? housingCount;
+  final String? sourceFilter;
 
   const LeadsListResponse({
     this.leads = const [],
     this.total = 0,
     this.page = 1,
     this.limit = 25,
+    this.metaCount,
+    this.housingCount,
+    this.sourceFilter,
   });
 
   factory LeadsListResponse.fromJson(Map<String, dynamic> json) {
@@ -509,6 +1238,9 @@ class LeadsListResponse {
       total: (json['total'] as num?)?.toInt() ?? 0,
       page: (json['page'] as num?)?.toInt() ?? 1,
       limit: (json['limit'] as num?)?.toInt() ?? 25,
+      metaCount: (json['meta_count'] as num?)?.toInt(),
+      housingCount: (json['housing_count'] as num?)?.toInt(),
+      sourceFilter: json['sourceFilter'] as String?,
     );
   }
 }
@@ -597,6 +1329,8 @@ class TelecallerDrilldownData {
   final int cnr;
   final int callbacks;
   final int followUp;
+  final int followUpCurrent;
+  final int followUpHistory;
   final int assignedToSales;
   final List<SalesBreakdownItem> salesUserBreakdown;
   final int notInterested;
@@ -613,6 +1347,8 @@ class TelecallerDrilldownData {
     this.cnr = 0,
     this.callbacks = 0,
     this.followUp = 0,
+    this.followUpCurrent = 0,
+    this.followUpHistory = 0,
     this.assignedToSales = 0,
     this.salesUserBreakdown = const [],
     this.notInterested = 0,
@@ -636,6 +1372,8 @@ class TelecallerDrilldownData {
       cnr: (json['cnr'] as num?)?.toInt() ?? 0,
       callbacks: (json['callbacks'] as num?)?.toInt() ?? 0,
       followUp: (json['follow_up'] as num?)?.toInt() ?? 0,
+      followUpCurrent: (json['follow_up_current'] as num?)?.toInt() ?? 0,
+      followUpHistory: (json['follow_up_history'] as num?)?.toInt() ?? 0,
       assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
       salesUserBreakdown: salesList,
       notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,
@@ -959,6 +1697,8 @@ class KpiFilterParams {
       if (outcome != null && outcome!.isNotEmpty) 'outcome': outcome,
     };
   }
+
+  Map<String, dynamic> toJson() => toQueryParams();
 }
 
 class SiteVisitItem {

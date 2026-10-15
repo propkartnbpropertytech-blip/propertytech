@@ -33,46 +33,95 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
 
     final rawList = _activeTab == 0 ? widget.telecallerRankings : widget.salesRankings;
     final sortedList = List<TeamMemberRanking>.from(rawList);
+    final bool isSalesTab = _activeTab == 1;
 
     sortedList.sort((a, b) {
       Comparable valA;
       Comparable valB;
-      switch (_sortColumnIndex) {
-        case 0:
-          valA = a.rank;
-          valB = b.rank;
-          break;
-        case 1:
-          valA = a.userName;
-          valB = b.userName;
-          break;
-        case 2:
-          valA = a.leadsCount;
-          valB = b.leadsCount;
-          break;
-        case 3:
-          valA = a.contactedCount;
-          valB = b.contactedCount;
-          break;
-        case 4:
-          valA = a.qualifiedCount;
-          valB = b.qualifiedCount;
-          break;
-        case 5:
-          valA = a.siteVisitsCount;
-          valB = b.siteVisitsCount;
-          break;
-        case 6:
-          valA = a.wonCount;
-          valB = b.wonCount;
-          break;
-        case 7:
-          valA = a.conversionRate;
-          valB = b.conversionRate;
-          break;
-        default:
-          valA = a.rank;
-          valB = b.rank;
+      if (isSalesTab) {
+        switch (_sortColumnIndex) {
+          case 0:
+            valA = a.rank;
+            valB = b.rank;
+            break;
+          case 1:
+            valA = a.userName;
+            valB = b.userName;
+            break;
+          case 2:
+            valA = a.leadsCount;
+            valB = b.leadsCount;
+            break;
+          case 3:
+            valA = a.assignedCount;
+            valB = b.assignedCount;
+            break;
+          case 4:
+            valA = a.selfAddedCount;
+            valB = b.selfAddedCount;
+            break;
+          case 5:
+            valA = a.contactedCount;
+            valB = b.contactedCount;
+            break;
+          case 6:
+            valA = a.qualifiedCount;
+            valB = b.qualifiedCount;
+            break;
+          case 7:
+            valA = a.siteVisitsCount;
+            valB = b.siteVisitsCount;
+            break;
+          case 8:
+            valA = a.wonCount;
+            valB = b.wonCount;
+            break;
+          case 9:
+            valA = a.conversionRate;
+            valB = b.conversionRate;
+            break;
+          default:
+            valA = a.rank;
+            valB = b.rank;
+        }
+      } else {
+        switch (_sortColumnIndex) {
+          case 0:
+            valA = a.rank;
+            valB = b.rank;
+            break;
+          case 1:
+            valA = a.userName;
+            valB = b.userName;
+            break;
+          case 2:
+            valA = a.leadsCount;
+            valB = b.leadsCount;
+            break;
+          case 3:
+            valA = a.contactedCount;
+            valB = b.contactedCount;
+            break;
+          case 4:
+            valA = a.qualifiedCount;
+            valB = b.qualifiedCount;
+            break;
+          case 5:
+            valA = a.siteVisitsCount;
+            valB = b.siteVisitsCount;
+            break;
+          case 6:
+            valA = a.wonCount;
+            valB = b.wonCount;
+            break;
+          case 7:
+            valA = a.conversionRate;
+            valB = b.conversionRate;
+            break;
+          default:
+            valA = a.rank;
+            valB = b.rank;
+        }
       }
       return _sortAscending ? valA.compareTo(valB) : valB.compareTo(valA);
     });
@@ -189,10 +238,22 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
                         onSort: (idx, asc) => _onSort(idx, asc),
                       ),
                       DataColumn(
-                        label: const Text('Leads', style: TextStyle(fontWeight: FontWeight.bold)),
+                        label: Text(isSalesTab ? 'Total Leads' : 'Leads', style: const TextStyle(fontWeight: FontWeight.bold)),
                         numeric: true,
                         onSort: (idx, asc) => _onSort(idx, asc),
                       ),
+                      if (isSalesTab) ...[
+                        DataColumn(
+                          label: const Text('Assigned', style: TextStyle(fontWeight: FontWeight.bold)),
+                          numeric: true,
+                          onSort: (idx, asc) => _onSort(idx, asc),
+                        ),
+                        DataColumn(
+                          label: const Text('Self-Added', style: TextStyle(fontWeight: FontWeight.bold)),
+                          numeric: true,
+                          onSort: (idx, asc) => _onSort(idx, asc),
+                        ),
+                      ],
                       DataColumn(
                         label: const Text('Contacted', style: TextStyle(fontWeight: FontWeight.bold)),
                         numeric: true,
@@ -263,6 +324,10 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
                             ),
                           ),
                           DataCell(Text(m.leadsCount.toString())),
+                          if (isSalesTab) ...[
+                            DataCell(Text(m.assignedCount.toString())),
+                            DataCell(Text(m.selfAddedCount.toString())),
+                          ],
                           DataCell(Text(m.contactedCount.toString())),
                           DataCell(Text(m.qualifiedCount.toString())),
                           DataCell(Text(m.siteVisitsCount.toString())),
@@ -377,7 +442,11 @@ class _TeamRankingSectionState extends State<TeamRankingSection> {
             spacing: 12,
             runSpacing: 6,
             children: [
-              _buildMetricStat('Leads', m.leadsCount.toString(), isDark),
+              _buildMetricStat('Total', m.leadsCount.toString(), isDark),
+              if (_activeTab == 1) ...[
+                _buildMetricStat('Assigned', m.assignedCount.toString(), isDark),
+                _buildMetricStat('Self-Added', m.selfAddedCount.toString(), isDark),
+              ],
               _buildMetricStat('Contacted', m.contactedCount.toString(), isDark),
               _buildMetricStat('Qualified', m.qualifiedCount.toString(), isDark),
               _buildMetricStat('Site Visits', m.siteVisitsCount.toString(), isDark),

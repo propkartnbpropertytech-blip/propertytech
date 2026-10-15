@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'core/security/role_guard.dart';
 
 import 'package:pub_semver/pub_semver.dart';
+import 'core/config/app_env.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'core/design_system/tokens/app_typography.dart';
@@ -252,7 +253,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       }
 
       final fragment = Uri.base.fragment;
-      if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started')) {
+      if (fragment.isNotEmpty && !fragment.contains('/splash') && !fragment.contains('/login') && !fragment.contains('/get-started') && !fragment.contains('/landing')) {
         final sanitizedFragment = RoleGuard.sanitizeRedirectPath(fragment);
         if (sanitizedFragment != null) {
           context.go(sanitizedFragment);
@@ -287,7 +288,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final isRedirect = from != null && from.isNotEmpty;
 
     final elapsed = DateTime.now().difference(_startTime);
-    final minDuration = isRedirect ? Duration.zero : const Duration(milliseconds: 3000); // 3.0 seconds cinematic animation
+    // In local dev, debug mode, or web: zero artificial delay! In production, minimal 600ms for branded logo.
+    final isDev = !kReleaseMode || AppEnv.isLocal || kIsWeb;
+    final minDuration = isRedirect || isDev
+        ? Duration.zero
+        : const Duration(milliseconds: 600);
     if (elapsed < minDuration) {
       await Future.delayed(minDuration - elapsed);
     }

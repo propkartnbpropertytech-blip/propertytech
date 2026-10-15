@@ -491,6 +491,11 @@ class _PublicPropertyDetailScreenState extends State<PublicPropertyDetailScreen>
       if (flatNo.isNotEmpty) {
         locationItems.add(_DetailItem('Flat/Plot No.', flatNo, Icons.tag_rounded));
       }
+
+      final section = propModel.section ?? '';
+      if (section.isNotEmpty) {
+        locationItems.add(_DetailItem('વિભાગ (Section)', section, Icons.grid_view_rounded));
+      }
       
       final address = propModel.address;
       if (address.isNotEmpty) {

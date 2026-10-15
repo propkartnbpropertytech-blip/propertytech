@@ -26,7 +26,7 @@ void main() {
   group('Frozen bottom tabs per role (all permissions granted)', () {
     test('Telecaller', () {
       expect(_labels('Telecaller', canView: _all),
-          ['Home', 'Queue', 'Callbacks', 'CNR', 'More']);
+          ['Home', 'My Calling', 'Callbacks', 'CNR', 'More']);
     });
 
     test('Sales', () {
@@ -60,7 +60,7 @@ void main() {
         canView: (r) =>
             !r.startsWith('/campaign') && !r.startsWith('/telecaller/leads'),
       );
-      expect(tabs, isNot(contains('Queue')));
+      expect(tabs, isNot(contains('My Calling')));
       expect(tabs, contains('More'));
     });
 
@@ -69,7 +69,7 @@ void main() {
         'Telecaller',
         canView: (r) => !r.startsWith('/campaign'),
       );
-      expect(tabs, contains('Queue'));
+      expect(tabs, contains('My Calling'));
     });
 
     test('default matrix matches canViewRoute for every role', () {

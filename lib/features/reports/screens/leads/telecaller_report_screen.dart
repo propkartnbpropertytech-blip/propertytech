@@ -1,9 +1,15 @@
+/// ============================================================================
+/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
+/// All KPI metrics computed or displayed here MUST adhere to the
+/// Master KPI Rulebook: lib/core/constants/kpi_rulebook.dart and docs/KPIs.docx.
+/// ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
+import '../../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../../core/design_system/mobile/mobile.dart';
 import '../../../../core/theme/theme_manager.dart';
 import '../../../users/models/user_model.dart';
@@ -165,8 +171,10 @@ class _TelecallerReportContentState extends State<_TelecallerReportContent> {
       body: BlocConsumer<ReportsBloc, ReportsState>(
         listener: (context, state) {
           if (state is ReportsError && state.previousData != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message), backgroundColor: const Color(0xFFDC2626)),
+            AppStatusSnackBar.show(
+              context,
+              message: state.message,
+              isSuccess: false,
             );
           }
           if (_selectedId == null && state.config.subjectTelecallerId != null) {

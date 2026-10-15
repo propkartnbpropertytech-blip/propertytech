@@ -1,24 +1,20 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 /// Clean, modern animated floating SnackBar for status updates and non-blocking notifications.
 class AppStatusSnackBar {
-  static void show(
-    BuildContext context, {
+  static void showWithMessenger(
+    ScaffoldMessengerState messenger, {
     required String message,
     bool isSuccess = true,
+    Color? backgroundColor,
     IconData? icon,
-    Duration duration = const Duration(milliseconds: 2600),
+    Duration duration = const Duration(seconds: 5),
     VoidCallback? onAction,
     String? actionLabel,
   }) {
-    if (!context.mounted) return;
-
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-
     messenger.hideCurrentSnackBar();
 
-    final bgColor = isSuccess ? const Color(0xFF0F766E) : const Color(0xFFB91C1C);
+    final bgColor = backgroundColor ?? (isSuccess ? const Color(0xFF0F766E) : const Color(0xFFEF4444));
     final iconData = icon ?? (isSuccess ? Icons.check_circle_rounded : Icons.info_outline_rounded);
 
     messenger.showSnackBar(
@@ -61,16 +57,20 @@ class AppStatusSnackBar {
                 },
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
                 child: Text(
                   actionLabel,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
-                    decoration: TextDecoration.underline,
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -92,6 +92,33 @@ class AppStatusSnackBar {
         duration: duration,
         dismissDirection: DismissDirection.horizontal,
       ),
+    );
+  }
+
+  static void show(
+    BuildContext context, {
+    required String message,
+    bool isSuccess = true,
+    Color? backgroundColor,
+    IconData? icon,
+    Duration duration = const Duration(seconds: 5),
+    VoidCallback? onAction,
+    String? actionLabel,
+  }) {
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    showWithMessenger(
+      messenger,
+      message: message,
+      isSuccess: isSuccess,
+      backgroundColor: backgroundColor,
+      icon: icon,
+      duration: duration,
+      onAction: onAction,
+      actionLabel: actionLabel,
     );
   }
 }

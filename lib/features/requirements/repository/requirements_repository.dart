@@ -177,7 +177,7 @@ class RequirementsRepository {
       final freshList = list.map((item) {
         final model = RequirementModel.fromJson(item);
         _rememberMeta(model);
-        return model;
+        return _withRememberedMeta(model);
       }).toList();
       final jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
 
@@ -276,15 +276,27 @@ class RequirementsRepository {
 
   void _rememberMeta(RequirementModel req) {
     RequirementLocalRepository.rememberMetaCustomFields(req.id, req.metaCustomFields);
+    if (req.rejectionRemark != null && req.rejectionRemark!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberRejectionRemark(req.id, req.rejectionRemark);
+    }
   }
 
   RequirementModel _withRememberedMeta(RequirementModel req) {
     final remembered = RequirementLocalRepository.metaCustomFieldsById[req.id];
-    if (remembered == null || remembered.isEmpty) return req;
-    return req.copyWith(metaCustomFields: {
-      ...remembered,
-      ...?req.metaCustomFields,
-    });
+    final rememberedRemark = RequirementLocalRepository.getRejectionRemark(req.id);
+    var updated = req;
+    if (remembered != null && remembered.isNotEmpty) {
+      updated = updated.copyWith(metaCustomFields: {
+        ...remembered,
+        ...?req.metaCustomFields,
+      });
+    }
+    if ((updated.rejectionRemark == null || updated.rejectionRemark!.trim().isEmpty) &&
+        rememberedRemark != null &&
+        rememberedRemark.trim().isNotEmpty) {
+      updated = updated.copyWith(rejectionRemark: rememberedRemark);
+    }
+    return updated;
   }
 
   RequirementModel _preserveLeadScope(RequirementModel submitted, RequirementModel incoming) {
@@ -317,6 +329,9 @@ class RequirementsRepository {
       assignedTo: submitted.assignedTo ?? incoming.assignedTo,
       assigneeName: keep(submitted.assigneeName, incoming.assigneeName),
       status: preservedStatus,
+      rejectionRemark: (submitted.rejectionRemark != null && submitted.rejectionRemark!.trim().isNotEmpty)
+          ? submitted.rejectionRemark
+          : (incoming.rejectionRemark ?? RequirementLocalRepository.getRejectionRemark(incoming.id)),
       metaCustomFields: mergedMeta,
     );
     _rememberMeta(merged);
@@ -330,6 +345,8 @@ class RequirementsRepository {
       if (req.metaCustomFields != null) 'meta_custom_fields': req.metaCustomFields,
       if (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
         'next_followup_date': req.nextFollowupDate,
+      if (req.rejectionRemark != null)
+        'rejection_remark': req.rejectionRemark,
     };
     try {
       final response = await _requirementsService.updateRequirement(req.id, payload);

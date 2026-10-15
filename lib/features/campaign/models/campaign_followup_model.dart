@@ -13,6 +13,7 @@ class CampaignFollowupModel {
   final IntegrationLeadModel? lead;
   final String? telecallerName;
   final String? telecallerId;
+  final String? createdBy;
 
   CampaignFollowupModel({
     required this.id,
@@ -27,6 +28,7 @@ class CampaignFollowupModel {
     this.lead,
     this.telecallerName,
     this.telecallerId,
+    this.createdBy,
   });
 
   DateTime get _localScheduled => scheduledAt.toLocal();
@@ -80,6 +82,9 @@ class CampaignFollowupModel {
       telecallerId: json['telecaller_id']?.toString() ??
           json['telecallerId']?.toString() ??
           json['created_by']?.toString(),
+      createdBy: json['created_by']?.toString() ??
+          json['createdBy']?.toString() ??
+          (json['raw_json'] is Map ? json['raw_json']['created_by']?.toString() : null),
     );
   }
 

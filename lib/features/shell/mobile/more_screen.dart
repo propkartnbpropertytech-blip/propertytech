@@ -45,6 +45,9 @@ class MoreScreen extends StatelessWidget {
             );
         }
       },
+      onLogout: () {
+        context.read<AuthBloc>().add(LogoutRequested());
+      },
     );
   }
 }
@@ -58,6 +61,7 @@ class MobileMoreView extends StatelessWidget {
   final Widget? shiftControl;
   final Map<String, int> badges;
   final ValueChanged<MobileMoreEntry> onOpen;
+  final VoidCallback? onLogout;
 
   const MobileMoreView({
     super.key,
@@ -68,6 +72,7 @@ class MobileMoreView extends StatelessWidget {
     required this.onOpen,
     this.shiftControl,
     this.badges = const {},
+    this.onLogout,
   });
 
   @override
@@ -109,6 +114,18 @@ class MobileMoreView extends StatelessWidget {
                       badgeCount: badges[entry.id] ?? 0,
                       onTap: () => onOpen(entry),
                     ),
+                ],
+                if (onLogout != null) ...[
+                  const SizedBox(height: CRMSpacing.xs),
+                  MobileListItem(
+                    key: const ValueKey('more_logout'),
+                    icon: Icons.logout_rounded,
+                    title: 'Logout',
+                    iconColor: CRMColors.danger,
+                    titleColor: CRMColors.danger,
+                    showChevron: false,
+                    onTap: onLogout,
+                  ),
                 ],
               ],
             ),

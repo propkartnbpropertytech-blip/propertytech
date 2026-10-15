@@ -92,6 +92,24 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   bool _isVerified = false;
   DateTime? _availableDate;
   String? _selectedParkingSlot;
+  String? _selectedSection;
+  static const List<String> _sectionOptions = [
+    'Section 1',
+    'Section 2',
+    'Section 3',
+    'Section 4',
+    'Section 5',
+    'Section 6',
+    'Section 7',
+    'Section 8',
+    'Section 9',
+    'Section 10',
+    'Section 11',
+    'Section 12',
+    'Section 13',
+    'Section 14',
+    'Section 15',
+  ];
 
   final List<String> _selectedAmenities = [];
   List<AreaLookup> _filteredAreas = [];
@@ -306,6 +324,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       _selectedBrokerage = p.brokerageTypeId;
       _blockWingController.text = p.blockWing ?? '';
       _flatNoController.text = p.flatNo ?? '';
+      _selectedSection = p.section;
       _propertyImages.addAll(p.images);
       _propertyVideos.addAll(p.videos);
       _bedroomsController.text = p.bedrooms.toString();
@@ -662,6 +681,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       'landmark': _landmarkController.text,
       'block_wing': _blockWingController.text,
       'flat_no': _flatNoController.text,
+      'section': _selectedSection,
       'google_place_id': _googlePlaceId,
       'latitude': _latitude,
       'longitude': _longitude,
@@ -730,6 +750,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                   _landmarkController.text = draft['landmark'] ?? '';
                   _blockWingController.text = draft['block_wing'] ?? '';
                   _flatNoController.text = draft['flat_no'] ?? '';
+                  _selectedSection = draft['section'];
                   _googlePlaceId = draft['google_place_id'];
                   _latitude = draft['latitude'];
                   _longitude = draft['longitude'];
@@ -1166,6 +1187,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         'landmark': _landmarkController.text.trim().isEmpty ? null : _landmarkController.text.trim(),
         'block_wing': _blockWingController.text.trim().isEmpty ? null : _blockWingController.text.trim(),
         'flat_no': _flatNoController.text.trim().isEmpty ? null : _flatNoController.text.trim(),
+        'section': (_selectedSection != null && _selectedSection!.trim().isNotEmpty) ? _selectedSection!.trim() : null,
         'google_place_id': _googlePlaceId,
         'formatted_address': _addressController.text.trim(),
         'address_line1': _selectedPlaceDetails != null ? _selectedPlaceDetails!['addressLine1'] : _landmarkController.text.trim(),
@@ -2120,6 +2142,29 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       ),
     );
 
+    final sectionField = DropdownButtonFormField<String>(
+      isExpanded: true,
+      value: _sectionOptions.contains(_selectedSection) ? _selectedSection : null,
+      decoration: InputDecoration(
+        labelText: 'વિભાગ (Section)',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+      ),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('None')),
+        ..._sectionOptions.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+      ],
+      onChanged: (v) => setState(() => _selectedSection = v),
+    );
+
+    final landmarkField = TextFormField(
+      controller: _landmarkController,
+      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+      decoration: InputDecoration(
+        labelText: 'Landmark / Building Name',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+      ),
+    );
+
     return CRMCard(
       title: 'Location Mapping',
       subtitle: 'Specify geo-coordinates and landmark directions',
@@ -2142,20 +2187,39 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           if (!isLandOrIndustrial) ...[
             const SizedBox(height: CRMSpacing.m),
             if (isBungalow) ...[
-              blockWingField,
+              if (isMobile) ...[
+                blockWingField,
+                const SizedBox(height: CRMSpacing.m),
+                sectionField,
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(child: blockWingField),
+                    const SizedBox(width: CRMSpacing.s),
+                    Expanded(child: sectionField),
+                  ],
+                ),
+              ],
             ] else if (isMobile) ...[
               blockWingField,
               const SizedBox(height: CRMSpacing.m),
               flatNoField,
+              const SizedBox(height: CRMSpacing.m),
+              sectionField,
             ] else ...[
               Row(
                 children: [
                   Expanded(child: blockWingField),
                   const SizedBox(width: CRMSpacing.s),
                   Expanded(child: flatNoField),
+                  const SizedBox(width: CRMSpacing.s),
+                  Expanded(child: sectionField),
                 ],
               ),
             ],
+          ] else ...[
+            const SizedBox(height: CRMSpacing.m),
+            sectionField,
           ],
           const SizedBox(height: CRMSpacing.m),
           TextFormField(
@@ -2168,14 +2232,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             ),
           ),
           const SizedBox(height: CRMSpacing.m),
-          TextFormField(
-            controller: _landmarkController,
-            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-            decoration: InputDecoration(
-              labelText: 'Landmark / Building Name',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
-            ),
-          ),
+          landmarkField,
         ],
       ),
     );
