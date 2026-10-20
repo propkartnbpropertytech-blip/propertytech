@@ -41,7 +41,6 @@ import '../../../features/telecaller/widgets/telecaller_availability_toggle.dart
 import '../mobile/mobile_layout.dart';
 import '../mobile/mobile_top_bar.dart';
 import '../../../../features/settings/services/page_control_service.dart';
-import '../../../../features/settings/models/page_control_model.dart';
 import 'under_development_screen.dart';
 import 'floating_action_menu.dart';
 
@@ -50,15 +49,12 @@ class CRMAppShell extends StatefulWidget {
 
   const CRMAppShell({super.key, required this.child});
 
-  /// Session-scoped flag so entry settle runs once per app session.
-  static bool _entrySettledThisSession = false;
-
   @override
   State<CRMAppShell> createState() => _CRMAppShellState();
 }
 
 class _CRMAppShellState extends State<CRMAppShell>
-    with SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver {
   bool _isSidebarExpanded = true;
   double _sidebarWidth = 245.0;
   bool _isDraggingSidebar = false;
@@ -66,7 +62,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   final FocusNode _searchFocusNode = FocusNode();
   bool _isMobileSearchActive = false;
   String? _mobileSearchLocation;
-  late AnimationController _entryController;
   bool _notificationsPanelOpen = false;
   List<Map<String, dynamic>> _portalNav = [];
   bool _portalNavLoading = false;
@@ -75,12 +70,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   @override
   void initState() {
     super.initState();
-    _entryController = AnimationController(
-      vsync: this,
-      duration: Duration.zero,
-      value: 1.0,
-    );
-    CRMAppShell._entrySettledThisSession = true;
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
       if ((newNotif['action'] ?? '').toString() == 'refresh' ||
@@ -132,34 +121,42 @@ class _CRMAppShellState extends State<CRMAppShell>
         unawaited(PermissionMatrixService.instance.syncFromBackend());
         unawaited(PageControlService.instance.fetchControls(silent: true));
       }
-      _notificationsTimer?.cancel();
-      _notificationsTimer = Timer.periodic(const Duration(seconds: 25), (
-        _,
-      ) async {
-        if (mounted) {
-          await _fetchNotifications(silent: true);
-          await AppNotifierService.checkAndTriggerWelcomeIfNewlyGranted();
-        }
-      });
+      try {
+        WidgetsBinding.instance.addObserver(this);
+      } catch (_) {}
+      _startNotificationsTimer();
     });
-    PageControlService.instance.addListener(_onPageControlChanged);
-    PageControlService.instance.fetchControls(silent: true);
   }
 
   @override
-  void didUpdateWidget(covariant CRMAppShell oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    PageControlService.instance.fetchControls(silent: true);
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _notificationsTimer?.cancel();
+      _notificationsTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      _startNotificationsTimer();
+      _fetchNotifications(silent: true);
+    }
   }
 
-  void _onPageControlChanged() {
-    if (mounted) setState(() {});
+  void _startNotificationsTimer() {
+    _notificationsTimer?.cancel();
+    final interval = _notificationsPanelOpen ? const Duration(seconds: 25) : const Duration(seconds: 60);
+    _notificationsTimer = Timer.periodic(interval, (_) async {
+      if (mounted) {
+        await _fetchNotifications(silent: true);
+        await AppNotifierService.checkAndTriggerWelcomeIfNewlyGranted();
+      }
+    });
   }
 
   @override
   void dispose() {
-    PageControlService.instance.removeListener(_onPageControlChanged);
-    _entryController.dispose();
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
@@ -185,6 +182,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   int _unreadNotificationsCount = 0;
   int _unreadTeamMessagesCount = 0;
   bool _isLoadingNotifications = false;
+  bool _isFetchingNotifications = false;
   int _notificationsPage = 1;
   int _totalNotificationPages = 1;
   Timer? _notificationsTimer;
@@ -367,8 +365,10 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   Future<void> _fetchNotifications({bool loadMore = false, bool silent = false}) async {
-    if (!mounted) return;
-    if (!silent) {
+    if (!mounted || _isFetchingNotifications) return;
+    _isFetchingNotifications = true;
+    try {
+      if (!silent) {
       setState(() {
         _isLoadingNotifications = true;
         if (!loadMore) {
@@ -660,7 +660,10 @@ class _CRMAppShellState extends State<CRMAppShell>
         _isLoadingNotifications = false;
       }
     }
+  } finally {
+    _isFetchingNotifications = false;
   }
+}
 
   Future<void> _markNotificationRead(String id) async {
     try {
@@ -1603,17 +1606,11 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     }
 
-    Widget contentChild = widget.child;
-    if (PageControlService.instance.isRouteUnderDevelopment(location, currentUserRole)) {
-      final control = PageControlService.instance.getControlForRoute(location, currentUserRole);
-      contentChild = UnderDevelopmentScreen(
-        pageTitle: control?.title ?? 'This Page',
-        route: control?.route ?? location,
-        customMessage: control?.message,
-        userRole: currentUserRole,
-        isEmbedded: false,
-      );
-    }
+    final Widget contentChild = PageUnderDevelopmentGate(
+      location: location,
+      userRole: currentUserRole,
+      child: widget.child,
+    );
 
     if (isMobile) {
       return _buildMobileShell(context, location, currentUserRole, contentChild);
@@ -4015,6 +4012,41 @@ class _SidebarResizerDividerState extends State<SidebarResizerDivider> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Scoped widget that listens to PageControlService and switches between
+/// [UnderDevelopmentScreen] and [child] without rebuilding the outer CRMAppShell.
+class PageUnderDevelopmentGate extends StatelessWidget {
+  final String location;
+  final String userRole;
+  final Widget child;
+
+  const PageUnderDevelopmentGate({
+    super.key,
+    required this.location,
+    required this.userRole,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: PageControlService.instance,
+      builder: (context, _) {
+        if (PageControlService.instance.isRouteUnderDevelopment(location, userRole)) {
+          final control = PageControlService.instance.getControlForRoute(location, userRole);
+          return UnderDevelopmentScreen(
+            pageTitle: control?.title ?? 'This Page',
+            route: control?.route ?? location,
+            customMessage: control?.message,
+            userRole: userRole,
+            isEmbedded: false,
+          );
+        }
+        return child;
+      },
     );
   }
 }

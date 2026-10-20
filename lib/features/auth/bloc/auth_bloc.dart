@@ -12,6 +12,7 @@ import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/notification_center.dart';
 import '../../telecaller/services/telecaller_shift_manager.dart';
 import '../../telecaller/telecaller_heartbeat_service.dart';
+import '../../../core/services/periodic_work_coordinator.dart';
 
 // ==========================================
 // Auth Events
@@ -193,6 +194,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       if (isAuth) {
         final user = await _authRepository.getProfile();
         RoleGuard.currentUser = user;
+        PeriodicWorkCoordinator.instance.onLogin(userId: user.id, role: user.role);
         emit(Authenticated(user: user));
         _startSessionWatchdog();
         unawaited(PushNotificationService.registerCurrentUser());
@@ -251,11 +253,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       }
 
       emit(Authenticated(user: user));
+      PeriodicWorkCoordinator.instance.onLogin(userId: user.id, role: user.role);
       _startSessionWatchdog();
       unawaited(PushNotificationService.registerCurrentUser());
 
       unawaited(() async {
         try {
+          // Allow the UI to complete initial dashboard mounting and first frame before triggering background sync
+          await Future.delayed(const Duration(milliseconds: 800));
           await SyncManager().performStartupSync();
           SyncManager().isSyncCompleted = true;
           await SyncManager().connectAfterAuth();
@@ -291,11 +296,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       }
 
       emit(Authenticated(user: user));
+      PeriodicWorkCoordinator.instance.onLogin(userId: user.id, role: user.role);
       _startSessionWatchdog();
       unawaited(PushNotificationService.registerCurrentUser());
 
       unawaited(() async {
         try {
+          // Allow the UI to complete initial dashboard mounting and first frame before triggering background sync
+          await Future.delayed(const Duration(milliseconds: 800));
           await SyncManager().performStartupSync();
           SyncManager().isSyncCompleted = true;
           await SyncManager().connectAfterAuth();

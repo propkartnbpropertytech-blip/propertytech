@@ -479,8 +479,11 @@ class FollowupSyncEngine {
         // Listing type check (Rent vs Re-Sale)
         if (getListingTypeLabel(req) != targetListingType) continue;
 
-        // From those leads, only clients whose current status is Follow-Up or Re-Follow-Up should appear.
-        if (!isFollowupLeadStatus(req.status)) continue;
+        // From those leads, active leads (not won/closed and not rejected) appear on the Follow-ups tab
+        final reqStatusLower = req.status.trim().toLowerCase();
+        final isWon = reqStatusLower == 'won' || reqStatusLower == 'closed' || reqStatusLower == 'deal won';
+        final isRejected = reqStatusLower.startsWith('rejected') || reqStatusLower == 'dead' || reqStatusLower == 'bin' || reqStatusLower == 'suspended';
+        if (isWon || isRejected) continue;
 
         // Prevent duplicate follow-up records for the same client
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');
@@ -532,9 +535,9 @@ class FollowupSyncEngine {
           followupDate: (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
               ? req.nextFollowupDate!
               : f.followupDate,
-          status: req.status.isNotEmpty
-              ? req.status
-              : f.status,
+          status: f.status.isNotEmpty
+              ? f.status
+              : (req.status.isNotEmpty ? req.status : 'Pending'),
         );
 
         followupToReqMap[itemWithSalesman.id] = req;
@@ -553,11 +556,15 @@ class FollowupSyncEngine {
         followupItems.add(itemWithSalesman);
       }
 
-      // Ensure requirements in reqsList with Follow-up/Re-Followup status are also included
+      // Ensure requirements in reqsList with Follow-up/Re-Followup status or nextFollowupDate are also included
       for (final req in reqsList) {
         final reqStatus = req.status;
-        if (!isFollowupLeadStatus(reqStatus)) continue;
+        final hasFollowup = isFollowupLeadStatus(reqStatus) ||
+            (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty);
+        if (!hasFollowup) continue;
         if (isSiteVisitStatus(reqStatus)) continue;
+        final rStatusLower = reqStatus.trim().toLowerCase();
+        if (rStatusLower.startsWith('rejected') || rStatusLower == 'won' || rStatusLower == 'closed') continue;
         if (getListingTypeLabel(req) != targetListingType) continue;
 
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');

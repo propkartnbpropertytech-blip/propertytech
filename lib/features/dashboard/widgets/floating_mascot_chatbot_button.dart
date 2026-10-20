@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -9,38 +10,50 @@ class FloatingMascotChatbotButton extends StatefulWidget {
 
   @override
   State<FloatingMascotChatbotButton> createState() =>
-      _FloatingMascotChatbotButtonState();
+      FloatingMascotChatbotButtonState();
 }
 
-class _FloatingMascotChatbotButtonState
+class FloatingMascotChatbotButtonState
     extends State<FloatingMascotChatbotButton>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const String _mascotGifUrl =
       'https://res.cloudinary.com/haacwr5z/image/upload/v1792041589/roakbot/k4t0dfawrgayape2ztkr.gif';
   static const Color _primaryColor = Color(0xFF0F172A);
 
-  late final AnimationController _bobbingController;
-  late final Animation<double> _bobbingAnimation;
+  AnimationController? _bobbingController;
+  Animation<double>? _bobbingAnimation;
 
-  late final AnimationController _pulseController;
-  late final Animation<double> _pulseAnimation;
+  AnimationController? _pulseController;
+  Animation<double>? _pulseAnimation;
 
+  Timer? _idleSettleTimer;
   bool _isHovered = false;
   bool _showSpeechBubble = true;
+  bool _isIdled = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
+    // On Web, the native Roakbot script handles the mascot. Do not initialize or spin tickers.
+    if (!kIsWeb) {
+      _initAnimationControllers();
+      _startAnimating();
+      _scheduleIdleSettling(const Duration(seconds: 5));
+    }
+  }
+
+  void _initAnimationControllers() {
     // 1. Smooth up/down floating bobbing motion
     _bobbingController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),
-    )..repeat(reverse: true);
+    );
 
     _bobbingAnimation = Tween<double>(begin: 0, end: -7).animate(
       CurvedAnimation(
-        parent: _bobbingController,
+        parent: _bobbingController!,
         curve: Curves.easeInOutSine,
       ),
     );
@@ -49,60 +62,134 @@ class _FloatingMascotChatbotButtonState
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat();
+    );
 
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.35).animate(
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
       CurvedAnimation(
-        parent: _pulseController,
+        parent: _pulseController!,
         curve: Curves.easeOut,
       ),
     );
   }
 
+  void _startAnimating() {
+    if (_bobbingController == null || _pulseController == null) return;
+    if (!_bobbingController!.isAnimating) {
+      _bobbingController!.repeat(reverse: true);
+    }
+    if (!_pulseController!.isAnimating) {
+      _pulseController!.repeat();
+    }
+    _isIdled = false;
+  }
+
+  void _scheduleIdleSettling(Duration delay) {
+    _idleSettleTimer?.cancel();
+    _idleSettleTimer = Timer(delay, () {
+      if (!mounted) return;
+      _settleToIdle();
+    });
+  }
+
+  void _settleToIdle() {
+    _idleSettleTimer?.cancel();
+    _idleSettleTimer = null;
+    if (_bobbingController != null && _bobbingController!.isAnimating) {
+      _bobbingController!.animateTo(0.0, duration: const Duration(milliseconds: 400));
+    }
+    if (_pulseController != null && _pulseController!.isAnimating) {
+      _pulseController!.animateTo(0.0, duration: const Duration(milliseconds: 300));
+    }
+    _isIdled = true;
+  }
+
+  void _wakeUpAndAnimate() {
+    if (kIsWeb) return;
+    _startAnimating();
+    _scheduleIdleSettling(const Duration(seconds: 4));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _settleToIdle();
+    }
+  }
+
   @override
   void dispose() {
-    _bobbingController.dispose();
-    _pulseController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _idleSettleTimer?.cancel();
+    _bobbingController?.dispose();
+    _pulseController?.dispose();
     super.dispose();
   }
 
   void _onChatbotTap() {
+    _wakeUpAndAnimate();
     if (kIsWeb) {
       RoakbotService.open();
     }
     RoakbotDialog.show(context);
   }
 
+  @visibleForTesting
+  bool get isBobbingAnimating => _bobbingController?.isAnimating ?? false;
+
+  @visibleForTesting
+  bool get isPulseAnimating => _pulseController?.isAnimating ?? false;
+
+  @visibleForTesting
+  bool get isIdled => _isIdled;
+
+  @visibleForTesting
+  void triggerWakeUpForTesting() => _wakeUpAndAnimate();
+
+  @visibleForTesting
+  void triggerSettleForTesting() => _settleToIdle();
+
   @override
   Widget build(BuildContext context) {
     // On Web, the native Roakbot dynamic widget script from index.html automatically
-    // renders the floating mascot GIF button and invitation bubble with auto-sync.
-    if (kIsWeb) {
+    // renders the floating mascot widget and invitation bubble with live auto-sync.
+    if (kIsWeb || _bobbingController == null || _pulseController == null) {
       return const SizedBox.shrink();
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      if (!_isIdled) {
+        _settleToIdle();
+      }
+    }
 
-    return AnimatedBuilder(
-      animation: Listenable.merge([_bobbingAnimation, _pulseAnimation]),
-      builder: (context, child) {
-        return Transform.translate(
-          offset: Offset(0, _bobbingAnimation.value),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Playful Speech Bubble
-              if (_showSpeechBubble) ...[
-                GestureDetector(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final launcherW = isMobile ? 120.0 : 180.0;
+    final launcherH = isMobile ? 120.0 : 108.0;
+
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_bobbingAnimation!, _pulseAnimation!]),
+        builder: (context, child) {
+          return Transform.translate(
+            offset: Offset(0, _bobbingAnimation!.value),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Playful Speech Bubble on Top
+                if (_showSpeechBubble) ...[
+                  GestureDetector(
                   onTap: _onChatbotTap,
                   child: Container(
-                    margin: const EdgeInsets.only(right: 10),
+                    margin: const EdgeInsets.only(bottom: 8),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(18),
                       border: Border.all(
                         color: isDark
                             ? const Color(0xFF334155)
@@ -151,7 +238,10 @@ class _FloatingMascotChatbotButtonState
 
               // Mascot Floating Button
               MouseRegion(
-                onEnter: (_) => setState(() => _isHovered = true),
+                onEnter: (_) {
+                  setState(() => _isHovered = true);
+                  _wakeUpAndAnimate();
+                },
                 onExit: (_) => setState(() => _isHovered = false),
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
@@ -162,16 +252,16 @@ class _FloatingMascotChatbotButtonState
                     children: [
                       // Pulsing halo aura
                       Transform.scale(
-                        scale: _pulseAnimation.value,
+                        scale: _pulseAnimation!.value,
                         child: Container(
-                          width: 58,
-                          height: 58,
+                          width: launcherW,
+                          height: launcherH,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(16),
                             color: _primaryColor.withValues(
                               alpha: math.max(
                                 0.0,
-                                0.35 * (1.0 - _pulseController.value),
+                                0.25 * (1.0 - (_pulseController?.value ?? 0.0)),
                               ),
                             ),
                           ),
@@ -180,14 +270,14 @@ class _FloatingMascotChatbotButtonState
 
                       // Mascot Container
                       AnimatedScale(
-                        scale: _isHovered ? 1.08 : 1.0,
+                        scale: _isHovered ? 1.05 : 1.0,
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeOutCubic,
                         child: Container(
-                          width: 60,
-                          height: 60,
+                          width: launcherW,
+                          height: launcherH,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(16),
                             color: _primaryColor,
                             border: Border.all(
                               color: Colors.white.withValues(alpha: 0.35),
@@ -209,13 +299,14 @@ class _FloatingMascotChatbotButtonState
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Mascot GIF Image with fallback
-                              ClipOval(
+                              // Mascot GIF Image with cover fit and fallback
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
                                 child: Image.network(
                                   _mascotGifUrl,
-                                  width: 56,
-                                  height: 56,
-                                  fit: BoxFit.contain,
+                                  width: launcherW,
+                                  height: launcherH,
+                                  fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) =>
                                       const Icon(
                                     Icons.smart_toy_rounded,
@@ -227,8 +318,8 @@ class _FloatingMascotChatbotButtonState
 
                               // Online Active Indicator Badge
                               Positioned(
-                                top: 2,
-                                right: 2,
+                                top: 4,
+                                right: 4,
                                 child: Container(
                                   width: 12,
                                   height: 12,
@@ -260,6 +351,7 @@ class _FloatingMascotChatbotButtonState
           ),
         );
       },
-    );
-  }
+    ),
+  );
+}
 }

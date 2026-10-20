@@ -11,6 +11,8 @@ class LookupItemLocal {
   late String id;
 
   late String name;
+
+  @Index()
   late String category; // 'city', 'area', 'property_category', 'property_type', 'configuration', 'listing_type', 'property_status', 'furnishing_type', 'facing_type', 'ownership_type', 'brokerage_type', 'amenity'
 
   String? categoryId; // for property_types, configurations
@@ -25,16 +27,24 @@ class PropertyLocal {
   @Index(unique: true, replace: true)
   late String id;
 
+  @Index(caseSensitive: false)
   late String propertyCode;
+
   late String title;
   String? description;
+
+  @Index()
   late String categoryId;
+
   late String categoryName;
   late String propertyTypeId;
   late String propertyTypeName;
   String? configurationId;
   String? configurationName;
+
+  @Index()
   late String listingTypeId;
+
   late String listingTypeName;
   late String propertyStatusId;
   late String propertyStatusName;
@@ -79,7 +89,10 @@ class PropertyLocal {
   late bool isVerified;
   late String createdBy;
   late String createdByName;
+
+  @Index()
   late DateTime createdAt;
+
   late List<String> images;
   late List<String> amenities;
   late List<String> videos;
@@ -115,11 +128,19 @@ class RequirementLocal {
   late List<String> areaNames;
   String? remarks;
   String? notes;
+
+  @Index()
   late String status;
+
+  @Index()
   late DateTime createdAt;
+
   double? budget;
   String? adminId;
+
+  @Index()
   String? assignedTo;
+
   String? organizationId;
   String? listingTypeId;
   String? listingTypeName;
@@ -146,9 +167,15 @@ class FollowupLocal {
   late String createdBy;
   late String clientName;
   late String mobile;
+
+  @Index()
   late DateTime followupDate;
+
   String? notes;
+
+  @Index()
   late String status;
+
   late DateTime createdAt;
 }
 
@@ -194,10 +221,15 @@ class ClientLocal {
   late String name;
   late String email;
   late String mobile;
+
+  @Index()
   late String stage;
+
   late String source;
   String? assignedAgent;
   String? remarks;
+
+  @Index()
   late DateTime createdAt;
 }
 
@@ -267,7 +299,10 @@ class CampaignLeadLocal {
   late String id;
 
   late String source;
+
+  @Index()
   late DateTime receivedAt;
+
   late String rawJsonString;
   String? externalLeadId;
   late bool isDuplicate;

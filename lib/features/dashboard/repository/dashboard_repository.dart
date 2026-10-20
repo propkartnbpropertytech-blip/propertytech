@@ -694,8 +694,6 @@ class DashboardRepository {
         isarWriteMs: isarWriteMs,
         totalMs: totalMs,
       );
-
-      _coordinator.refreshDashboard();
     }).catchError((_) {}).whenComplete(() {
       _refreshInFlight = null;
     });

@@ -51,15 +51,14 @@ class TelecallerKpiDialogs {
     String? endDate,
     required String leadType,
   }) {
-    return showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogCtx) => TelecallerOpenLeadsDialog(
-        dateFilter: dateFilter,
-        startDate: startDate,
-        endDate: endDate,
-        leadType: leadType,
-      ),
+    return showKpiLeadsDrilldown(
+      context,
+      category: 'open',
+      title: 'Open Leads',
+      dateFilter: dateFilter,
+      startDate: startDate,
+      endDate: endDate,
+      leadType: leadType,
     );
   }
 

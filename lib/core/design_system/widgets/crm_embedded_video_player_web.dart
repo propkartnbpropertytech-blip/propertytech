@@ -17,13 +17,10 @@ class _VideoPlayerPlatformImplState extends State<VideoPlayerPlatformImpl> {
   html.VideoElement? _videoElement;
   bool _isPlaying = false;
 
-  String get _posterUrl {
-    final url = widget.videoUrl.trim();
-    if (url.contains('/video/upload/')) {
-      return url.replaceAll(RegExp(r'\.(mp4|mov|webm|avi|mkv)$', caseSensitive: false), '.jpg');
-    }
-    return url;
-  }
+  String get _posterUrl => CrmImageDelivery.transformVideoPoster(
+        widget.videoUrl,
+        variant: CrmImageVariant.preview,
+      );
 
   void _startPlayback() {
     if (_isPlaying) return;
@@ -94,6 +91,9 @@ class _VideoPlayerPlatformImplState extends State<VideoPlayerPlatformImpl> {
             color: Colors.black87,
             child: CrmNetworkImage(
               url: _posterUrl,
+              variant: CrmImageVariant.preview,
+              cacheLogicalWidth: 800,
+              cacheLogicalHeight: 450,
               fit: BoxFit.contain,
               placeholder: (context) => const Center(
                 child: Icon(Icons.videocam_rounded, size: 48, color: Colors.white24),

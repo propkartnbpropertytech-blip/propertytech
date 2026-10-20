@@ -17,14 +17,9 @@ import '../../../core/design_system/widgets/empty_state.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/security/role_guard.dart';
 import '../models/document_model.dart';
+import '../models/area_item.dart';
+import '../repository/library_repository.dart';
 import 'library_widgets.dart';
-
-class AreaItem {
-  final String id;
-  final String name;
-  final String? pincode;
-  AreaItem({required this.id, required this.name, this.pincode});
-}
 
 class ServiceAgentLibraryScreen extends StatefulWidget {
   const ServiceAgentLibraryScreen({super.key});
@@ -108,118 +103,60 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchAreas() async {
+  Future<void> _fetchAreas({bool forceRefresh = false}) async {
     try {
-      final meta = await PropertiesService().getPropertyMetadata();
-      final areas = meta['data']?['metadata']?['areas'] as List? ?? [];
-      if (areas.isNotEmpty) {
-        final fetched = areas.map((json) => AreaItem(
-          id: json['id']?.toString() ?? '',
-          name: json['area_name']?.toString() ?? '',
-          pincode: json['pincode']?.toString(),
-        )).toList();
+      final areas = await LibraryRepository().getServiceAgentAreas(forceRefresh: forceRefresh);
+      if (mounted) {
         setState(() {
-          _dbAreasList = fetched;
+          _dbAreasList = areas;
         });
-        return;
       }
     } catch (e) {
-      debugPrint('Note: Error fetching areas from backend: $e');
-    }
-
-    if (_dbAreasList.isEmpty) {
-      setState(() {
-        _dbAreasList = [
-          AreaItem(id: '1', name: 'Visnagar', pincode: '384315'),
-          AreaItem(id: '2', name: 'viramgam', pincode: '382150'),
-          AreaItem(id: '3', name: 'Vasna road', pincode: '383255'),
-          AreaItem(id: '4', name: 'Vaishnodevi', pincode: '382481'),
-          AreaItem(id: '5', name: 'Thaltej', pincode: '380059'),
-          AreaItem(id: '6', name: 'South Bopal', pincode: '380057'),
-          AreaItem(id: '7', name: 'North Zone'),
-          AreaItem(id: '8', name: 'Central'),
-        ];
-      });
+      debugPrint('Note: Error fetching areas from LibraryRepository: $e');
     }
   }
 
   ServiceAgentDocument _rowToDoc(Map<String, dynamic> json) {
-    List<String> areaList = [];
-    final areaRaw = json['area'] ?? json['areas'] ?? json['service_area'] ?? json['target_area'];
-    if (areaRaw is String && areaRaw.isNotEmpty) {
-      areaList = areaRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-    } else if (areaRaw is List) {
-      areaList = areaRaw.map((e) => e.toString()).toList();
-    }
-
-    final imageUrl = json['agent_image_url']?.toString() ??
-        json['image_url']?.toString() ??
-        json['photo_url']?.toString() ??
-        json['agent_photo']?.toString() ??
-        json['photo']?.toString() ??
-        json['avatar_url']?.toString();
-
-    final dob = json['date_of_birth']?.toString() ??
-        json['dob']?.toString() ??
-        json['birth_date']?.toString();
-
-    return ServiceAgentDocument(
-      id: json['id']?.toString() ?? '',
-      agentName: json['agent_name']?.toString() ?? '',
-      serviceType: json['service_type']?.toString() ?? json['role']?.toString() ?? '',
-      mobileNumber: json['mobile_number']?.toString() ?? '',
-      documentName: json['document_type']?.toString() ?? '',
-      documentType: json['document_type']?.toString() ?? '',
-      uploadDate: DateTime.tryParse(json['upload_date']?.toString() ?? '') ?? DateTime.now(),
-      uploadedBy: json['uploaded_by']?.toString() ?? 'admin',
-      status: DocumentStatusExtension.fromString(json['status']?.toString() ?? 'active'),
-      description: json['description']?.toString() ?? '',
-      fileSize: json['file_size']?.toString() ?? '0 KB',
-      fileExtension: json['file_extension']?.toString() ?? 'pdf',
-      fileUrl: json['file_url']?.toString() ?? '',
-      approvalStatus: json['approval_status']?.toString() ?? 'approved',
-      agentImageUrl: imageUrl,
-      dateOfBirth: dob,
-      area: areaList,
-    );
+    return LibraryRepository.parseServiceAgentDocument(json);
   }
 
-  Future<void> _loadDocuments() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadDocuments({bool forceRefresh = false}) async {
+    if (_allDocuments.isEmpty) {
+      setState(() => _isLoading = true);
+    }
     try {
-      final response = await DioClient.dio.get('/service-agents');
-      final data = response.data?['data']?['documents'] as List? ?? [];
-      final docs = data
-          .map((json) => _rowToDoc(json as Map<String, dynamic>))
-          .where((d) {
-            final s = d.approvalStatus.toLowerCase();
-            return s == 'approved' || s == 'active' || s == '';
-          })
-          .toList();
-      setState(() {
-        _allDocuments = docs;
-        _applyFiltersAndSort();
-      });
+      final docs = await LibraryRepository().getServiceAgentDocuments(forceRefresh: forceRefresh);
+      if (mounted) {
+        setState(() {
+          _allDocuments = docs;
+          _applyFiltersAndSort();
+        });
+      }
     } catch (e) {
-      debugPrint('Note: Error loading service agent documents from backend: $e');
+      debugPrint('Note: Error loading service agent documents: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _loadPendingDocuments() async {
-    setState(() => _isLoadingPending = true);
+  Future<void> _loadPendingDocuments({bool forceRefresh = false}) async {
+    if (_pendingDocuments.isEmpty) {
+      setState(() => _isLoadingPending = true);
+    }
     try {
-      final response = await DioClient.dio.get('/service-agents', queryParameters: {'approval_status': 'pending'});
-      final data = response.data?['data']?['documents'] as List? ?? [];
-      setState(() {
-        _pendingDocuments = data.map((json) => _rowToDoc(json as Map<String, dynamic>)).toList();
-      });
+      final docs = await LibraryRepository().getPendingServiceAgentDocuments(forceRefresh: forceRefresh);
+      if (mounted) {
+        setState(() {
+          _pendingDocuments = docs;
+        });
+      }
     } catch (e) {
       debugPrint('Error loading pending documents: $e');
-      setState(() {
-        _pendingDocuments = [];
-      });
+      if (mounted) {
+        setState(() {
+          _pendingDocuments = [];
+        });
+      }
     } finally {
       if (mounted) setState(() => _isLoadingPending = false);
     }
@@ -235,6 +172,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
       } else {
         await DioClient.dio.post('/service-agents', data: payload);
       }
+      LibraryRepository().invalidateServiceAgents();
     } catch (e) {
       debugPrint('Note: Service agent document save: $e');
     }
@@ -327,8 +265,9 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
         debugPrint('Note: approval_status update error: $e');
       }
 
+      LibraryRepository().invalidateServiceAgents();
       setState(() => _pendingDocuments.removeWhere((d) => d.id == doc.id));
-      await _loadDocuments();
+      await _loadDocuments(forceRefresh: true);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -359,6 +298,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
       } catch (e) {
         debugPrint('Note: approval_status update error: $e');
       }
+      LibraryRepository().invalidateServiceAgents();
       setState(() => _pendingDocuments.removeWhere((d) => d.id == doc.id));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -714,6 +654,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     if (confirm == true) {
       try {
         await DioClient.dio.delete('/service-agents/${doc.id}');
+        LibraryRepository().invalidateServiceAgents();
       } catch (e) {
         debugPrint('Error deleting document: $e');
       }
@@ -1841,8 +1782,6 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                       : (isMobile
                           ? Column(children: [..._paginatedDocuments.map((doc) => _buildMobileDocumentCard(doc)), _buildMobilePagination()])
                           : LayoutBuilder(builder: (context, constraints) {
-                              final availableWidth = constraints.maxWidth;
-                              final double scaleFactor = availableWidth > 1050 ? (availableWidth / 1050) : 1.0;
                               return LayoutBuilder(builder: (context, constraints) {
                                 return Card(
                                   elevation: 0,

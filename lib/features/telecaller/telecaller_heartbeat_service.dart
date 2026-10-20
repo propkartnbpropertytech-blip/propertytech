@@ -1,15 +1,18 @@
-import 'dart:async';
 import 'package:flutter/widgets.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
-import 'data/telecaller_repository.dart';
+import 'services/telecaller_shift_manager.dart';
 
+/// Consolidated Telecaller Heartbeat Service.
+///
+/// Eliminates the duplicate independent 30-second heartbeat timer by delegating
+/// heartbeat lifecycle to the authoritative [TelecallerShiftManager].
 class TelecallerHeartbeatService with WidgetsBindingObserver {
   TelecallerHeartbeatService._();
   static final TelecallerHeartbeatService instance = TelecallerHeartbeatService._();
 
-  final TelecallerRepository _repository = TelecallerRepository();
-  Timer? _timer;
   bool _started = false;
+
+  bool get isRunning => _started && TelecallerShiftManager.instance.isHeartbeatActive;
 
   void start(AuthState authState) {
     final role = authState is Authenticated ? authState.user.role : '';
@@ -19,22 +22,21 @@ class TelecallerHeartbeatService with WidgetsBindingObserver {
     }
     if (_started) return;
     _started = true;
-    WidgetsBinding.instance.addObserver(this);
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _beat());
-    _beat();
-  }
-
-  Future<void> _beat() async {
     try {
-      await _repository.heartbeat();
+      WidgetsBinding.instance.addObserver(this);
     } catch (_) {}
+
+    // Ensure shift manager is initialized with user ID if authenticated
+    if (authState is Authenticated) {
+      TelecallerShiftManager.instance.init(authState.user.id);
+    }
   }
 
   void stop() {
-    _timer?.cancel();
-    _timer = null;
     if (_started) {
-      WidgetsBinding.instance.removeObserver(this);
+      try {
+        WidgetsBinding.instance.removeObserver(this);
+      } catch (_) {}
     }
     _started = false;
   }
@@ -42,7 +44,11 @@ class TelecallerHeartbeatService with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _beat();
+      TelecallerShiftManager.instance.resumeFromBackground();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      TelecallerShiftManager.instance.pauseForBackground();
     }
   }
 }

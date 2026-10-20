@@ -7,7 +7,7 @@ part of 'isar_collections.dart';
 // **************************************************************************
 
 // coverage:ignore-file
-// ignore_for_file: duplicate_ignore, non_constant_identifier_names, constant_identifier_names, invalid_use_of_protected_member, unnecessary_cast, prefer_const_constructors, lines_longer_than_80_chars, require_trailing_commas, inference_failure_on_function_invocation, unnecessary_parenthesis, unnecessary_raw_strings, unnecessary_null_checks, join_return_with_assignment, prefer_final_locals, avoid_js_rounded_ints, avoid_positional_boolean_parameters, always_specify_types
+// ignore_for_file: duplicate_ignore, non_constant_identifier_names, constant_identifier_names, invalid_use_of_protected_member, unnecessary_cast, prefer_const_constructors, lines_longer_than_80_chars, require_trailing_commas, inference_failure_on_function_invocation, unnecessary_parenthesis, unnecessary_raw_strings, unnecessary_null_checks, join_return_with_assignment, prefer_final_locals, avoid_js_rounded_ints, avoid_positional_boolean_parameters, always_specify_types, experimental_member_use
 
 extension GetLookupItemLocalCollection on Isar {
   IsarCollection<LookupItemLocal> get lookupItemLocals => this.collection();
@@ -62,6 +62,19 @@ const LookupItemLocalSchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'id',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'category': IndexSchema(
+      id: -hash_7560358558326323820,
+      name: r'category',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'category',
           type: IndexType.hash,
           caseSensitive: true,
         )
@@ -347,6 +360,51 @@ extension LookupItemLocalQueryWhere
               indexName: r'id',
               lower: [],
               upper: [id],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<LookupItemLocal, LookupItemLocal, QAfterWhereClause>
+      categoryEqualTo(String category) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'category',
+        value: [category],
+      ));
+    });
+  }
+
+  QueryBuilder<LookupItemLocal, LookupItemLocal, QAfterWhereClause>
+      categoryNotEqualTo(String category) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'category',
+              lower: [],
+              upper: [category],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'category',
+              lower: [category],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'category',
+              lower: [category],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'category',
+              lower: [],
+              upper: [category],
               includeUpper: false,
             ));
       }
@@ -1915,6 +1973,58 @@ const PropertyLocalSchema = CollectionSchema(
           caseSensitive: true,
         )
       ],
+    ),
+    r'propertyCode': IndexSchema(
+      id: -hash_2215546117714102148,
+      name: r'propertyCode',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'propertyCode',
+          type: IndexType.hash,
+          caseSensitive: false,
+        )
+      ],
+    ),
+    r'categoryId': IndexSchema(
+      id: -hash_8798048739239305339,
+      name: r'categoryId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'categoryId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'listingTypeId': IndexSchema(
+      id: hash_3856687734587471322,
+      name: r'listingTypeId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'listingTypeId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'createdAt': IndexSchema(
+      id: -hash_3433535483987302584,
+      name: r'createdAt',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'createdAt',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
   links: {},
@@ -2450,6 +2560,14 @@ extension PropertyLocalQueryWhereSort
       return query.addWhereClause(const IdWhereClause.any());
     });
   }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhere> anyCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'createdAt'),
+      );
+    });
+  }
 }
 
 extension PropertyLocalQueryWhere
@@ -2564,6 +2682,234 @@ extension PropertyLocalQueryWhere
               includeUpper: false,
             ));
       }
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      propertyCodeEqualTo(String propertyCode) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'propertyCode',
+        value: [propertyCode],
+      ));
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      propertyCodeNotEqualTo(String propertyCode) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'propertyCode',
+              lower: [],
+              upper: [propertyCode],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'propertyCode',
+              lower: [propertyCode],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'propertyCode',
+              lower: [propertyCode],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'propertyCode',
+              lower: [],
+              upper: [propertyCode],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      categoryIdEqualTo(String categoryId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'categoryId',
+        value: [categoryId],
+      ));
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      categoryIdNotEqualTo(String categoryId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'categoryId',
+              lower: [],
+              upper: [categoryId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'categoryId',
+              lower: [categoryId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'categoryId',
+              lower: [categoryId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'categoryId',
+              lower: [],
+              upper: [categoryId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      listingTypeIdEqualTo(String listingTypeId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'listingTypeId',
+        value: [listingTypeId],
+      ));
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      listingTypeIdNotEqualTo(String listingTypeId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'listingTypeId',
+              lower: [],
+              upper: [listingTypeId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'listingTypeId',
+              lower: [listingTypeId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'listingTypeId',
+              lower: [listingTypeId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'listingTypeId',
+              lower: [],
+              upper: [listingTypeId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      createdAtEqualTo(DateTime createdAt) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'createdAt',
+        value: [createdAt],
+      ));
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      createdAtNotEqualTo(DateTime createdAt) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [],
+              upper: [createdAt],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [createdAt],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [createdAt],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [],
+              upper: [createdAt],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      createdAtGreaterThan(
+    DateTime createdAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [createdAt],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      createdAtLessThan(
+    DateTime createdAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [],
+        upper: [createdAt],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<PropertyLocal, PropertyLocal, QAfterWhereClause>
+      createdAtBetween(
+    DateTime lowerCreatedAt,
+    DateTime upperCreatedAt, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [lowerCreatedAt],
+        includeLower: includeLower,
+        upper: [upperCreatedAt],
+        includeUpper: includeUpper,
+      ));
     });
   }
 }
@@ -13023,43 +13369,48 @@ const RequirementLocalSchema = CollectionSchema(
       name: r'minBudget',
       type: IsarType.double,
     ),
-    r'notes': PropertySchema(
+    r'nextFollowupDate': PropertySchema(
       id: 26,
+      name: r'nextFollowupDate',
+      type: IsarType.string,
+    ),
+    r'notes': PropertySchema(
+      id: 27,
       name: r'notes',
       type: IsarType.string,
     ),
     r'organizationId': PropertySchema(
-      id: 27,
+      id: 28,
       name: r'organizationId',
       type: IsarType.string,
     ),
     r'propertyTypeId': PropertySchema(
-      id: 28,
+      id: 29,
       name: r'propertyTypeId',
       type: IsarType.string,
     ),
     r'propertyTypeIds': PropertySchema(
-      id: 29,
+      id: 30,
       name: r'propertyTypeIds',
       type: IsarType.stringList,
     ),
     r'propertyTypeName': PropertySchema(
-      id: 30,
+      id: 31,
       name: r'propertyTypeName',
       type: IsarType.string,
     ),
     r'referralName': PropertySchema(
-      id: 31,
+      id: 32,
       name: r'referralName',
       type: IsarType.string,
     ),
     r'remarks': PropertySchema(
-      id: 32,
+      id: 33,
       name: r'remarks',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 33,
+      id: 34,
       name: r'status',
       type: IsarType.string,
     )
@@ -13078,6 +13429,45 @@ const RequirementLocalSchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'id',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'status': IndexSchema(
+      id: -hash_107785170620420283,
+      name: r'status',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'status',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'createdAt': IndexSchema(
+      id: -hash_3433535483987302584,
+      name: r'createdAt',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'createdAt',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
+    ),
+    r'assignedTo': IndexSchema(
+      id: hash_7878120044568560201,
+      name: r'assignedTo',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'assignedTo',
           type: IndexType.hash,
           caseSensitive: true,
         )
@@ -13214,6 +13604,12 @@ int _requirementLocalEstimateSize(
     }
   }
   {
+    final value = object.nextFollowupDate;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.notes;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
@@ -13297,14 +13693,15 @@ void _requirementLocalSerialize(
   writer.writeDouble(offsets[23], object.maxBudget);
   writer.writeDouble(offsets[24], object.minArea);
   writer.writeDouble(offsets[25], object.minBudget);
-  writer.writeString(offsets[26], object.notes);
-  writer.writeString(offsets[27], object.organizationId);
-  writer.writeString(offsets[28], object.propertyTypeId);
-  writer.writeStringList(offsets[29], object.propertyTypeIds);
-  writer.writeString(offsets[30], object.propertyTypeName);
-  writer.writeString(offsets[31], object.referralName);
-  writer.writeString(offsets[32], object.remarks);
-  writer.writeString(offsets[33], object.status);
+  writer.writeString(offsets[26], object.nextFollowupDate);
+  writer.writeString(offsets[27], object.notes);
+  writer.writeString(offsets[28], object.organizationId);
+  writer.writeString(offsets[29], object.propertyTypeId);
+  writer.writeStringList(offsets[30], object.propertyTypeIds);
+  writer.writeString(offsets[31], object.propertyTypeName);
+  writer.writeString(offsets[32], object.referralName);
+  writer.writeString(offsets[33], object.remarks);
+  writer.writeString(offsets[34], object.status);
 }
 
 RequirementLocal _requirementLocalDeserialize(
@@ -13341,14 +13738,15 @@ RequirementLocal _requirementLocalDeserialize(
   object.maxBudget = reader.readDouble(offsets[23]);
   object.minArea = reader.readDoubleOrNull(offsets[24]);
   object.minBudget = reader.readDouble(offsets[25]);
-  object.notes = reader.readStringOrNull(offsets[26]);
-  object.organizationId = reader.readStringOrNull(offsets[27]);
-  object.propertyTypeId = reader.readStringOrNull(offsets[28]);
-  object.propertyTypeIds = reader.readStringList(offsets[29]);
-  object.propertyTypeName = reader.readStringOrNull(offsets[30]);
-  object.referralName = reader.readStringOrNull(offsets[31]);
-  object.remarks = reader.readStringOrNull(offsets[32]);
-  object.status = reader.readString(offsets[33]);
+  object.nextFollowupDate = reader.readStringOrNull(offsets[26]);
+  object.notes = reader.readStringOrNull(offsets[27]);
+  object.organizationId = reader.readStringOrNull(offsets[28]);
+  object.propertyTypeId = reader.readStringOrNull(offsets[29]);
+  object.propertyTypeIds = reader.readStringList(offsets[30]);
+  object.propertyTypeName = reader.readStringOrNull(offsets[31]);
+  object.referralName = reader.readStringOrNull(offsets[32]);
+  object.remarks = reader.readStringOrNull(offsets[33]);
+  object.status = reader.readString(offsets[34]);
   return object;
 }
 
@@ -13418,14 +13816,16 @@ P _requirementLocalDeserializeProp<P>(
     case 28:
       return (reader.readStringOrNull(offset)) as P;
     case 29:
-      return (reader.readStringList(offset)) as P;
-    case 30:
       return (reader.readStringOrNull(offset)) as P;
+    case 30:
+      return (reader.readStringList(offset)) as P;
     case 31:
       return (reader.readStringOrNull(offset)) as P;
     case 32:
       return (reader.readStringOrNull(offset)) as P;
     case 33:
+      return (reader.readStringOrNull(offset)) as P;
+    case 34:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -13505,6 +13905,14 @@ extension RequirementLocalQueryWhereSort
   QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhere> anyIsarId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhere> anyCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'createdAt'),
+      );
     });
   }
 }
@@ -13618,6 +14026,211 @@ extension RequirementLocalQueryWhere
               indexName: r'id',
               lower: [],
               upper: [id],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      statusEqualTo(String status) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'status',
+        value: [status],
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      statusNotEqualTo(String status) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [],
+              upper: [status],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [status],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [status],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [],
+              upper: [status],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      createdAtEqualTo(DateTime createdAt) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'createdAt',
+        value: [createdAt],
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      createdAtNotEqualTo(DateTime createdAt) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [],
+              upper: [createdAt],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [createdAt],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [createdAt],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [],
+              upper: [createdAt],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      createdAtGreaterThan(
+    DateTime createdAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [createdAt],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      createdAtLessThan(
+    DateTime createdAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [],
+        upper: [createdAt],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      createdAtBetween(
+    DateTime lowerCreatedAt,
+    DateTime upperCreatedAt, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [lowerCreatedAt],
+        includeLower: includeLower,
+        upper: [upperCreatedAt],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      assignedToIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'assignedTo',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      assignedToIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'assignedTo',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      assignedToEqualTo(String? assignedTo) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'assignedTo',
+        value: [assignedTo],
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterWhereClause>
+      assignedToNotEqualTo(String? assignedTo) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assignedTo',
+              lower: [],
+              upper: [assignedTo],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assignedTo',
+              lower: [assignedTo],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assignedTo',
+              lower: [assignedTo],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assignedTo',
+              lower: [],
+              upper: [assignedTo],
               includeUpper: false,
             ));
       }
@@ -17543,6 +18156,160 @@ extension RequirementLocalQueryFilter
   }
 
   QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'nextFollowupDate',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'nextFollowupDate',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'nextFollowupDate',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'nextFollowupDate',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'nextFollowupDate',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'nextFollowupDate',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'nextFollowupDate',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'nextFollowupDate',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'nextFollowupDate',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'nextFollowupDate',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'nextFollowupDate',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
+      nextFollowupDateIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'nextFollowupDate',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterFilterCondition>
       notesIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -19149,6 +19916,20 @@ extension RequirementLocalQuerySortBy
     });
   }
 
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      sortByNextFollowupDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextFollowupDate', Sort.asc);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      sortByNextFollowupDateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextFollowupDate', Sort.desc);
+    });
+  }
+
   QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy> sortByNotes() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'notes', Sort.asc);
@@ -19556,6 +20337,20 @@ extension RequirementLocalQuerySortThenBy
     });
   }
 
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      thenByNextFollowupDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextFollowupDate', Sort.asc);
+    });
+  }
+
+  QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy>
+      thenByNextFollowupDateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'nextFollowupDate', Sort.desc);
+    });
+  }
+
   QueryBuilder<RequirementLocal, RequirementLocal, QAfterSortBy> thenByNotes() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'notes', Sort.asc);
@@ -19842,6 +20637,14 @@ extension RequirementLocalQueryWhereDistinct
     });
   }
 
+  QueryBuilder<RequirementLocal, RequirementLocal, QDistinct>
+      distinctByNextFollowupDate({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'nextFollowupDate',
+          caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<RequirementLocal, RequirementLocal, QDistinct> distinctByNotes(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -20085,6 +20888,13 @@ extension RequirementLocalQueryProperty
     });
   }
 
+  QueryBuilder<RequirementLocal, String?, QQueryOperations>
+      nextFollowupDateProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'nextFollowupDate');
+    });
+  }
+
   QueryBuilder<RequirementLocal, String?, QQueryOperations> notesProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'notes');
@@ -20230,6 +21040,32 @@ const FollowupLocalSchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'id',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'followupDate': IndexSchema(
+      id: hash_6896819299987743320,
+      name: r'followupDate',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'followupDate',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
+    ),
+    r'status': IndexSchema(
+      id: -hash_107785170620420283,
+      name: r'status',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'status',
           type: IndexType.hash,
           caseSensitive: true,
         )
@@ -20452,6 +21288,14 @@ extension FollowupLocalQueryWhereSort
       return query.addWhereClause(const IdWhereClause.any());
     });
   }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhere> anyFollowupDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'followupDate'),
+      );
+    });
+  }
 }
 
 extension FollowupLocalQueryWhere
@@ -20563,6 +21407,144 @@ extension FollowupLocalQueryWhere
               indexName: r'id',
               lower: [],
               upper: [id],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause>
+      followupDateEqualTo(DateTime followupDate) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'followupDate',
+        value: [followupDate],
+      ));
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause>
+      followupDateNotEqualTo(DateTime followupDate) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'followupDate',
+              lower: [],
+              upper: [followupDate],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'followupDate',
+              lower: [followupDate],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'followupDate',
+              lower: [followupDate],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'followupDate',
+              lower: [],
+              upper: [followupDate],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause>
+      followupDateGreaterThan(
+    DateTime followupDate, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'followupDate',
+        lower: [followupDate],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause>
+      followupDateLessThan(
+    DateTime followupDate, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'followupDate',
+        lower: [],
+        upper: [followupDate],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause>
+      followupDateBetween(
+    DateTime lowerFollowupDate,
+    DateTime upperFollowupDate, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'followupDate',
+        lower: [lowerFollowupDate],
+        includeLower: includeLower,
+        upper: [upperFollowupDate],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause> statusEqualTo(
+      String status) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'status',
+        value: [status],
+      ));
+    });
+  }
+
+  QueryBuilder<FollowupLocal, FollowupLocal, QAfterWhereClause>
+      statusNotEqualTo(String status) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [],
+              upper: [status],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [status],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [status],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'status',
+              lower: [],
+              upper: [status],
               includeUpper: false,
             ));
       }
@@ -26643,6 +27625,32 @@ const ClientLocalSchema = CollectionSchema(
           caseSensitive: true,
         )
       ],
+    ),
+    r'stage': IndexSchema(
+      id: hash_4281597865616208537,
+      name: r'stage',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'stage',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'createdAt': IndexSchema(
+      id: -hash_3433535483987302584,
+      name: r'createdAt',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'createdAt',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
   links: {},
@@ -26821,6 +27829,14 @@ extension ClientLocalQueryWhereSort
       return query.addWhereClause(const IdWhereClause.any());
     });
   }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhere> anyCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'createdAt'),
+      );
+    });
+  }
 }
 
 extension ClientLocalQueryWhere
@@ -26936,6 +27952,142 @@ extension ClientLocalQueryWhere
               includeUpper: false,
             ));
       }
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause> stageEqualTo(
+      String stage) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'stage',
+        value: [stage],
+      ));
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause> stageNotEqualTo(
+      String stage) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'stage',
+              lower: [],
+              upper: [stage],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'stage',
+              lower: [stage],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'stage',
+              lower: [stage],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'stage',
+              lower: [],
+              upper: [stage],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause> createdAtEqualTo(
+      DateTime createdAt) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'createdAt',
+        value: [createdAt],
+      ));
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause> createdAtNotEqualTo(
+      DateTime createdAt) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [],
+              upper: [createdAt],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [createdAt],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [createdAt],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'createdAt',
+              lower: [],
+              upper: [createdAt],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause>
+      createdAtGreaterThan(
+    DateTime createdAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [createdAt],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause> createdAtLessThan(
+    DateTime createdAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [],
+        upper: [createdAt],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<ClientLocal, ClientLocal, QAfterWhereClause> createdAtBetween(
+    DateTime lowerCreatedAt,
+    DateTime upperCreatedAt, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'createdAt',
+        lower: [lowerCreatedAt],
+        includeLower: includeLower,
+        upper: [upperCreatedAt],
+        includeUpper: includeUpper,
+      ));
     });
   }
 }
@@ -31723,6 +32875,19 @@ const CampaignLeadLocalSchema = CollectionSchema(
           caseSensitive: true,
         )
       ],
+    ),
+    r'receivedAt': IndexSchema(
+      id: -hash_6277795886715409418,
+      name: r'receivedAt',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'receivedAt',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
   links: {},
@@ -31926,6 +33091,15 @@ extension CampaignLeadLocalQueryWhereSort
       return query.addWhereClause(const IdWhereClause.any());
     });
   }
+
+  QueryBuilder<CampaignLeadLocal, CampaignLeadLocal, QAfterWhere>
+      anyReceivedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'receivedAt'),
+      );
+    });
+  }
 }
 
 extension CampaignLeadLocalQueryWhere
@@ -32040,6 +33214,99 @@ extension CampaignLeadLocalQueryWhere
               includeUpper: false,
             ));
       }
+    });
+  }
+
+  QueryBuilder<CampaignLeadLocal, CampaignLeadLocal, QAfterWhereClause>
+      receivedAtEqualTo(DateTime receivedAt) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'receivedAt',
+        value: [receivedAt],
+      ));
+    });
+  }
+
+  QueryBuilder<CampaignLeadLocal, CampaignLeadLocal, QAfterWhereClause>
+      receivedAtNotEqualTo(DateTime receivedAt) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'receivedAt',
+              lower: [],
+              upper: [receivedAt],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'receivedAt',
+              lower: [receivedAt],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'receivedAt',
+              lower: [receivedAt],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'receivedAt',
+              lower: [],
+              upper: [receivedAt],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<CampaignLeadLocal, CampaignLeadLocal, QAfterWhereClause>
+      receivedAtGreaterThan(
+    DateTime receivedAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'receivedAt',
+        lower: [receivedAt],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<CampaignLeadLocal, CampaignLeadLocal, QAfterWhereClause>
+      receivedAtLessThan(
+    DateTime receivedAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'receivedAt',
+        lower: [],
+        upper: [receivedAt],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<CampaignLeadLocal, CampaignLeadLocal, QAfterWhereClause>
+      receivedAtBetween(
+    DateTime lowerReceivedAt,
+    DateTime upperReceivedAt, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'receivedAt',
+        lower: [lowerReceivedAt],
+        includeLower: includeLower,
+        upper: [upperReceivedAt],
+        includeUpper: includeUpper,
+      ));
     });
   }
 }

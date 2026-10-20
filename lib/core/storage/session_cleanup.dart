@@ -7,6 +7,10 @@ import 'local_repositories.dart';
 import 'secure_storage.dart';
 import '../../features/integration/services/integration_service.dart';
 import '../../features/telecaller/services/telecaller_shift_manager.dart';
+import '../services/periodic_work_coordinator.dart';
+import 'performance_logger.dart';
+import '../../features/library/repository/library_repository.dart';
+import 'web_storage/web_storage_service.dart';
 
 /// Clears all user-scoped local state so the next login cannot see prior data.
 /// Theme preference is intentionally preserved.
@@ -38,6 +42,13 @@ class SessionCleanup {
     } catch (_) {}
 
     try {
+      PeriodicWorkCoordinator.instance.onLogout();
+    } catch (_) {}
+    try {
+      await PerformanceLogger().flush();
+    } catch (_) {}
+
+    try {
       await SyncManager().disconnect();
     } catch (_) {}
 
@@ -56,9 +67,11 @@ class SessionCleanup {
     try {
       if (!kIsWeb) {
         await IsarService().clearAll();
+      } else {
+        await WebStorage().clearAllStores();
       }
     } catch (e) {
-      debugPrint('SessionCleanup: Isar clear failed: $e');
+      debugPrint('SessionCleanup: storage clear failed: $e');
     }
 
     try {
@@ -92,5 +105,6 @@ class SessionCleanup {
     OutboxLocalRepository.inMemory.clear();
     ClientLocalRepository.inMemory.clear();
     CampaignLeadLocalRepository.inMemory.clear();
+    LibraryRepository().clearCache();
   }
 }

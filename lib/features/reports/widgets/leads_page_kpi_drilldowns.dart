@@ -3,9 +3,10 @@ import 'package:intl/intl.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/theme/theme_manager.dart';
-import '../../requirements/models/requirement_model.dart';
+import '../models/business_insight_summary.dart';
 import '../models/report_kpi_type.dart';
 import '../models/report_data.dart';
+import '../services/business_insight_service.dart';
 
 Widget _buildLeadsBreadcrumb(BuildContext context, String previousLabel, VoidCallback onBack) {
   final primaryColor = CRMColors.primary;
@@ -37,12 +38,16 @@ class LeadsPageKpiDrilldownView extends StatefulWidget {
   final ReportKpiType kpiType;
   final ReportOverallData reportData;
   final VoidCallback onBack;
+  final DateTime? from;
+  final DateTime? to;
 
   const LeadsPageKpiDrilldownView({
     super.key,
     required this.kpiType,
     required this.reportData,
     required this.onBack,
+    this.from,
+    this.to,
   });
 
   @override
@@ -58,8 +63,79 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
   // Sub-filter for Call Attempted ('picked_up' vs 'open')
   String _callAttemptedSubTab = 'picked_up';
 
-  // Sub-filter for Follow-Ups & Re-Follow-Ups ('today', 'due', 'future')
-  String _followupSubTab = 'today';
+  // Sub-filter for Follow-Ups & Re-Follow-Ups ('all', 'today', 'due', 'future')
+  String _followupSubTab = 'all';
+
+  List<BusinessInsightLead> _leads = [];
+  bool _isLoading = true;
+  int _totalServerCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLeads();
+  }
+
+  @override
+  void didUpdateWidget(covariant LeadsPageKpiDrilldownView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.kpiType != widget.kpiType ||
+        oldWidget.from != widget.from ||
+        oldWidget.to != widget.to) {
+      _fetchLeads();
+    }
+  }
+
+  String _resolveBackendKpi() {
+    switch (widget.kpiType) {
+      case ReportKpiType.leadsNotStarted:
+        return 'not_started';
+      case ReportKpiType.leadsCallAttempted:
+        if (_callAttemptedSubTab == 'picked_up') return 'call_attempted_picked_up';
+        if (_callAttemptedSubTab == 'open') return 'call_attempted_open';
+        return 'call_attempted';
+      case ReportKpiType.leadsFollowups:
+        return 'follow_ups';
+      case ReportKpiType.leadsReFollowups:
+        return 're_follow_ups';
+      case ReportKpiType.leadsInterested:
+        return 'interested';
+      case ReportKpiType.leadsSiteVisitScheduled:
+        return 'site_visit_scheduled';
+      case ReportKpiType.leadsSiteVisitDone:
+      case ReportKpiType.siteVisitsDone:
+        return 'site_visit_done';
+      case ReportKpiType.leadsNegotiation:
+        return 'negotiation';
+      case ReportKpiType.leadsRejected:
+        return 'rejected';
+      default:
+        return 'all';
+    }
+  }
+
+  Future<void> _fetchLeads() async {
+    setState(() => _isLoading = true);
+    final kpiKey = _resolveBackendKpi();
+    try {
+      final res = await BusinessInsightService.instance.fetchLeads(
+        kpi: kpiKey,
+        from: widget.from,
+        to: widget.to,
+        limit: 1000,
+      );
+      if (mounted) {
+        setState(() {
+          _leads = (res['leads'] as List<dynamic>?)?.cast<BusinessInsightLead>() ?? [];
+          _totalServerCount = (res['total'] as int?) ?? _leads.length;
+          _isLoading = false;
+          _currentPage = 1;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -70,7 +146,6 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
-    final allLeads = widget.reportData.allLeads;
 
     // Title & Description according to KPI
     String title = widget.kpiType.displayName;
@@ -128,7 +203,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                 border: Border.all(color: headerColor.withValues(alpha: 0.3)),
               ),
               child: Text(
-                'Count: ${_calculateTotalCount(allLeads)}',
+                'Count: ${_calculateTotalCount()}',
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: headerColor),
               ),
             );
@@ -203,9 +278,9 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
 
         // Subtabs (if Call Attempted, Follow-Ups, or Re-Follow-Ups)
         if (widget.kpiType == ReportKpiType.leadsCallAttempted)
-          _buildCallAttemptedSubtabs(context, allLeads)
+          _buildCallAttemptedSubtabs(context)
         else if (widget.kpiType == ReportKpiType.leadsFollowups || widget.kpiType == ReportKpiType.leadsReFollowups)
-          _buildFollowupSubtabs(context, allLeads),
+          _buildFollowupSubtabs(context),
 
         if (widget.kpiType == ReportKpiType.leadsCallAttempted ||
             widget.kpiType == ReportKpiType.leadsFollowups ||
@@ -258,7 +333,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
               const SizedBox(height: CRMSpacing.m),
 
               // Render Leads Table
-              _buildLeadsContent(context, allLeads),
+              _buildLeadsContent(context),
             ],
           ),
         ),
@@ -266,49 +341,46 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
     );
   }
 
-  int _calculateTotalCount(List<RequirementModel> allLeads) {
-    switch (widget.kpiType) {
-      case ReportKpiType.leadsNotStarted:
-        return allLeads.where((l) => l.status.trim().toLowerCase() == 'not started').length;
-      case ReportKpiType.leadsCallAttempted:
-        return allLeads.where((l) =>
-            l.status.toLowerCase().startsWith('call attempted') ||
-            l.status.toLowerCase() == 'picked up' ||
-            l.status.toLowerCase() == 'open' ||
-            l.status.toLowerCase() == 'assigned').length;
-      case ReportKpiType.leadsFollowups:
-        return allLeads.where((l) =>
-            l.status.trim().toLowerCase() == 'follow-up' ||
-            l.status.trim().toLowerCase() == 'followup').length;
-      case ReportKpiType.leadsReFollowups:
-        return allLeads.where((l) =>
-            l.status.trim().toLowerCase() == 're-followup' ||
-            l.status.trim().toLowerCase() == 're-follow-up' ||
-            l.status.trim().toLowerCase() == 'refollowup').length;
-      case ReportKpiType.leadsInterested:
-        return allLeads.where((l) => l.status.trim().toLowerCase() == 'interested').length;
-      case ReportKpiType.leadsSiteVisitScheduled:
-        return allLeads.where((l) =>
-            l.status.trim().toLowerCase() == 'site visit' ||
-            l.status.trim().toLowerCase() == 'site visit scheduled').length;
-      case ReportKpiType.leadsSiteVisitDone:
-      case ReportKpiType.siteVisitsDone:
-        return allLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').length;
-      case ReportKpiType.leadsNegotiation:
-        return allLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').length;
-      case ReportKpiType.leadsRejected:
-        return allLeads.where((l) => l.status.trim().toLowerCase().startsWith('rejected')).length;
-      default:
-        return 0;
+  int _calculateTotalCount() {
+    final lpk = widget.reportData.insightSummary?.leadsPageKpis;
+    if (lpk != null) {
+      switch (widget.kpiType) {
+        case ReportKpiType.leadsNotStarted:
+          return lpk.notStarted;
+        case ReportKpiType.leadsCallAttempted:
+          if (_callAttemptedSubTab == 'picked_up') return lpk.callAttemptedPickedUp;
+          if (_callAttemptedSubTab == 'open') return lpk.callAttemptedOpen;
+          return lpk.callAttempted;
+        case ReportKpiType.leadsFollowups:
+          return lpk.followUps;
+        case ReportKpiType.leadsReFollowups:
+          return lpk.reFollowUps;
+        case ReportKpiType.leadsInterested:
+          return lpk.interested;
+        case ReportKpiType.leadsSiteVisitScheduled:
+          return lpk.siteVisitScheduled;
+        case ReportKpiType.leadsSiteVisitDone:
+        case ReportKpiType.siteVisitsDone:
+          return lpk.siteVisitDone;
+        case ReportKpiType.leadsNegotiation:
+          return lpk.negotiation;
+        case ReportKpiType.leadsRejected:
+          return lpk.rejectedLeads;
+        default:
+          break;
+      }
     }
+    final kpiVal = widget.reportData.kpiValues[widget.kpiType];
+    if (kpiVal != null) {
+      return kpiVal.count;
+    }
+    return _totalServerCount > 0 ? _totalServerCount : _leads.length;
   }
 
-  Widget _buildCallAttemptedSubtabs(BuildContext context, List<RequirementModel> allLeads) {
-    final pickedUpCount = allLeads.where((l) =>
-        l.status.toLowerCase() == 'call attempted (picked up)' ||
-        l.status.toLowerCase() == 'picked up').length;
-    final openCount = allLeads.where((l) =>
-        l.status.toLowerCase() == 'call attempted (open)').length;
+  Widget _buildCallAttemptedSubtabs(BuildContext context) {
+    final lpk = widget.reportData.insightSummary?.leadsPageKpis;
+    final pickedUpCount = lpk?.callAttemptedPickedUp ?? 0;
+    final openCount = lpk?.callAttemptedOpen ?? 0;
 
     final isDark = ThemeManager().isDarkMode;
 
@@ -328,38 +400,37 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
             count: pickedUpCount,
             isSelected: _callAttemptedSubTab == 'picked_up',
             color: const Color(0xFF0284C7),
-            onTap: () => setState(() {
-              _callAttemptedSubTab = 'picked_up';
-              _currentPage = 1;
-            }),
+            onTap: () {
+              setState(() {
+                _callAttemptedSubTab = 'picked_up';
+                _currentPage = 1;
+              });
+              _fetchLeads();
+            },
           ),
           _buildSubtabPill(
             label: 'Open',
             count: openCount,
             isSelected: _callAttemptedSubTab == 'open',
             color: const Color(0xFF2563EB),
-            onTap: () => setState(() {
-              _callAttemptedSubTab = 'open';
-              _currentPage = 1;
-            }),
+            onTap: () {
+              setState(() {
+                _callAttemptedSubTab = 'open';
+                _currentPage = 1;
+              });
+              _fetchLeads();
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFollowupSubtabs(BuildContext context, List<RequirementModel> allLeads) {
+  Widget _buildFollowupSubtabs(BuildContext context) {
     final isReFollowup = widget.kpiType == ReportKpiType.leadsReFollowups;
-    final targetLeads = allLeads.where((l) {
-      final s = l.status.trim().toLowerCase();
-      if (isReFollowup) {
-        return s == 're-followup' || s == 're-follow-up' || s == 'refollowup';
-      } else {
-        return s == 'follow-up' || s == 'followup';
-      }
-    }).toList();
+    final lpk = widget.reportData.insightSummary?.leadsPageKpis;
+    final totalFollowups = isReFollowup ? (lpk?.reFollowUps ?? _leads.length) : (lpk?.followUps ?? _leads.length);
 
-    // Categorize using FollowupSyncEngine logic
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -367,12 +438,8 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
     int dueCount = 0;
     int futureCount = 0;
 
-    for (final l in targetLeads) {
-      DateTime? dt;
-      if (l.nextFollowupDate != null && l.nextFollowupDate!.trim().isNotEmpty) {
-        dt = DateTime.tryParse(l.nextFollowupDate!.trim());
-      }
-      dt ??= l.createdAt;
+    for (final l in _leads) {
+      final dt = l.createdAt ?? now;
       final targetDate = DateTime(dt.year, dt.month, dt.day);
 
       if (targetDate.isBefore(today)) {
@@ -397,6 +464,16 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         spacing: 8,
         runSpacing: 6,
         children: [
+          _buildSubtabPill(
+            label: 'All Follow-Ups',
+            count: totalFollowups,
+            isSelected: _followupSubTab == 'all',
+            color: CRMColors.primary,
+            onTap: () => setState(() {
+              _followupSubTab = 'all';
+              _currentPage = 1;
+            }),
+          ),
           _buildSubtabPill(
             label: isReFollowup ? 'Today Re-Follow-Ups' : 'Today Follow-Ups',
             count: todayCount,
@@ -482,91 +559,45 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
     );
   }
 
-  Widget _buildLeadsContent(BuildContext context, List<RequirementModel> allLeads) {
-    List<RequirementModel> filtered = [];
+  Widget _buildLeadsContent(BuildContext context) {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(40),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    switch (widget.kpiType) {
-      case ReportKpiType.leadsNotStarted:
-        filtered = allLeads.where((l) => l.status.trim().toLowerCase() == 'not started').toList();
-        break;
+    List<BusinessInsightLead> filtered = _leads;
 
-      case ReportKpiType.leadsCallAttempted:
-        if (_callAttemptedSubTab == 'picked_up') {
-          filtered = allLeads.where((l) =>
-              l.status.toLowerCase() == 'call attempted (picked up)' ||
-              l.status.toLowerCase() == 'picked up').toList();
-        } else {
-          filtered = allLeads.where((l) =>
-              l.status.toLowerCase() == 'call attempted (open)').toList();
-        }
-        break;
+    // Filter by Follow-up subtab if active
+    if ((widget.kpiType == ReportKpiType.leadsFollowups || widget.kpiType == ReportKpiType.leadsReFollowups) && _followupSubTab != 'all') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
 
-      case ReportKpiType.leadsFollowups:
-      case ReportKpiType.leadsReFollowups:
-        final isRe = widget.kpiType == ReportKpiType.leadsReFollowups;
-        final targetLeads = allLeads.where((l) {
-          final s = l.status.trim().toLowerCase();
-          if (isRe) {
-            return s == 're-followup' || s == 're-follow-up' || s == 'refollowup';
-          } else {
-            return s == 'follow-up' || s == 'followup';
-          }
-        }).toList();
+      filtered = filtered.where((l) {
+        final dt = l.createdAt ?? now;
+        final targetDate = DateTime(dt.year, dt.month, dt.day);
 
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-
-        filtered = targetLeads.where((l) {
-          DateTime? dt;
-          if (l.nextFollowupDate != null && l.nextFollowupDate!.trim().isNotEmpty) {
-            dt = DateTime.tryParse(l.nextFollowupDate!.trim());
-          }
-          dt ??= l.createdAt;
-          final targetDate = DateTime(dt.year, dt.month, dt.day);
-
-          if (_followupSubTab == 'due') return targetDate.isBefore(today);
-          if (_followupSubTab == 'future') return targetDate.isAfter(today);
-          return targetDate.isAtSameMomentAs(today);
-        }).toList();
-        break;
-
-      case ReportKpiType.leadsInterested:
-        filtered = allLeads.where((l) => l.status.trim().toLowerCase() == 'interested').toList();
-        break;
-
-      case ReportKpiType.leadsSiteVisitScheduled:
-        filtered = allLeads.where((l) =>
-            l.status.trim().toLowerCase() == 'site visit' ||
-            l.status.trim().toLowerCase() == 'site visit scheduled').toList();
-        break;
-
-      case ReportKpiType.leadsSiteVisitDone:
-      case ReportKpiType.siteVisitsDone:
-        filtered = allLeads.where((l) => l.status.trim().toLowerCase() == 'site visit done').toList();
-        break;
-
-      case ReportKpiType.leadsNegotiation:
-        filtered = allLeads.where((l) => l.status.trim().toLowerCase() == 'negotiation').toList();
-        break;
-
-      case ReportKpiType.leadsRejected:
-        filtered = allLeads.where((l) => l.status.trim().toLowerCase().startsWith('rejected')).toList();
-        break;
-
-      default:
-        filtered = allLeads;
-        break;
+        if (_followupSubTab == 'due') return targetDate.isBefore(today);
+        if (_followupSubTab == 'future') return targetDate.isAfter(today);
+        return targetDate.isAtSameMomentAs(today);
+      }).toList();
     }
 
     // Apply Search Query
     if (_searchQuery.isNotEmpty) {
       final q = _searchQuery.toLowerCase();
       filtered = filtered.where((l) {
-        return l.clientName.toLowerCase().contains(q) ||
-            l.clientMobile.contains(q) ||
-            (l.assigneeName ?? '').toLowerCase().contains(q) ||
-            (l.status).toLowerCase().contains(q) ||
-            (l.remarks ?? '').toLowerCase().contains(q);
+        return l.customerName.toLowerCase().contains(q) ||
+            l.phone.contains(q) ||
+            (l.salespersonName ?? '').toLowerCase().contains(q) ||
+            (l.telecallerName ?? '').toLowerCase().contains(q) ||
+            (l.stage).toLowerCase().contains(q) ||
+            (l.source).toLowerCase().contains(q) ||
+            (l.rejectionReason ?? '').toLowerCase().contains(q) ||
+            (l.followupRemark ?? '').toLowerCase().contains(q) ||
+            (l.notInterestedRemark ?? '').toLowerCase().contains(q) ||
+            (l.assignmentRemark ?? '').toLowerCase().contains(q);
       }).toList();
     }
 
@@ -596,7 +627,6 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
 
     final isRejectedKpi = widget.kpiType == ReportKpiType.leadsRejected;
     final isFollowupKpi = widget.kpiType == ReportKpiType.leadsFollowups || widget.kpiType == ReportKpiType.leadsReFollowups;
-
     final isDark = ThemeManager().isDarkMode;
 
     return LayoutBuilder(
@@ -607,7 +637,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
         if (isMobile) {
           contentWidget = Column(
             children: pagedLeads
-                .map((req) => _buildMobileLeadCard(context, req, isFollowupKpi, isRejectedKpi, isDark))
+                .map((lead) => _buildMobileLeadCard(context, lead, isFollowupKpi, isRejectedKpi, isDark))
                 .toList(),
           );
         } else {
@@ -616,40 +646,28 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
             child: DataTable(
               columnSpacing: 22,
               columns: [
-                const DataColumn(label: Text('Client Details', style: TextStyle(fontWeight: FontWeight.bold))),
-                const DataColumn(label: Text('Requirement / Config', style: TextStyle(fontWeight: FontWeight.bold))),
-                const DataColumn(label: Text('Assigned Salesperson', style: TextStyle(fontWeight: FontWeight.bold))),
+                const DataColumn(label: Text('Customer Details', style: TextStyle(fontWeight: FontWeight.bold))),
+                const DataColumn(label: Text('Source / Lead Type', style: TextStyle(fontWeight: FontWeight.bold))),
+                const DataColumn(label: Text('Assigned Sales / Telecaller', style: TextStyle(fontWeight: FontWeight.bold))),
                 if (isFollowupKpi) ...[
-                  const DataColumn(label: Text('Follow-Up Date/Time', style: TextStyle(fontWeight: FontWeight.bold))),
                   const DataColumn(label: Text('Follow-Up Remark', style: TextStyle(fontWeight: FontWeight.bold))),
                 ],
                 if (isRejectedKpi) ...[
-                  const DataColumn(label: Text('Rejection Reason / Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(label: Text('Rejection Reason', style: TextStyle(fontWeight: FontWeight.bold))),
                   const DataColumn(label: Text('Rejection Remark', style: TextStyle(fontWeight: FontWeight.bold))),
                 ],
                 if (!isFollowupKpi && !isRejectedKpi)
-                  const DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(label: Text('Stage / Status', style: TextStyle(fontWeight: FontWeight.bold))),
                 const DataColumn(label: Text('Date / Time', style: TextStyle(fontWeight: FontWeight.bold))),
               ],
-              rows: pagedLeads.map((req) {
-                final dateStr = DateFormat('dd MMM yyyy, hh:mm a').format(req.createdAt);
-                final followupDateStr = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty
-                    ? (DateTime.tryParse(req.nextFollowupDate!.trim()) != null
-                        ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(req.nextFollowupDate!.trim()))
-                        : req.nextFollowupDate!)
-                    : 'Pending';
+              rows: pagedLeads.map((lead) {
+                final dateStr = lead.createdAt != null
+                    ? DateFormat('dd MMM yyyy, hh:mm a').format(lead.createdAt!)
+                    : 'N/A';
 
-                // Extract reason from status e.g. "Rejected (Budget Mismatch)" -> "Budget Mismatch"
-                String rejectionReason = 'Rejected';
-                if (req.status.contains('(') && req.status.contains(')')) {
-                  rejectionReason = req.status.substring(req.status.indexOf('(') + 1, req.status.indexOf(')'));
-                }
-
-                final salesperson = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
-                    ? req.assigneeName!.trim()
-                    : ((req.assignedTo != null && req.assignedTo!.trim().isNotEmpty)
-                        ? req.assignedTo!.trim()
-                        : 'Unassigned');
+                final staff = lead.salespersonName?.isNotEmpty == true
+                    ? lead.salespersonName!
+                    : (lead.telecallerName?.isNotEmpty == true ? lead.telecallerName! : 'Unassigned');
 
                 return DataRow(
                   cells: [
@@ -659,32 +677,25 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(req.clientName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          Text(req.clientMobile.isEmpty ? 'No Phone' : req.clientMobile, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
+                          Text(lead.customerName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(lead.phone.isEmpty ? 'No Phone' : lead.phone, style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context))),
                         ],
                       ),
                     ),
 
-                    // Requirement / Config
+                    // Source & Type
                     DataCell(
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            req.configurationName ?? (req.categoryName.isNotEmpty ? req.categoryName : 'Residential'),
-                            style: const TextStyle(fontSize: 12.5),
-                          ),
-                          if (req.areaNames.isNotEmpty)
-                            Text(
-                              req.areaNames.join(', '),
-                              style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
-                            ),
+                          _buildSourceBadge(lead.source),
+                          const SizedBox(width: 6),
+                          Text(lead.leadType.isEmpty ? 'Requirement' : lead.leadType, style: const TextStyle(fontSize: 12)),
                         ],
                       ),
                     ),
 
-                    // Assigned Salesperson
+                    // Assigned Staff
                     DataCell(
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -693,7 +704,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          salesperson,
+                          staff,
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
                         ),
                       ),
@@ -701,11 +712,10 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
 
                     // Follow-Up Specifics
                     if (isFollowupKpi) ...[
-                      DataCell(Text(followupDateStr, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
                       DataCell(
                         Container(
-                          constraints: const BoxConstraints(maxWidth: 220),
-                          child: Text(req.remarks ?? (req.notes ?? 'Scheduled follow-up'), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                          constraints: const BoxConstraints(maxWidth: 240),
+                          child: Text(lead.followupRemark ?? 'Scheduled follow-up', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
                         ),
                       ),
                     ],
@@ -719,29 +729,20 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                             color: const Color(0xFFDC2626).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(rejectionReason, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                          child: Text(lead.rejectionReason ?? 'Rejected', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
                         ),
                       ),
                       DataCell(
                         Container(
-                          constraints: const BoxConstraints(maxWidth: 220),
-                          child: Text(req.remarks ?? 'Rejected lead', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                          constraints: const BoxConstraints(maxWidth: 240),
+                          child: Text(lead.notInterestedRemark ?? lead.assignmentRemark ?? 'Rejected lead', style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
                         ),
                       ),
                     ],
 
                     // Default Status Badge
                     if (!isFollowupKpi && !isRejectedKpi)
-                      DataCell(
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _getLeadsStatusColor(req.status).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(req.status, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _getLeadsStatusColor(req.status))),
-                        ),
-                      ),
+                      DataCell(_buildStatusBadge(lead.stage)),
 
                     // Date / Time
                     DataCell(Text(dateStr, style: const TextStyle(fontSize: 12))),
@@ -792,31 +793,18 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
 
   Widget _buildMobileLeadCard(
     BuildContext context,
-    RequirementModel req,
+    BusinessInsightLead lead,
     bool isFollowupKpi,
     bool isRejectedKpi,
     bool isDark,
   ) {
-    final dateStr = DateFormat('dd MMM yyyy, hh:mm a').format(req.createdAt);
-    final followupDateStr = req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty
-        ? (DateTime.tryParse(req.nextFollowupDate!.trim()) != null
-            ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(req.nextFollowupDate!.trim()))
-            : req.nextFollowupDate!)
-        : 'Pending';
+    final dateStr = lead.createdAt != null
+        ? DateFormat('dd MMM yyyy, hh:mm a').format(lead.createdAt!)
+        : 'N/A';
 
-    String rejectionReason = 'Rejected';
-    if (req.status.contains('(') && req.status.contains(')')) {
-      rejectionReason = req.status.substring(req.status.indexOf('(') + 1, req.status.indexOf(')'));
-    }
-
-    final salesperson = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
-        ? req.assigneeName!.trim()
-        : ((req.assignedTo != null && req.assignedTo!.trim().isNotEmpty)
-            ? req.assignedTo!.trim()
-            : 'Unassigned');
-
-    final configText = req.configurationName ?? (req.categoryName.isNotEmpty ? req.categoryName : 'Residential');
-    final areaText = req.areaNames.isNotEmpty ? req.areaNames.join(', ') : null;
+    final staff = lead.salespersonName?.isNotEmpty == true
+        ? lead.salespersonName!
+        : (lead.telecallerName?.isNotEmpty == true ? lead.telecallerName! : 'Unassigned');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -835,7 +823,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
             children: [
               Expanded(
                 child: Text(
-                  req.clientName,
+                  lead.customerName,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -851,7 +839,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      rejectionReason,
+                      lead.rejectionReason ?? 'Rejected',
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -859,71 +847,39 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                   ),
                 )
               else if (!isFollowupKpi)
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                    decoration: BoxDecoration(
-                      color: _getLeadsStatusColor(req.status).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      req.status,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _getLeadsStatusColor(req.status)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
+                Flexible(child: _buildStatusBadge(lead.stage)),
             ],
           ),
           const SizedBox(height: 6),
 
-          // Row 2: Phone & Config
+          // Row 2: Phone & Source
           Wrap(
             spacing: 8,
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (req.clientMobile.isNotEmpty)
+              if (lead.phone.isNotEmpty)
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.phone_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
                     const SizedBox(width: 3),
                     Text(
-                      req.clientMobile,
+                      lead.phone,
                       style: TextStyle(fontSize: 11.5, color: CRMColors.textSecondaryOf(context)),
                     ),
                   ],
                 ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  configText,
-                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
-                ),
+              _buildSourceBadge(lead.source),
+              Text(
+                lead.leadType.isEmpty ? 'Requirement' : lead.leadType,
+                style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
               ),
-              if (areaText != null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.location_on_outlined, size: 12, color: CRMColors.textSecondaryOf(context)),
-                    const SizedBox(width: 2),
-                    Text(
-                      areaText,
-                      style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context)),
-                    ),
-                  ],
-                ),
             ],
           ),
           const SizedBox(height: 8),
 
-          // Row 3: Salesperson + Date
+          // Row 3: Staff + Date
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -941,7 +897,7 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          salesperson,
+                          staff,
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -974,23 +930,11 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
                   const Icon(Icons.event_repeat_rounded, size: 13, color: Color(0xFF0D9488)),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Follow-Up: $followupDateStr',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0D9488)),
-                        ),
-                        if (req.remarks != null && req.remarks!.trim().isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            req.remarks!,
-                            style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ],
+                    child: Text(
+                      'Remark: ${lead.followupRemark ?? "Scheduled follow-up"}',
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0D9488)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -999,16 +943,57 @@ class _LeadsPageKpiDrilldownViewState extends State<LeadsPageKpiDrilldownView> {
           ],
 
           // Optional Rejection Specifics
-          if (isRejectedKpi && (req.remarks != null && req.remarks!.trim().isNotEmpty)) ...[
+          if (isRejectedKpi && (lead.notInterestedRemark != null || lead.assignmentRemark != null)) ...[
             const SizedBox(height: 6),
             Text(
-              'Remark: ${req.remarks}',
+              'Remark: ${lead.notInterestedRemark ?? lead.assignmentRemark}',
               style: TextStyle(fontSize: 11, color: CRMColors.textSecondaryOf(context), fontStyle: FontStyle.italic),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildSourceBadge(String source) {
+    Color color;
+    final s = source.toLowerCase();
+    if (s.contains('meta') || s.contains('facebook')) {
+      color = const Color(0xFF1877F2);
+    } else if (s.contains('housing')) {
+      color = const Color(0xFFE11D48);
+    } else if (s.contains('webhook')) {
+      color = const Color(0xFF8B5CF6);
+    } else {
+      color = const Color(0xFFEA580C);
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        source.isEmpty ? 'Direct' : source,
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: color),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    final color = _getLeadsStatusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        status.isEmpty ? 'Active' : status,
+        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }

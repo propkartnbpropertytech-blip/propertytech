@@ -30,6 +30,7 @@ import '../../features/requirements/services/match_criteria_manager.dart';
 import '../../features/settings/services/upload_limits_manager.dart';
 import '../../features/campaign/bloc/campaign_connections_bloc.dart';
 import '../utils/app_logger.dart';
+import 'sync_engine.dart';
 
 enum SyncState {
   disconnected,
@@ -133,7 +134,7 @@ class SyncManager {
 
   /// Trigger delta sync after user authentication.
   Future<void> connectAfterAuth() async {
-    await connect();
+    await connect(skipDeltaSync: true);
   }
 
   void _updateState(SyncState newState) {
@@ -142,10 +143,12 @@ class SyncManager {
     AppLogger.d("Sync State changed to: $newState");
   }
 
-  Future<void> connect() async {
+  Future<void> connect({bool skipDeltaSync = false}) async {
     try {
       _updateState(SyncState.connecting);
-      await triggerDeltaSync();
+      if (!skipDeltaSync) {
+        await triggerDeltaSync();
+      }
       _updateState(SyncState.connected);
       _reconnectAttempts = 0;
     } catch (e) {
@@ -373,29 +376,19 @@ class SyncManager {
       try {
         await isar.writeTxn(() async {
           if (propertiesToPut.isNotEmpty) await isar.propertyLocals.putAll(propertiesToPut);
-          for (final id in propertiesToDelete) {
-            await isar.propertyLocals.filter().idEqualTo(id).deleteAll();
-          }
+          if (propertiesToDelete.isNotEmpty) await isar.propertyLocals.deleteAllById(propertiesToDelete);
 
           if (requirementsToPut.isNotEmpty) await isar.requirementLocals.putAll(requirementsToPut);
-          for (final id in requirementsToDelete) {
-            await isar.requirementLocals.filter().idEqualTo(id).deleteAll();
-          }
+          if (requirementsToDelete.isNotEmpty) await isar.requirementLocals.deleteAllById(requirementsToDelete);
 
           if (followupsToPut.isNotEmpty) await isar.followupLocals.putAll(followupsToPut);
-          for (final id in followupsToDelete) {
-            await isar.followupLocals.filter().idEqualTo(id).deleteAll();
-          }
+          if (followupsToDelete.isNotEmpty) await isar.followupLocals.deleteAllById(followupsToDelete);
 
           if (buildersToPut.isNotEmpty) await isar.builderLocals.putAll(buildersToPut);
-          for (final id in buildersToDelete) {
-            await isar.builderLocals.filter().idEqualTo(id).deleteAll();
-          }
+          if (buildersToDelete.isNotEmpty) await isar.builderLocals.deleteAllById(buildersToDelete);
 
           if (ownersToPut.isNotEmpty) await isar.ownerLocals.putAll(ownersToPut);
-          for (final id in ownersToDelete) {
-            await isar.ownerLocals.filter().idEqualTo(id).deleteAll();
-          }
+          if (ownersToDelete.isNotEmpty) await isar.ownerLocals.deleteAllById(ownersToDelete);
         });
       } catch (e) {
         AppLogger.e("Batch write transaction failed: $e");
@@ -515,49 +508,28 @@ class SyncManager {
       // 3. Replay remaining safe outbox operations
       await processOutboxQueue();
 
-      // 4. Merge server data into local database
+      // 4. Incremental merge into local database (Zero table clears!)
+      final pendingOutboxIds = await _getPendingOutboxTargetIds();
       final pList = serverProperties.map((item) => PropertyModel.fromJson(item).toLocal()).toList();
       final rList = serverRequirements.map((item) => RequirementModel.fromJson(item).toLocal()).toList();
       final bList = serverBuilders.map((item) => BuilderModel.fromJson(item).toLocal()).toList();
       final oList = serverOwners.map((item) => OwnerModel.fromJson(item).toLocal()).toList();
 
-      if (kIsWeb) {
-        PropertyLocalRepository.inMemory.clear();
-        for (final p in pList) PropertyLocalRepository.inMemory[p.id] = p;
+      final propChanges = await _syncPropertiesIncremental(pList, pendingOutboxIds);
+      final reqChanges = await _syncRequirementsIncremental(rList, pendingOutboxIds);
+      final builderChanges = await _syncBuildersIncremental(bList, pendingOutboxIds);
+      final ownerChanges = await _syncOwnersIncremental(oList, pendingOutboxIds);
 
-        RequirementLocalRepository.inMemory.clear();
-        for (final r in rList) RequirementLocalRepository.inMemory[r.id] = r;
+      // Only broadcast refresh if actual data was mutated
+      if (propChanges > 0) _coordinator.refreshProperties();
+      if (reqChanges > 0) _coordinator.refreshRequirements();
+      if (builderChanges > 0) _coordinator.refreshBuilders();
+      if (ownerChanges > 0) _coordinator.refreshOwners();
 
-        BuilderLocalRepository.inMemory.clear();
-        for (final b in bList) BuilderLocalRepository.inMemory[b.id] = b;
-
-        OwnerLocalRepository.inMemory.clear();
-        for (final o in oList) OwnerLocalRepository.inMemory[o.id] = o;
-      } else {
-        final isar = IsarService().isar;
-        await isar.writeTxn(() async {
-          await isar.propertyLocals.clear();
-          await isar.propertyLocals.putAll(pList);
-
-          await isar.requirementLocals.clear();
-          await isar.requirementLocals.putAll(rList);
-
-          await isar.builderLocals.clear();
-          await isar.builderLocals.putAll(bList);
-
-          await isar.ownerLocals.clear();
-          await isar.ownerLocals.putAll(oList);
-        });
-      }
-
-      _coordinator.refreshProperties();
-      _coordinator.refreshRequirements();
-      _coordinator.refreshBuilders();
-      _coordinator.refreshOwners();
-
+      final totalChanges = propChanges + reqChanges + builderChanges + ownerChanges;
       final totalMs = DateTime.now().difference(start).inMilliseconds;
       PerformanceLogger().logMetric(
-        operation: 'SyncManager: Delta Sync completed successfully | Merged: ${pList.length + rList.length} records',
+        operation: 'SyncManager: Delta Sync completed | Mutated: $totalChanges records (${pList.length + rList.length} verified)',
         totalMs: totalMs,
       );
 
@@ -570,7 +542,7 @@ class SyncManager {
 
   /// Lightweight, non-blocking 9-second periodic database ping.
   /// Replays outbox, checks for server deltas across all core entities in parallel,
-  /// merges them into local Isar storage, and notifies reactive UI streams.
+  /// merges them into local Isar storage, and notifies reactive UI streams ONLY on actual changes.
   Future<int> pingDatabase() async {
     if (_isPingInProgress) {
       AppLogger.d("SyncManager: Ping already in progress, skipping tick.");
@@ -628,80 +600,29 @@ class SyncManager {
         } catch (_) {}
       }
 
-      if (kIsWeb) {
-        if (pList.isNotEmpty) {
-          PropertyLocalRepository.inMemory.clear();
-          for (final p in pList) PropertyLocalRepository.inMemory[p.id] = p;
-        }
-        if (rList.isNotEmpty) {
-          RequirementLocalRepository.inMemory.clear();
-          for (final r in rList) RequirementLocalRepository.inMemory[r.id] = r;
-        }
-        if (bList.isNotEmpty) {
-          BuilderLocalRepository.inMemory.clear();
-          for (final b in bList) BuilderLocalRepository.inMemory[b.id] = b;
-        }
-        if (oList.isNotEmpty) {
-          OwnerLocalRepository.inMemory.clear();
-          for (final o in oList) OwnerLocalRepository.inMemory[o.id] = o;
-        }
-        if (cList.isNotEmpty) {
-          ClientLocalRepository.inMemory.clear();
-          for (final c in cList) ClientLocalRepository.inMemory[c.id] = c;
-        }
-        if (fList.isNotEmpty) {
-          FollowupLocalRepository.inMemory.clear();
-          for (final f in fList) FollowupLocalRepository.inMemory[f.id] = f;
-        }
-        if (freshDashboard != null) {
-          DashboardLocalRepository.inMemoryDashboard = freshDashboard.toLocal();
-        }
-      } else {
-        final isar = IsarService().isar;
-        await isar.writeTxn(() async {
-          if (pList.isNotEmpty) {
-            await isar.propertyLocals.clear();
-            await isar.propertyLocals.putAll(pList);
-          }
-          if (rList.isNotEmpty) {
-            await isar.requirementLocals.clear();
-            await isar.requirementLocals.putAll(rList);
-          }
-          if (bList.isNotEmpty) {
-            await isar.builderLocals.clear();
-            await isar.builderLocals.putAll(bList);
-          }
-          if (oList.isNotEmpty) {
-            await isar.ownerLocals.clear();
-            await isar.ownerLocals.putAll(oList);
-          }
-          if (cList.isNotEmpty) {
-            await isar.clientLocals.clear();
-            await isar.clientLocals.putAll(cList);
-          }
-          if (fList.isNotEmpty) {
-            await isar.followupLocals.clear();
-            await isar.followupLocals.putAll(fList);
-          }
-          if (freshDashboard != null) {
-            final localDash = freshDashboard.toLocal();
-            await isar.dashboardLocals.clear();
-            await isar.dashboardLocals.put(localDash);
-          }
-        });
-      }
+      // Reconcile pending outbox IDs to avoid deleting offline created entities
+      final pendingOutboxIds = await _getPendingOutboxTargetIds();
 
-      // Notify debounced UI streams
-      if (pList.isNotEmpty) _coordinator.refreshProperties();
-      if (rList.isNotEmpty) _coordinator.refreshRequirements();
-      if (bList.isNotEmpty) _coordinator.refreshBuilders();
-      if (oList.isNotEmpty) _coordinator.refreshOwners();
-      if (cList.isNotEmpty) _coordinator.refreshClients();
-      if (freshDashboard != null || fList.isNotEmpty) _coordinator.refreshDashboard();
+      // Incremental sync for each table (returns number of actual modified records)
+      final propChanges = await _syncPropertiesIncremental(pList, pendingOutboxIds);
+      final reqChanges = await _syncRequirementsIncremental(rList, pendingOutboxIds);
+      final builderChanges = await _syncBuildersIncremental(bList, pendingOutboxIds);
+      final ownerChanges = await _syncOwnersIncremental(oList, pendingOutboxIds);
+      final clientChanges = await _syncClientsIncremental(cList, pendingOutboxIds);
+      final followupChanges = await _syncFollowupsIncremental(fList, pendingOutboxIds);
+      final dashChanges = await _syncDashboardIncremental(freshDashboard);
 
-      final totalUpdated = pList.length + rList.length + bList.length + oList.length + cList.length + campaignCount;
+      // Notify debounced UI streams ONLY if actual data changed!
+      if (propChanges > 0) _coordinator.refreshProperties();
+      if (reqChanges > 0) _coordinator.refreshRequirements();
+      if (builderChanges > 0) _coordinator.refreshBuilders();
+      if (ownerChanges > 0) _coordinator.refreshOwners();
+      if (clientChanges > 0) _coordinator.refreshClients();
+      if (dashChanges > 0 || followupChanges > 0) _coordinator.refreshDashboard();
+
+      final totalUpdated = propChanges + reqChanges + builderChanges + ownerChanges + clientChanges + followupChanges + campaignCount;
       final elapsedMs = DateTime.now().difference(start).inMilliseconds;
-      AppLogger.sync("SyncManager: 9s database ping completed in ${elapsedMs}ms ($totalUpdated records refreshed)");
+      AppLogger.sync("SyncManager: 9s database ping completed in ${elapsedMs}ms ($totalUpdated actual changes applied)");
 
       return totalUpdated;
     } catch (e) {
@@ -710,6 +631,349 @@ class SyncManager {
     } finally {
       _isPingInProgress = false;
     }
+  }
+
+  Future<Set<String>> _getPendingOutboxTargetIds() async {
+    final pendingRequests = await _coordinator.outboxLocal.getQueuedRequests();
+    final ids = <String>{};
+    for (final req in pendingRequests) {
+      final parts = req.endpoint.split('/');
+      if (parts.length > 2 && parts[2].isNotEmpty) {
+        ids.add(parts[2]);
+      }
+    }
+    return ids;
+  }
+
+  Future<int> _syncPropertiesIncremental(List<PropertyLocal> serverList, Set<String> pendingOutboxIds) async {
+    if (serverList.isEmpty) return 0;
+
+    final isar = kIsWeb ? null : IsarService().isar;
+    final Map<String, PropertyLocal> localMap;
+    if (kIsWeb) {
+      localMap = Map<String, PropertyLocal>.from(PropertyLocalRepository.inMemory);
+    } else {
+      final all = await isar!.propertyLocals.where().findAll();
+      localMap = {for (final p in all) p.id: p};
+    }
+
+    final diff = SyncEngine.computeDiff<PropertyLocal>(
+      serverItems: serverList,
+      localItems: localMap,
+      getId: (p) => p.id,
+      isEqual: SyncEngine.arePropertiesEqual,
+      pendingOutboxIds: pendingOutboxIds,
+      preserveLocalMetadata: (serverItem, localItem) {
+        serverItem.isarId = localItem.isarId;
+      },
+    );
+
+    if (!diff.hasChanges) {
+      return 0;
+    }
+
+    if (kIsWeb) {
+      for (final p in diff.toInsert) {
+        PropertyLocalRepository.inMemory[p.id] = p;
+      }
+      for (final p in diff.toUpdate) {
+        PropertyLocalRepository.inMemory[p.id] = p;
+      }
+      for (final id in diff.toDelete) {
+        PropertyLocalRepository.inMemory.remove(id);
+      }
+      await _coordinator.propertyLocal.saveInMemoryCacheOnlyIfChanged();
+      return diff.totalChanges;
+    }
+
+    await SyncEngine.applyBatchedWrites<PropertyLocal>(
+      diff: diff,
+      putBatch: (batch) => isar!.writeTxn(() => isar.propertyLocals.putAll(batch)),
+      deleteBatch: (ids) => isar!.writeTxn(() => isar.propertyLocals.deleteAllById(ids)),
+      batchSize: SyncEngine.defaultBatchSize,
+    );
+
+    return diff.totalChanges;
+  }
+
+  Future<int> _syncRequirementsIncremental(List<RequirementLocal> serverList, Set<String> pendingOutboxIds) async {
+    if (serverList.isEmpty) return 0;
+
+    final isar = kIsWeb ? null : IsarService().isar;
+    final Map<String, RequirementLocal> localMap;
+    if (kIsWeb) {
+      localMap = Map<String, RequirementLocal>.from(RequirementLocalRepository.inMemory);
+    } else {
+      final all = await isar!.requirementLocals.where().findAll();
+      localMap = {for (final r in all) r.id: r};
+    }
+
+    final diff = SyncEngine.computeDiff<RequirementLocal>(
+      serverItems: serverList,
+      localItems: localMap,
+      getId: (r) => r.id,
+      isEqual: SyncEngine.areRequirementsEqual,
+      pendingOutboxIds: pendingOutboxIds,
+      preserveLocalMetadata: (serverItem, localItem) {
+        serverItem.isarId = localItem.isarId;
+      },
+    );
+
+    if (!diff.hasChanges) {
+      return 0;
+    }
+
+    if (kIsWeb) {
+      for (final r in diff.toInsert) {
+        RequirementLocalRepository.inMemory[r.id] = r;
+      }
+      for (final r in diff.toUpdate) {
+        RequirementLocalRepository.inMemory[r.id] = r;
+      }
+      for (final id in diff.toDelete) {
+        RequirementLocalRepository.inMemory.remove(id);
+      }
+      await _coordinator.requirementLocal.saveInMemoryCacheOnlyIfChanged();
+      return diff.totalChanges;
+    }
+
+    await SyncEngine.applyBatchedWrites<RequirementLocal>(
+      diff: diff,
+      putBatch: (batch) => isar!.writeTxn(() => isar.requirementLocals.putAll(batch)),
+      deleteBatch: (ids) => isar!.writeTxn(() => isar.requirementLocals.deleteAllById(ids)),
+      batchSize: SyncEngine.defaultBatchSize,
+    );
+
+    return diff.totalChanges;
+  }
+
+  Future<int> _syncBuildersIncremental(List<BuilderLocal> serverList, Set<String> pendingOutboxIds) async {
+    if (serverList.isEmpty) return 0;
+
+    final isar = kIsWeb ? null : IsarService().isar;
+    final Map<String, BuilderLocal> localMap;
+    if (kIsWeb) {
+      localMap = Map<String, BuilderLocal>.from(BuilderLocalRepository.inMemory);
+    } else {
+      final all = await isar!.builderLocals.where().findAll();
+      localMap = {for (final b in all) b.id: b};
+    }
+
+    final diff = SyncEngine.computeDiff<BuilderLocal>(
+      serverItems: serverList,
+      localItems: localMap,
+      getId: (b) => b.id,
+      isEqual: SyncEngine.areBuildersEqual,
+      pendingOutboxIds: pendingOutboxIds,
+      preserveLocalMetadata: (serverItem, localItem) {
+        serverItem.isarId = localItem.isarId;
+      },
+    );
+
+    if (!diff.hasChanges) {
+      return 0;
+    }
+
+    if (kIsWeb) {
+      for (final b in diff.toInsert) {
+        BuilderLocalRepository.inMemory[b.id] = b;
+      }
+      for (final b in diff.toUpdate) {
+        BuilderLocalRepository.inMemory[b.id] = b;
+      }
+      for (final id in diff.toDelete) {
+        BuilderLocalRepository.inMemory.remove(id);
+      }
+      return diff.totalChanges;
+    }
+
+    await SyncEngine.applyBatchedWrites<BuilderLocal>(
+      diff: diff,
+      putBatch: (batch) => isar!.writeTxn(() => isar.builderLocals.putAll(batch)),
+      deleteBatch: (ids) => isar!.writeTxn(() => isar.builderLocals.deleteAllById(ids)),
+      batchSize: SyncEngine.defaultBatchSize,
+    );
+
+    return diff.totalChanges;
+  }
+
+  Future<int> _syncOwnersIncremental(List<OwnerLocal> serverList, Set<String> pendingOutboxIds) async {
+    if (serverList.isEmpty) return 0;
+
+    final isar = kIsWeb ? null : IsarService().isar;
+    final Map<String, OwnerLocal> localMap;
+    if (kIsWeb) {
+      localMap = Map<String, OwnerLocal>.from(OwnerLocalRepository.inMemory);
+    } else {
+      final all = await isar!.ownerLocals.where().findAll();
+      localMap = {for (final o in all) o.id: o};
+    }
+
+    final diff = SyncEngine.computeDiff<OwnerLocal>(
+      serverItems: serverList,
+      localItems: localMap,
+      getId: (o) => o.id,
+      isEqual: SyncEngine.areOwnersEqual,
+      pendingOutboxIds: pendingOutboxIds,
+      preserveLocalMetadata: (serverItem, localItem) {
+        serverItem.isarId = localItem.isarId;
+      },
+    );
+
+    if (!diff.hasChanges) {
+      return 0;
+    }
+
+    if (kIsWeb) {
+      for (final o in diff.toInsert) {
+        OwnerLocalRepository.inMemory[o.id] = o;
+      }
+      for (final o in diff.toUpdate) {
+        OwnerLocalRepository.inMemory[o.id] = o;
+      }
+      for (final id in diff.toDelete) {
+        OwnerLocalRepository.inMemory.remove(id);
+      }
+      return diff.totalChanges;
+    }
+
+    await SyncEngine.applyBatchedWrites<OwnerLocal>(
+      diff: diff,
+      putBatch: (batch) => isar!.writeTxn(() => isar.ownerLocals.putAll(batch)),
+      deleteBatch: (ids) => isar!.writeTxn(() => isar.ownerLocals.deleteAllById(ids)),
+      batchSize: SyncEngine.defaultBatchSize,
+    );
+
+    return diff.totalChanges;
+  }
+
+  Future<int> _syncClientsIncremental(List<ClientLocal> serverList, Set<String> pendingOutboxIds) async {
+    if (serverList.isEmpty) return 0;
+
+    final isar = kIsWeb ? null : IsarService().isar;
+    final Map<String, ClientLocal> localMap;
+    if (kIsWeb) {
+      localMap = Map<String, ClientLocal>.from(ClientLocalRepository.inMemory);
+    } else {
+      final all = await isar!.clientLocals.where().findAll();
+      localMap = {for (final c in all) c.id: c};
+    }
+
+    final diff = SyncEngine.computeDiff<ClientLocal>(
+      serverItems: serverList,
+      localItems: localMap,
+      getId: (c) => c.id,
+      isEqual: SyncEngine.areClientsEqual,
+      pendingOutboxIds: pendingOutboxIds,
+      preserveLocalMetadata: (serverItem, localItem) {
+        serverItem.isarId = localItem.isarId;
+      },
+    );
+
+    if (!diff.hasChanges) {
+      return 0;
+    }
+
+    if (kIsWeb) {
+      for (final c in diff.toInsert) {
+        ClientLocalRepository.inMemory[c.id] = c;
+      }
+      for (final c in diff.toUpdate) {
+        ClientLocalRepository.inMemory[c.id] = c;
+      }
+      for (final id in diff.toDelete) {
+        ClientLocalRepository.inMemory.remove(id);
+      }
+      return diff.totalChanges;
+    }
+
+    await SyncEngine.applyBatchedWrites<ClientLocal>(
+      diff: diff,
+      putBatch: (batch) => isar!.writeTxn(() => isar.clientLocals.putAll(batch)),
+      deleteBatch: (ids) => isar!.writeTxn(() => isar.clientLocals.deleteAllById(ids)),
+      batchSize: SyncEngine.defaultBatchSize,
+    );
+
+    return diff.totalChanges;
+  }
+
+  Future<int> _syncFollowupsIncremental(List<FollowupLocal> serverList, Set<String> pendingOutboxIds) async {
+    if (serverList.isEmpty) return 0;
+
+    final isar = kIsWeb ? null : IsarService().isar;
+    final Map<String, FollowupLocal> localMap;
+    if (kIsWeb) {
+      localMap = Map<String, FollowupLocal>.from(FollowupLocalRepository.inMemory);
+    } else {
+      final all = await isar!.followupLocals.where().findAll();
+      localMap = {for (final f in all) f.id: f};
+    }
+
+    final diff = SyncEngine.computeDiff<FollowupLocal>(
+      serverItems: serverList,
+      localItems: localMap,
+      getId: (f) => f.id,
+      isEqual: SyncEngine.areFollowupsEqual,
+      pendingOutboxIds: pendingOutboxIds,
+      preserveLocalMetadata: (serverItem, localItem) {
+        serverItem.isarId = localItem.isarId;
+      },
+    );
+
+    if (!diff.hasChanges) {
+      return 0;
+    }
+
+    if (kIsWeb) {
+      for (final f in diff.toInsert) {
+        FollowupLocalRepository.inMemory[f.id] = f;
+      }
+      for (final f in diff.toUpdate) {
+        FollowupLocalRepository.inMemory[f.id] = f;
+      }
+      for (final id in diff.toDelete) {
+        FollowupLocalRepository.inMemory.remove(id);
+      }
+      await _coordinator.followupLocal.saveInMemoryCacheOnlyIfChanged();
+      return diff.totalChanges;
+    }
+
+    await SyncEngine.applyBatchedWrites<FollowupLocal>(
+      diff: diff,
+      putBatch: (batch) => isar!.writeTxn(() => isar.followupLocals.putAll(batch)),
+      deleteBatch: (ids) => isar!.writeTxn(() => isar.followupLocals.deleteAllById(ids)),
+      batchSize: SyncEngine.defaultBatchSize,
+    );
+
+    return diff.totalChanges;
+  }
+
+  Future<int> _syncDashboardIncremental(DashboardData? freshDashboard) async {
+    if (freshDashboard == null) return 0;
+    final incomingLocal = freshDashboard.toLocal();
+
+    if (kIsWeb) {
+      final current = DashboardLocalRepository.inMemoryDashboard;
+      if (current != null && SyncEngine.areDashboardsEqual(current, incomingLocal)) {
+        return 0;
+      }
+      DashboardLocalRepository.inMemoryDashboard = incomingLocal;
+      return 1;
+    }
+
+    final isar = IsarService().isar;
+    final current = await isar.dashboardLocals.getById('singleton');
+    if (current != null) {
+      incomingLocal.isarId = current.isarId;
+      if (SyncEngine.areDashboardsEqual(current, incomingLocal)) {
+        return 0;
+      }
+    }
+
+    await isar.writeTxn(() async {
+      await isar.dashboardLocals.put(incomingLocal);
+    });
+    return 1;
   }
 
   Future<void> processOutboxQueue() async {
