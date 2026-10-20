@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Represents a single manageable page or submenu in the Page Control system.
@@ -205,4 +206,44 @@ class PageControlModel {
         return Icons.web_rounded;
     }
   }
+
+  /// Determines if two page control models have identical effective control attributes.
+  bool isEffectivelyEqualTo(PageControlModel other) {
+    if (identical(this, other)) return true;
+    return pageKey == other.pageKey &&
+        title == other.title &&
+        route == other.route &&
+        icon == other.icon &&
+        category == other.category &&
+        parentKey == other.parentKey &&
+        isShared == other.isShared &&
+        isUnderDevelopment == other.isUnderDevelopment &&
+        message == other.message &&
+        sortOrder == other.sortOrder &&
+        listEquals(roles, other.roles) &&
+        listEquals(underDevelopmentRoles, other.underDevelopmentRoles);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! PageControlModel) return false;
+    return isEffectivelyEqualTo(other);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        pageKey,
+        title,
+        route,
+        icon,
+        category,
+        parentKey,
+        isShared,
+        isUnderDevelopment,
+        message,
+        sortOrder,
+        Object.hashAll(roles),
+        Object.hashAll(underDevelopmentRoles),
+      );
 }

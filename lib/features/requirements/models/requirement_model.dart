@@ -551,8 +551,8 @@ class RequirementModel {
 
     return RequirementModel(
       id: json['id'] ?? '',
-      clientName: json['clientName'] ?? json['customer_name'] ?? '',
-      clientMobile: json['clientMobile'] ?? json['mobile'] ?? '',
+      clientName: json['clientName'] ?? json['customer_name'] ?? json['client_name'] ?? '',
+      clientMobile: json['clientMobile'] ?? json['mobile'] ?? json['client_mobile'] ?? '',
       categoryId: json['categoryId'] ?? json['category_id'] ?? '',
       categoryName: catName,
       propertyTypeId: json['propertyTypeId'] ?? json['property_type_id'] ?? '',
@@ -597,6 +597,14 @@ class RequirementModel {
         }
         if (json['assigned_user'] is Map) {
           return (json['assigned_user']['full_name'] ?? json['assigned_user']['fullName'] ?? json['assigned_user']['name']) as String?;
+        }
+        if (json['meta_custom_fields'] is Map && json['meta_custom_fields']['_transfer'] is Map) {
+          final tName = json['meta_custom_fields']['_transfer']['assigned_to_name'];
+          if (tName != null && tName.toString().trim().isNotEmpty) return tName.toString().trim();
+        }
+        if (json['metaCustomFields'] is Map && json['metaCustomFields']['_transfer'] is Map) {
+          final tName = json['metaCustomFields']['_transfer']['assigned_to_name'];
+          if (tName != null && tName.toString().trim().isNotEmpty) return tName.toString().trim();
         }
         return null;
       }(),
@@ -649,15 +657,41 @@ class RequirementModel {
       leadQuality: (json['lead_quality'] ?? json['leadQuality'])?.toString(),
       assignedTelecallerId: (json['assigned_telecaller_id'] ??
               json['assignedTelecallerId'] ??
+              json['telecaller_id'] ??
+              json['telecallerId'] ??
               (json['meta_custom_fields'] is Map
                   ? (json['meta_custom_fields']['assigned_telecaller_id'] ??
                       json['meta_custom_fields']['telecaller_id'] ??
-                      json['meta_custom_fields']['telecaller_by'])
+                      json['meta_custom_fields']['telecaller_by'] ??
+                      (json['meta_custom_fields']['_transfer'] is Map
+                          ? (json['meta_custom_fields']['_transfer']['telecaller_id'] ??
+                              json['meta_custom_fields']['_transfer']['interacted_by'])
+                          : null) ??
+                      (json['meta_custom_fields']['_cnr'] is Map
+                          ? (json['meta_custom_fields']['_cnr']['telecaller_id'] ??
+                              json['meta_custom_fields']['_cnr']['interacted_by'])
+                          : null) ??
+                      (json['meta_custom_fields']['_callback'] is Map
+                          ? (json['meta_custom_fields']['_callback']['telecaller_id'] ??
+                              json['meta_custom_fields']['_callback']['interacted_by'])
+                          : null))
                   : null) ??
               (json['metaCustomFields'] is Map
                   ? (json['metaCustomFields']['assigned_telecaller_id'] ??
                       json['metaCustomFields']['telecaller_id'] ??
-                      json['metaCustomFields']['telecaller_by'])
+                      json['metaCustomFields']['telecaller_by'] ??
+                      (json['metaCustomFields']['_transfer'] is Map
+                          ? (json['metaCustomFields']['_transfer']['telecaller_id'] ??
+                              json['metaCustomFields']['_transfer']['interacted_by'])
+                          : null) ??
+                      (json['metaCustomFields']['_cnr'] is Map
+                          ? (json['metaCustomFields']['_cnr']['telecaller_id'] ??
+                              json['metaCustomFields']['_cnr']['interacted_by'])
+                          : null) ??
+                      (json['metaCustomFields']['_callback'] is Map
+                          ? (json['metaCustomFields']['_callback']['telecaller_id'] ??
+                              json['metaCustomFields']['_callback']['interacted_by'])
+                          : null))
                   : null))
           ?.toString(),
       salesAssignedAt: () {

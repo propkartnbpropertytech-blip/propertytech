@@ -23,7 +23,8 @@ class TeamMessagesScreen extends StatefulWidget {
   State<TeamMessagesScreen> createState() => _TeamMessagesScreenState();
 }
 
-class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
+class _TeamMessagesScreenState extends State<TeamMessagesScreen>
+    with WidgetsBindingObserver {
   final TeamMessagesService _service = TeamMessagesService();
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
@@ -78,7 +79,16 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
   @override
   void initState() {
     super.initState();
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
     _loadUsers();
+    _startTimers();
+  }
+
+  void _startTimers() {
+    _conversationPollTimer?.cancel();
+    _usersPollTimer?.cancel();
 
     // Poll active conversation every 4 seconds
     _conversationPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
@@ -96,7 +106,30 @@ class _TeamMessagesScreenState extends State<TeamMessagesScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _conversationPollTimer?.cancel();
+      _conversationPollTimer = null;
+      _usersPollTimer?.cancel();
+      _usersPollTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      _startTimers();
+      if (_selectedUser != null && !_isFetchingConversation && !_isLoadingMessages && mounted) {
+        _loadConversation(_selectedUser!.id, silent: true);
+      }
+      if (!_isFetchingUsers && !_isLoadingUsers && mounted) {
+        _loadUsers(silent: true);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
     _conversationPollTimer?.cancel();
     _usersPollTimer?.cancel();
     _keyboardFocusNode.dispose();

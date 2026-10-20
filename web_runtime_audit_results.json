@@ -1,0 +1,115 @@
+{
+  "gpu": {
+    "contextType": "WebGL 2.0",
+    "vendor": "Google Inc. (Intel)",
+    "renderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A788) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "maxTextureSize": 16384,
+    "isHardwareAccelerated": true
+  },
+  "memoryStart": {
+    "jsHeapSizeLimit": 4192,
+    "totalJSHeapSize": 84.06,
+    "usedJSHeapSize": 22.95,
+    "domNodes": 233
+  },
+  "idleFrameStats": {
+    "sampleCount": 199,
+    "averageMs": 6.94,
+    "medianMs": 6.9,
+    "p95Ms": 7,
+    "worstMs": 7,
+    "approxFPS": 144,
+    "framesOver16ms": 0,
+    "framesOver33ms": 0,
+    "framesOver50ms": 0,
+    "framesOver100ms": 0,
+    "jankPercentage": 0
+  },
+  "scrollFrameStats": {
+    "sampleCount": 150,
+    "averageMs": 6.93,
+    "medianMs": 6.9,
+    "p95Ms": 7,
+    "worstMs": 7,
+    "approxFPS": 144.2,
+    "framesOver16ms": 0,
+    "framesOver33ms": 0,
+    "framesOver50ms": 0,
+    "framesOver100ms": 0,
+    "jankPercentage": 0
+  },
+  "longTasks": [],
+  "memoryEnd": {
+    "jsHeapSizeLimit": 4192,
+    "totalJSHeapSize": 84.06,
+    "usedJSHeapSize": 23.05,
+    "domNodes": 233
+  },
+  "indexedDB": {
+    "exists": true,
+    "stores": [
+      "builders",
+      "campaign_leads",
+      "clients",
+      "dashboard",
+      "followups",
+      "lookups",
+      "metadata",
+      "outbox",
+      "owners",
+      "properties",
+      "requirements"
+    ]
+  },
+  "localStorage": {
+    "keyCount": 6,
+    "keys": [
+      "getSystemInfo",
+      "mui-color-scheme-dark",
+      "getMachineInfo",
+      "mui-color-scheme-light",
+      "getHypotheses",
+      "mui-mode"
+    ],
+    "totalBytes": 18615,
+    "totalKB": 18.18
+  },
+  "consoleMessagesCount": 8,
+  "consoleMessagesSample": [
+    {
+      "source": "console-api",
+      "level": "log",
+      "text": "inject script: setupVantageShellApi",
+      "line": 3109,
+      "column": 9
+    },
+    {
+      "source": "console-api",
+      "level": "log",
+      "text": "@@@metrics: [object Object]",
+      "url": "https://vantage.csw.lenovo.com/v1/web/shortcutswidget/default/spa.js",
+      "line": 1,
+      "column": 28867
+    },
+    {
+      "source": "console-api",
+      "level": "log",
+      "text": "@@@metrics: [object Object]",
+      "url": "https://vantage.csw.lenovo.com/v1/web/shortcutswidget/default/spa.js",
+      "line": 1,
+      "column": 28867
+    },
+    {
+      "source": "console-api",
+      "level": "log",
+      "text": "@@@metrics: [object Object]",
+      "url": "https://vantage.csw.lenovo.com/v1/web/shortcutswidget/default/spa.js",
+      "line": 1,
+      "column": 28867
+    },
+    "inject script: setupVantageShellApi",
+    "@@@metrics: ",
+    "@@@metrics: ",
+    "@@@metrics: "
+  ]
+}

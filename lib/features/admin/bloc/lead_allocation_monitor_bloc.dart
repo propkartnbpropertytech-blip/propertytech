@@ -86,12 +86,16 @@ class LeadAllocationMonitorState extends Equatable {
 
 class LeadAllocationMonitorBloc
     extends Bloc<LeadAllocationMonitorEvent, LeadAllocationMonitorState> {
+  bool _isFetching = false;
+
   LeadAllocationMonitorBloc() : super(const LeadAllocationMonitorState(loading: true)) {
     on<LeadAllocationMonitorRequested>((event, emit) async {
-      if (!event.silent) {
-        emit(LeadAllocationMonitorState(loading: true, data: state.data));
-      }
+      if (_isFetching) return;
+      _isFetching = true;
       try {
+        if (!event.silent) {
+          emit(LeadAllocationMonitorState(loading: true, data: state.data));
+        }
         final res = await DioClient.dio.get(ApiConstants.adminAllocationMonitor);
         final data = Map<String, dynamic>.from(res.data['data'] ?? {});
         data['recentAssignments'] = await _mergePeerTransfers(
@@ -103,6 +107,8 @@ class LeadAllocationMonitorBloc
         if (!event.silent) {
           emit(LeadAllocationMonitorState(error: e.toString(), data: state.data));
         }
+      } finally {
+        _isFetching = false;
       }
     });
     on<RecoverStaleLeadsRequested>((event, emit) async {
@@ -272,7 +278,8 @@ class _LeadAllocationMonitorView extends StatefulWidget {
   State<_LeadAllocationMonitorView> createState() => _LeadAllocationMonitorViewState();
 }
 
-class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> {
+class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
+    with WidgetsBindingObserver {
   Timer? _tickerTimer;
   Timer? _pollTimer;
 
@@ -289,12 +296,23 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
   @override
   void initState() {
     super.initState();
-    // Real-time second-by-second ticker for telecaller countdowns
-    _tickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
+    _startTimers();
+  }
+
+  void _startTimers() {
+    _tickerTimer?.cancel();
+    _pollTimer?.cancel();
+
+    // 30-second ticker matches duration format which displays only hours and minutes (no seconds)
+    _tickerTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
-    // Silent periodic background poll every 3 seconds to sync state changes seamlessly without manual refresh
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+
+    // 15-second background poll reduces server load and isolate wakeups by 80% compared to 3s loop
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) {
         context.read<LeadAllocationMonitorBloc>().add(const LeadAllocationMonitorRequested(silent: true));
       }
@@ -302,7 +320,27 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView> 
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _tickerTimer?.cancel();
+      _tickerTimer = null;
+      _pollTimer?.cancel();
+      _pollTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      _startTimers();
+      if (mounted) {
+        context.read<LeadAllocationMonitorBloc>().add(const LeadAllocationMonitorRequested(silent: true));
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
     _tickerTimer?.cancel();
     _pollTimer?.cancel();
     super.dispose();

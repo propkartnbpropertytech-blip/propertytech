@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:equatable/equatable.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../integration/models/integration_lead_model.dart';
@@ -223,7 +223,8 @@ class CampaignLeadsState extends Equatable {
 
 // --- BLOC ---
 
-class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
+class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState>
+    with WidgetsBindingObserver {
   final IntegrationService _integrationService;
   Timer? _oneMinutePingTimer;
   VoidCallback? _serviceListener;
@@ -237,6 +238,10 @@ class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
     on<SetCampaignDateFilterEvent>(_onSetCampaignDateFilter);
     on<AcknowledgeNewLeadsEvent>(_onAcknowledgeNewLeads);
     on<SyncLocalLeadsEvent>(_onSyncLocalLeads);
+
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
 
     // Fast O(1) binding to IntegrationService notifications
     _serviceListener = () {
@@ -253,6 +258,26 @@ class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
     _integrationService.addListener(_serviceListener!);
 
     // Start 1-Minute Live Ping Timer
+    _startOneMinutePing();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      pausePing();
+    } else if (state == AppLifecycleState.resumed) {
+      resumePing();
+    }
+  }
+
+  void pausePing() {
+    _oneMinutePingTimer?.cancel();
+    _oneMinutePingTimer = null;
+  }
+
+  void resumePing() {
     _startOneMinutePing();
   }
 
@@ -275,7 +300,11 @@ class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
 
   @override
   Future<void> close() {
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
     _oneMinutePingTimer?.cancel();
+    _oneMinutePingTimer = null;
     if (_serviceListener != null) {
       _integrationService.removeListener(_serviceListener!);
     }
@@ -328,6 +357,7 @@ class CampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> {
     PollCampaignLeadsPingEvent event,
     Emitter<CampaignLeadsState> emit,
   ) async {
+    if (state.isPinging) return;
     final token = await SecureStorage().getToken();
     if (token == null || token.isEmpty) {
       // Skip background ping when unauthenticated.

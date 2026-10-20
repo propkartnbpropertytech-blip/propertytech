@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/integration_lead_model.dart';
 import '../../campaign/models/campaign_followup_model.dart';
@@ -18,10 +19,28 @@ import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/services/notification_center.dart';
 
-class IntegrationService extends ChangeNotifier {
+class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
   static final IntegrationService _instance = IntegrationService._internal();
   factory IntegrationService() => _instance;
-  IntegrationService._internal();
+  IntegrationService._internal() {
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _sheetPollTimer?.cancel();
+      _sheetPollTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      if (_campaignUiWatchers > 0 && _googleSheetUrl.trim().isNotEmpty) {
+        _startSheetPolling();
+      }
+    }
+  }
 
   static bool matchesCampaignSource(String leadSource, String? filter) {
     if (filter == null || filter.isEmpty || filter == 'All') return true;

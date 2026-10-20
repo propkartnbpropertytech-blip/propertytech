@@ -236,6 +236,8 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
       case BusinessInsightView.totalLeadsSources:
         return LeadSourceGridView(
           summary: summary,
+          from: config.dateRange.startDate,
+          to: config.dateRange.endDate,
           onBack: () => setState(() => _currentView = BusinessInsightView.main),
           onSelectSource: (src, {initialTab}) {
             setState(() {
@@ -283,6 +285,8 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
       case BusinessInsightView.telecallersList:
         return TelecallersListView(
           summary: summary,
+          from: config.dateRange.startDate,
+          to: config.dateRange.endDate,
           onBack: () => setState(() => _currentView = BusinessInsightView.main),
           onSelectTelecaller: (tc) {
             setState(() {
@@ -352,6 +356,8 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         return LeadsPageKpiDrilldownView(
           kpiType: _selectedLeadsPageKpi,
           reportData: reportData,
+          from: config.dateRange.startDate,
+          to: config.dateRange.endDate,
           onBack: () => setState(() => _currentView = BusinessInsightView.main),
         );
     }

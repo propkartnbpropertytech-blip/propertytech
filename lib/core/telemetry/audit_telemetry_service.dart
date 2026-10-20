@@ -7,9 +7,7 @@ import '../storage/secure_storage.dart';
 /// High-throughput, non-blocking telemetry and audit event ingestion service.
 /// Batches telemetry events in-memory and flushes periodically or on size thresholds.
 class AuditTelemetryService {
-  AuditTelemetryService._internal() {
-    _startPeriodicFlush();
-  }
+  AuditTelemetryService._internal();
 
   static final AuditTelemetryService instance = AuditTelemetryService._internal();
 
@@ -20,11 +18,15 @@ class AuditTelemetryService {
   bool _isFlushing = false;
   static const int _batchThreshold = 15;
   static const int _maxQueueCap = 150;
-  static const Duration _flushInterval = Duration(seconds: 5);
+  static const Duration _flushDelay = Duration(seconds: 15);
 
-  void _startPeriodicFlush() {
-    _flushTimer?.cancel();
-    _flushTimer = Timer.periodic(_flushInterval, (_) {
+  bool get isFlushTimerActive => _flushTimer != null;
+  int get queueLength => _queue.length;
+
+  void _scheduleDemandFlush() {
+    if (_flushTimer != null || _queue.isEmpty) return;
+    _flushTimer = Timer(_flushDelay, () {
+      _flushTimer = null;
       flush();
     });
   }
@@ -225,11 +227,16 @@ class AuditTelemetryService {
 
     if (_queue.length >= _batchThreshold) {
       flush();
+    } else {
+      _scheduleDemandFlush();
     }
   }
 
   /// Flush in-memory queue to backend API
   Future<void> flush() async {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+
     if (_isFlushing || _queue.isEmpty) return;
 
     final token = await SecureStorage().getToken();
@@ -258,6 +265,23 @@ class AuditTelemetryService {
       }
     } finally {
       _isFlushing = false;
+      if (_queue.isNotEmpty) {
+        _scheduleDemandFlush();
+      }
+    }
+  }
+
+  /// Pause timer and flush pending telemetry before entering background
+  void pauseForBackground() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    flush();
+  }
+
+  /// Resume demand-driven flush if items were queued during backgrounding
+  void resumeFromBackground() {
+    if (_queue.isNotEmpty) {
+      _scheduleDemandFlush();
     }
   }
 
@@ -277,7 +301,9 @@ class AuditTelemetryService {
 
   void dispose() {
     _flushTimer?.cancel();
+    _flushTimer = null;
     _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = null;
     flush();
   }
 }

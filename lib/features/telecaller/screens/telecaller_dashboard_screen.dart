@@ -463,13 +463,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   void _openOpenLeadsDrilldown() {
-    TelecallerKpiDialogs.showOpenLeadsDrilldown(
-      context,
-      dateFilter: _kpiDateFilter,
-      startDate: _customStartDate,
-      endDate: _customEndDate,
-      leadType: _kpiLeadType,
-    );
+    _openKpiDrilldown(category: 'open', title: 'Open Leads');
   }
 
   void _openArchiveDrilldown() {

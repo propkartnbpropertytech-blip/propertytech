@@ -14,7 +14,7 @@ import '../../../core/design_system/widgets/inputs.dart';
 import '../models/document_model.dart';
 import 'library_widgets.dart';
 import '../../properties/models/property_model.dart';
-import '../../properties/repository/properties_repository.dart';
+import '../repository/library_repository.dart';
 
 class RentalLibraryScreen extends StatefulWidget {
   final Map<String, dynamic>? initialArgs;
@@ -90,9 +90,9 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
     });
   }
 
-  Future<void> _loadMasterProperties() async {
+  Future<void> _loadMasterProperties({bool forceRefresh = false}) async {
     try {
-      final list = await PropertiesRepository().getProperties();
+      final list = await LibraryRepository().getMasterProperties(forceRefresh: forceRefresh);
       if (mounted) {
         setState(() {
           _masterPropertiesList = list;

@@ -1,0 +1,9 @@
+targets:
+  $default:
+    sources:
+      - "lib/core/storage/**"
+      - "pubspec.yaml"
+    builders:
+      isar_generator:isar_generator:
+        generate_for:
+          - lib/core/storage/isar_collections.dart

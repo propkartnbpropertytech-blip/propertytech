@@ -20,7 +20,8 @@ class TeamMessengerDialog extends StatefulWidget {
   State<TeamMessengerDialog> createState() => _TeamMessengerDialogState();
 }
 
-class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
+class _TeamMessengerDialogState extends State<TeamMessengerDialog>
+    with WidgetsBindingObserver {
   final TeamMessagesService _service = TeamMessagesService();
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
@@ -34,6 +35,7 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
   bool _isLoadingUsers = true;
   bool _isLoadingMessages = false;
   bool _isSending = false;
+  bool _isPolling = false;
   String _selectedRoleFilter = 'All';
   String _searchQuery = '';
 
@@ -42,7 +44,15 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
   @override
   void initState() {
     super.initState();
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
     _loadUsers();
+    _startPollTimer();
+  }
+
+  void _startPollTimer() {
+    _pollTimer?.cancel();
     // Poll every 3.5 seconds for live message updates
     _pollTimer = Timer.periodic(const Duration(milliseconds: 3500), (_) {
       _pollUpdates();
@@ -50,7 +60,23 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      _startPollTimer();
+      _pollUpdates();
+    }
+  }
+
+  @override
   void dispose() {
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
     _pollTimer?.cancel();
     _keyboardFocusNode.dispose();
     _messageController.dispose();
@@ -115,10 +141,16 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog> {
     }
   }
 
-  void _pollUpdates() {
-    _loadUsers(silent: true);
-    if (_selectedUser != null) {
-      _loadConversation(_selectedUser!.id, silent: true);
+  Future<void> _pollUpdates() async {
+    if (_isPolling || !mounted) return;
+    _isPolling = true;
+    try {
+      await _loadUsers(silent: true);
+      if (_selectedUser != null && mounted) {
+        await _loadConversation(_selectedUser!.id, silent: true);
+      }
+    } finally {
+      _isPolling = false;
     }
   }
 

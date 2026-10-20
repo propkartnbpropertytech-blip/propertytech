@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:propkart/features/properties/models/property_model.dart';
-import 'package:propkart/features/properties/screens/properties_screen.dart';
+import 'package:propkart/features/properties/models/property_view_model.dart';
 
 PropertyModel createTestProperty({
   required String id,
