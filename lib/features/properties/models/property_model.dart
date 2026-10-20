@@ -302,7 +302,7 @@ class PropertyModel {
       propertyStatusName: status != null ? status['name'] as String? ?? 'N/A' : 'N/A',
       cityId: json['city_id'] as String? ?? '',
       cityName: parsedCityName,
-      areaId: json['area_id'] as String? ?? '',
+      areaId: (json['area_id'] ?? area?['id'] ?? '')?.toString().trim() ?? '',
       areaName: _resolveAreaName(area, json),
       pincode: area != null ? area['pincode'] as String? ?? 'N/A' : 'N/A',
       address: json['address'] as String? ?? '',
