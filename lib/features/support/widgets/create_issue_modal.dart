@@ -1,7 +1,13 @@
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/widgets/form/crm_image_picker.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/support_issue_model.dart';
@@ -37,6 +43,8 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
   String _priority = 'Medium';
   final TextEditingController _descriptionController = TextEditingController();
   final List<String> _uploadedImages = [];
+  final List<String?> _uploadedSlotUrls = [null, null, null];
+  final List<bool> _slotUploading = [false, false, false];
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -1000,33 +1008,534 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
 
         const SizedBox(height: 16),
 
-        // Image / Screenshot Upload
-        const Text(
-          'Attach Screenshots (Optional)',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        // Three dedicated Screenshot Upload Fields with Image Previews
+        _buildThreeImageUploadFields(isDark, primaryColor),
+      ],
+    );
+  }
+
+  void _syncUploadedImages() {
+    _uploadedImages.clear();
+    for (final url in _uploadedSlotUrls) {
+      if (url != null && url.trim().isNotEmpty) {
+        _uploadedImages.add(url.trim());
+      }
+    }
+  }
+
+  Future<void> _pickImageForSlot(int slotIndex) async {
+    if (!kIsWeb && Platform.isWindows) {
+      await _pickAndUploadSlotImages(slotIndex, ImageSource.gallery);
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded),
+              title: Text('Take Photo (Screenshot ${slotIndex + 1})'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadSlotImages(slotIndex, ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded),
+              title: Text('Choose from Gallery (Screenshot ${slotIndex + 1})'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadSlotImages(slotIndex, ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadSlotImages(int slotIndex, ImageSource source) async {
+    final picker = ImagePicker();
+    final List<XFile> pickedFiles = [];
+
+    if (source == ImageSource.gallery) {
+      try {
+        final multi = await picker.pickMultiImage();
+        if (multi.isNotEmpty) {
+          pickedFiles.addAll(multi);
+        }
+      } catch (_) {
+        final single = await picker.pickImage(source: source);
+        if (single != null) pickedFiles.add(single);
+      }
+    } else {
+      final single = await picker.pickImage(source: source);
+      if (single != null) pickedFiles.add(single);
+    }
+
+    if (pickedFiles.isEmpty) return;
+
+    // Distribute picked files: first to target slot, then to any subsequent empty slots
+    final slotsToFill = <int>[slotIndex];
+    for (int i = 0; i < 3; i++) {
+      if (i != slotIndex && _uploadedSlotUrls[i] == null) {
+        slotsToFill.add(i);
+      }
+    }
+
+    final countToProcess = math.min(pickedFiles.length, slotsToFill.length);
+
+    for (int i = 0; i < countToProcess; i++) {
+      final targetSlot = slotsToFill[i];
+      final pickedFile = pickedFiles[i];
+
+      setState(() {
+        _slotUploading[targetSlot] = true;
+      });
+
+      try {
+        final String fileExt = pickedFile.name.split('.').last.toLowerCase();
+        final bool isPng = fileExt == 'png';
+        final String mimeType = isPng ? 'image/png' : 'image/jpeg';
+        List<int> uploadBytes;
+        String filename = pickedFile.name;
+
+        if (kIsWeb || (!kIsWeb && Platform.isWindows)) {
+          uploadBytes = await pickedFile.readAsBytes();
+          if (uploadBytes.length > 10 * 1024 * 1024) {
+            throw Exception("Image size exceeds the 10 MB limit.");
+          }
+        } else {
+          final File file = File(pickedFile.path);
+          File uploadFile = file;
+
+          try {
+            final String targetPath =
+                "${Directory.systemTemp.path}/support_img_${DateTime.now().millisecondsSinceEpoch}_$targetSlot.${isPng ? 'png' : 'jpg'}";
+            final XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
+              file.absolute.path,
+              targetPath,
+              quality: 75,
+              format: isPng ? CompressFormat.png : CompressFormat.jpeg,
+              minWidth: 1200,
+              minHeight: 1200,
+            );
+            if (compressedFile != null) {
+              uploadFile = File(compressedFile.path);
+              filename = isPng ? 'screenshot_${targetSlot + 1}.png' : 'screenshot_${targetSlot + 1}.jpg';
+            }
+          } catch (compressErr) {
+            debugPrint("Image compression fallback: $compressErr");
+            uploadFile = file;
+          }
+
+          uploadBytes = await uploadFile.readAsBytes();
+          if (uploadBytes.length > 10 * 1024 * 1024) {
+            throw Exception("Image size exceeds the 10 MB limit.");
+          }
+        }
+
+        final publicUrl = await CloudinaryUploader.upload(
+          bytes: uploadBytes,
+          filename: filename,
+          mimeType: mimeType,
+          resourceType: 'image',
+          fallbackEndpoint: '/properties/upload-media',
+        );
+
+        if (mounted) {
+          setState(() {
+            _uploadedSlotUrls[targetSlot] = publicUrl;
+            _slotUploading[targetSlot] = false;
+            _syncUploadedImages();
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _slotUploading[targetSlot] = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to upload Screenshot ${targetSlot + 1}: $e"),
+              backgroundColor: CRMColors.danger,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Widget _buildThreeImageUploadFields(bool isDark, Color primaryColor) {
+    final uploadedCount = _uploadedImages.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Attach Screenshots (Optional)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$uploadedCount/3 Uploaded',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: primaryColor),
+                  ),
+                ),
+              ],
+            ),
+            if (_slotUploading.contains(true))
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Uploading...',
+                    style: TextStyle(fontSize: 11, color: primaryColor, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+          ],
         ),
         const SizedBox(height: 6),
-        CRMImagePicker(
-          imageUrls: _uploadedImages,
-          onImageAdded: (url) {
-            setState(() => _uploadedImages.add(url));
+        Text(
+          'Upload up to 3 screenshots so support can easily inspect the problem. Previews appear immediately in each field.',
+          style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 520;
+            if (isNarrow) {
+              return Column(
+                children: List.generate(3, (index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _buildUploadSlotCard(index, isDark, primaryColor, height: 140),
+                  );
+                }),
+              );
+            } else {
+              return Row(
+                children: List.generate(3, (index) {
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        right: index < 2 ? 10 : 0,
+                      ),
+                      child: _buildUploadSlotCard(index, isDark, primaryColor, height: 155),
+                    ),
+                  );
+                }),
+              );
+            }
           },
-          onImageRemoved: (index) {
-            setState(() => _uploadedImages.removeAt(index));
-          },
-          onImageReplaced: (index, url) {
-            setState(() => _uploadedImages[index] = url);
-          },
-          onImagesReordered: (newUrls) {
-            setState(() {
-              _uploadedImages.clear();
-              _uploadedImages.addAll(newUrls);
-            });
-          },
-          maxImages: 3,
-          uploadEndpoint: '/properties/upload-media',
         ),
       ],
+    );
+  }
+
+  Widget _buildUploadSlotCard(int slotIndex, bool isDark, Color primaryColor, {required double height}) {
+    final isUploading = _slotUploading[slotIndex];
+    final imageUrl = _uploadedSlotUrls[slotIndex];
+    final slotTitle = 'Screenshot ${slotIndex + 1}';
+
+    // 1. Uploading State
+    if (isUploading) {
+      return Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.5)),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: primaryColor),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Uploading $slotTitle...',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 2. Uploaded State: Clear Image Preview Visible In Respective Field!
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: primaryColor.withValues(alpha: 0.35),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Display uploaded image preview
+              CrmNetworkImage(
+                url: imageUrl,
+                fit: BoxFit.cover,
+                cacheLogicalWidth: 400,
+                cacheLogicalHeight: 300,
+                placeholder: (ctx) => Container(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+                error: (ctx) => Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (c, e, s) => Container(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    child: const Center(
+                      child: Icon(Icons.broken_image_rounded, size: 28, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Gradient overlay at top for contrast
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 38,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.7),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Top Left Badge: "Screenshot N"
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF10B981)),
+                      const SizedBox(width: 4),
+                      Text(
+                        slotTitle,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Top Right Actions: Zoom, Replace, Delete
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Zoom
+                    _buildSlotIconButton(
+                      icon: Icons.zoom_in_rounded,
+                      tooltip: 'View Full Preview',
+                      onTap: () {
+                        final activeUrls = _uploadedSlotUrls.whereType<String>().toList();
+                        final idx = activeUrls.indexOf(imageUrl);
+                        showDialog(
+                          context: context,
+                          barrierColor: Colors.black.withValues(alpha: 0.9),
+                          builder: (ctx) => CRMImageZoomViewer(
+                            images: activeUrls,
+                            initialIndex: idx >= 0 ? idx : 0,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    // Replace
+                    _buildSlotIconButton(
+                      icon: Icons.refresh_rounded,
+                      tooltip: 'Replace $slotTitle',
+                      onTap: () => _pickImageForSlot(slotIndex),
+                    ),
+                    const SizedBox(width: 4),
+                    // Remove
+                    _buildSlotIconButton(
+                      icon: Icons.delete_outline_rounded,
+                      tooltip: 'Remove $slotTitle',
+                      color: const Color(0xFFEF4444),
+                      onTap: () {
+                        setState(() {
+                          _uploadedSlotUrls[slotIndex] = null;
+                          _syncUploadedImages();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              // Tap anywhere on image to zoom preview
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      final activeUrls = _uploadedSlotUrls.whereType<String>().toList();
+                      final idx = activeUrls.indexOf(imageUrl);
+                      showDialog(
+                        context: context,
+                        barrierColor: Colors.black.withValues(alpha: 0.9),
+                        builder: (ctx) => CRMImageZoomViewer(
+                          images: activeUrls,
+                          initialIndex: idx >= 0 ? idx : 0,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 3. Empty State: Distinct Upload Field
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _pickImageForSlot(slotIndex),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: height,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+              width: 1.2,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.add_photo_alternate_outlined, size: 22, color: primaryColor),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                slotTitle,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Click to upload',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlotIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    Color color = Colors.white,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(icon, size: 14, color: color),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1132,6 +1641,78 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
               _buildContextRow('Problem Type', _submittedIssue?.issueType ?? _issueType ?? '', isDark),
               const SizedBox(height: 8),
               _buildContextRow('Priority', _submittedIssue?.priority ?? _priority, isDark),
+              if (_uploadedImages.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 100,
+                      child: Text(
+                        'Screenshots',
+                        style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      ),
+                    ),
+                    const Text(': ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _uploadedImages.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final url = entry.value;
+                          return InkWell(
+                            onTap: () {
+                              showDialog(
+                                context: context,
+                                barrierColor: Colors.black.withValues(alpha: 0.9),
+                                builder: (ctx) => CRMImageZoomViewer(
+                                  images: _uploadedImages,
+                                  initialIndex: idx,
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(6),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Stack(
+                                children: [
+                                  CrmNetworkImage(
+                                    url: url,
+                                    width: 58,
+                                    height: 58,
+                                    fit: BoxFit.cover,
+                                  ),
+                                  Positioned(
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    child: Container(
+                                      color: Colors.black.withValues(alpha: 0.65),
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      child: Text(
+                                        '#${idx + 1}',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
