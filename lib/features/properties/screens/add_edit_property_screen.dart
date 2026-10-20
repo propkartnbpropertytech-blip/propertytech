@@ -49,6 +49,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   final _priceController = TextEditingController();
   final _depositController = TextEditingController();
   final _maintenanceController = TextEditingController();
+  final _brokerageController = TextEditingController();
   final _bedroomsController = TextEditingController(text: '1');
   final _bathroomsController = TextEditingController(text: '1');
   final _balconiesController = TextEditingController(text: '0');
@@ -157,6 +158,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     _priceController.dispose();
     _depositController.dispose();
     _maintenanceController.dispose();
+    _brokerageController.dispose();
     _bedroomsController.dispose();
     _bathroomsController.dispose();
     _balconiesController.dispose();
@@ -296,6 +298,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       _priceController.text = CRMCurrencyFormatter.format(p.price);
       _depositController.text = CRMCurrencyFormatter.format(p.deposit);
       _maintenanceController.text = p.maintenance.toStringAsFixed(0);
+      if (p.brokerage != null && p.brokerage! > 0) {
+        _brokerageController.text = CRMCurrencyFormatter.format(p.brokerage!);
+      }
       final price = p.price;
       final deposit = p.deposit;
       if (price > 0 && deposit > 0) {
@@ -692,6 +697,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       'price': _priceController.text,
       'deposit': _depositController.text,
       'maintenance': _maintenanceController.text,
+      'brokerage': _brokerageController.text,
       'furnishing_type_id': _selectedFurnishing,
       'facing_type_id': _selectedFacing,
       'facing_name': _facingController.text,
@@ -761,6 +767,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                   _priceController.text = draft['price'] ?? '';
                   _depositController.text = draft['deposit'] ?? '';
                   _maintenanceController.text = draft['maintenance'] ?? '';
+                  _brokerageController.text = draft['brokerage'] ?? '';
                   _selectedFurnishing = draft['furnishing_type_id'];
                   _selectedFacing = draft['facing_type_id'];
                   _facingController.text = draft['facing_name'] ?? '';
@@ -896,6 +903,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             ),
           );
         }
+        _brokerageController.text = _priceController.text;
       }
     }
     _calculateDeposit();
@@ -1176,13 +1184,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       final propertyData = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-        'category_id': _selectedCategory,
-        'property_type_id': _selectedType,
-        'configuration_id': _selectedConfig,
-        'listing_type_id': _selectedListingType,
-        'property_status_id': _selectedStatus,
-        'city_id': _selectedCity,
-        'area_id': _selectedArea,
+        'category_id': (_selectedCategory != null && _selectedCategory!.isNotEmpty) ? _selectedCategory : null,
+        'property_type_id': (_selectedType != null && _selectedType!.isNotEmpty) ? _selectedType : null,
+        'configuration_id': (_selectedConfig != null && _selectedConfig!.isNotEmpty) ? _selectedConfig : null,
+        'listing_type_id': (_selectedListingType != null && _selectedListingType!.isNotEmpty) ? _selectedListingType : null,
+        'property_status_id': (_selectedStatus != null && _selectedStatus!.isNotEmpty) ? _selectedStatus : null,
+        'city_id': (_selectedCity != null && _selectedCity!.isNotEmpty) ? _selectedCity : null,
+        'area_id': (_selectedArea != null && _selectedArea!.isNotEmpty) ? _selectedArea : null,
         'address': _addressController.text.trim(),
         'landmark': _landmarkController.text.trim().isEmpty ? null : _landmarkController.text.trim(),
         'block_wing': _blockWingController.text.trim().isEmpty ? null : _blockWingController.text.trim(),
@@ -1198,16 +1206,17 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         'postal_code': _selectedPlaceDetails != null ? _selectedPlaceDetails!['postalCode'] : null,
         'latitude': _latitude,
         'longitude': _longitude,
-        'brokerage_type_id': _selectedBrokerage,
+        'brokerage_type_id': (_selectedBrokerage != null && _selectedBrokerage!.isNotEmpty) ? _selectedBrokerage : null,
         'super_builtup_area': double.tryParse(_superBuiltupController.text),
         'carpet_area': double.tryParse(_carpetController.text),
         'plot_area': double.tryParse(_plotController.text),
         'price': CRMCurrencyFormatter.parse(_priceController.text),
         'deposit': CRMCurrencyFormatter.parse(_depositController.text),
         'maintenance': double.tryParse(_maintenanceController.text) ?? 0.0,
-        'furnishing_type_id': _selectedFurnishing,
-        'facing_type_id': _selectedFacing,
-        'ownership_type_id': _selectedOwnership,
+        'brokerage': CRMCurrencyFormatter.parse(_brokerageController.text),
+        'furnishing_type_id': (_selectedFurnishing != null && _selectedFurnishing!.isNotEmpty) ? _selectedFurnishing : null,
+        'facing_type_id': (_selectedFacing != null && _selectedFacing!.isNotEmpty) ? _selectedFacing : null,
+        'ownership_type_id': (_selectedOwnership != null && _selectedOwnership!.isNotEmpty) ? _selectedOwnership : null,
         'bedrooms': int.tryParse(_bedroomsController.text) ?? 0,
         'bathrooms': int.tryParse(_bathroomsController.text) ?? 0,
         'balconies': int.tryParse(_balconiesController.text) ?? 0,
@@ -1216,14 +1225,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         'total_floor': isBungalow ? null : int.tryParse(_totalFloorController.text),
         'age_of_property': int.tryParse(_ageController.text),
         'owner_name': _ownerNameController.text.trim(),
-        'owner_mobile': _ownerMobileController.text.trim(),
+        'owner_mobile': _ownerMobileController.text.trim().isEmpty ? null : _ownerMobileController.text.trim(),
         'broker_name': _brokerNameController.text.trim().isEmpty ? null : _brokerNameController.text.trim(),
         'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),
         'amenities': _selectedAmenities,
         'images': _propertyImages,
         'videos': _propertyVideos,
         'additional_details': _additionalDetails,
-        'is_verified': _isVerified,
         'possession_date': (toBeAvailableId.isNotEmpty && _selectedStatus == toBeAvailableId)
             ? _availableDate?.toIso8601String().substring(0, 10)
             : null,
@@ -1731,6 +1739,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                           _selectedDepositMonth = null;
                           _depositController.text = CRMCurrencyFormatter.format(0.0);
                           _maintenanceController.text = '';
+                          _brokerageController.text = '';
                         }
                         _onPriceChanged();
                       });
@@ -1804,6 +1813,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                                 _selectedDepositMonth = null;
                                 _depositController.text = CRMCurrencyFormatter.format(0.0);
                                 _maintenanceController.text = '';
+                                _brokerageController.text = '';
                               }
                               _onPriceChanged();
                             });
@@ -3114,15 +3124,57 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           ],
           if (isRent && !isLand) ...[
             const SizedBox(height: CRMSpacing.m),
-            TextFormField(
-              controller: _maintenanceController,
-              style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Monthly Maintenance Charge',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+            if (isMobile) ...[
+              TextFormField(
+                controller: _maintenanceController,
+                style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Monthly Maintenance Charge',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                ),
               ),
-            ),
+              const SizedBox(height: CRMSpacing.m),
+              TextFormField(
+                controller: _brokerageController,
+                style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                keyboardType: TextInputType.number,
+                inputFormatters: [IndianCurrencyFormatter()],
+                decoration: InputDecoration(
+                  labelText: 'Brokerage',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                ),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _maintenanceController,
+                      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Monthly Maintenance Charge',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: CRMSpacing.s),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _brokerageController,
+                      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [IndianCurrencyFormatter()],
+                      decoration: InputDecoration(
+                        labelText: 'Brokerage',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
           if (isLand || isIndustrial) ...[
             const SizedBox(height: CRMSpacing.m),

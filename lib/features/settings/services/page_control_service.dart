@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/security/role_guard.dart';
 import '../models/page_control_model.dart';
 
 /// Central reactive service managing Page Under Development status.
-class PageControlService extends ChangeNotifier {
+class PageControlService extends ChangeNotifier with WidgetsBindingObserver {
   static final PageControlService _instance = PageControlService._internal();
   static PageControlService get instance => _instance;
 
   Timer? _syncTimer;
+  Future<void>? _inFlightFetch;
+  int _fetchCounter = 0;
+  bool _isPaused = false;
 
   PageControlService._internal() {
     _init();
@@ -54,35 +57,73 @@ class PageControlService extends ChangeNotifier {
   bool get isLoading => _isLoading;
   DateTime? get lastFetchedAt => _lastFetchedAt;
 
-  void _mergeIncoming(List<PageControlModel> incoming) {
+  bool _mergeIncoming(List<PageControlModel> incoming) {
     final Map<String, PageControlModel> map = {
       for (final c in _controls) c.pageKey: c,
     };
+    bool hasChanged = false;
     for (final inc in incoming) {
       final existing = map[inc.pageKey];
       if (existing != null) {
-        map[inc.pageKey] = existing.copyWith(
+        final updated = existing.copyWith(
           isUnderDevelopment: inc.isUnderDevelopment,
           underDevelopmentRoles: inc.underDevelopmentRoles,
           message: inc.message,
           updatedAt: inc.updatedAt,
         );
+        if (!existing.isEffectivelyEqualTo(updated)) {
+          map[inc.pageKey] = updated;
+          hasChanged = true;
+        }
       } else {
         map[inc.pageKey] = inc;
+        hasChanged = true;
       }
     }
-    _controls = map.values.toList()..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    if (hasChanged) {
+      _controls = map.values.toList()..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    }
+    return hasChanged;
   }
 
   Future<void> _init() async {
+    _registerLifecycleObserver();
     await _loadFromCache();
     await fetchControls(silent: true);
     _startPeriodicSync();
   }
 
+  void _registerLifecycleObserver() {
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {
+      // Binding may be uninitialized in unit test or headless environments
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _isPaused = false;
+      _startPeriodicSync();
+      _checkAndRefreshIfStale();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _isPaused = true;
+      _syncTimer?.cancel();
+    }
+  }
+
+  void _checkAndRefreshIfStale() {
+    final last = _lastFetchedAt;
+    if (last == null || DateTime.now().difference(last) > const Duration(minutes: 5)) {
+      fetchControls(silent: true);
+    }
+  }
+
   void _startPeriodicSync() {
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    if (_isPaused) return;
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       fetchControls(silent: true);
     });
   }
@@ -98,8 +139,10 @@ class PageControlService extends ChangeNotifier {
               .whereType<Map<String, dynamic>>()
               .map((e) => PageControlModel.fromJson(e))
               .toList();
-          _mergeIncoming(cached);
-          notifyListeners();
+          final hasChanged = _mergeIncoming(cached);
+          if (hasChanged) {
+            notifyListeners();
+          }
         }
       }
     } catch (e) {
@@ -117,16 +160,33 @@ class PageControlService extends ChangeNotifier {
     }
   }
 
-  /// Fetches authoritative page controls from backend API
+  /// Fetches authoritative page controls from backend API.
+  /// Deduplicates concurrent invocations, prevents race conditions,
+  /// and only notifies listeners if effective control state has actually changed.
   Future<void> fetchControls({bool silent = false}) async {
-    if (!silent) {
+    if (_inFlightFetch != null) {
+      return _inFlightFetch!;
+    }
+
+    final completer = Completer<void>();
+    _inFlightFetch = completer.future;
+    final currentFetchId = ++_fetchCounter;
+
+    bool didEnterLoading = false;
+    if (!silent && !_isLoading) {
       _isLoading = true;
+      didEnterLoading = true;
       notifyListeners();
     }
 
     try {
       final dio = DioClient.dio;
       final response = await dio.get('/page-controls');
+
+      // Drop stale response if a newer fetch was initiated
+      if (currentFetchId != _fetchCounter) {
+        return;
+      }
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -137,17 +197,34 @@ class PageControlService extends ChangeNotifier {
               .whereType<Map>()
               .map((e) => PageControlModel.fromJson(Map<String, dynamic>.from(e)))
               .toList();
-          _mergeIncoming(incoming);
+
+          final hasChanged = _mergeIncoming(incoming);
           _lastFetchedAt = DateTime.now();
-          await _saveToCache();
-          notifyListeners();
+
+          if (hasChanged) {
+            await _saveToCache();
+          }
+
+          if (didEnterLoading) {
+            _isLoading = false;
+            didEnterLoading = false;
+            notifyListeners();
+          } else if (hasChanged) {
+            notifyListeners();
+          }
         }
       }
     } catch (e) {
       debugPrint('[PageControlService] fetchControls error: $e');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (didEnterLoading) {
+        _isLoading = false;
+        notifyListeners();
+      }
+      _inFlightFetch = null;
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
     }
   }
 
@@ -208,7 +285,9 @@ class PageControlService extends ChangeNotifier {
       final dio = DioClient.dio;
       final payload = <String, dynamic>{
         'is_under_development': isUnderDev,
+        // ignore: use_null_aware_elements
         if (role != null) 'role': role,
+        // ignore: use_null_aware_elements
         if (customMessage != null) 'message': customMessage,
       };
 
@@ -222,9 +301,12 @@ class PageControlService extends ChangeNotifier {
         final isSuccess = data is Map && (data['success'] == true || data['success'] == 'true');
         if (isSuccess && data['data'] is Map) {
           final updatedMap = Map<String, dynamic>.from(data['data'] as Map);
-          _controls[idx] = PageControlModel.fromJson(updatedMap);
+          final serverModel = PageControlModel.fromJson(updatedMap);
+          if (!_controls[idx].isEffectivelyEqualTo(serverModel)) {
+            _controls[idx] = serverModel;
+            notifyListeners();
+          }
           await _saveToCache();
-          notifyListeners();
           return true;
         }
       }
@@ -387,5 +469,23 @@ class PageControlService extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Resets controls to defaults and clears timestamps/in-flight states (e.g., on logout).
+  void reset() {
+    _controls = List.from(_defaultControls);
+    _lastFetchedAt = null;
+    _isLoading = false;
+    _inFlightFetch = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
+    super.dispose();
   }
 }

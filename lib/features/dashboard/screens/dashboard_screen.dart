@@ -143,6 +143,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       onSalesUserTap: (userId, userName) {
         PipelineStageDrilldownDialog.show(
           context,
+          stage: 'SALES_HANDOVER',
+          stageLabel: '$userName (Active Handover)',
           salesUserId: userId,
           salesUserName: userName,
           initialFilters: kpiFilters.toJson(),

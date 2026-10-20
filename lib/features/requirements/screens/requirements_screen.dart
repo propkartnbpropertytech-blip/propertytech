@@ -59,6 +59,7 @@ import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
+import '../models/requirement_view_model.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -784,18 +785,78 @@ class RequirementsScreen extends StatefulWidget {
   State<RequirementsScreen> createState() => _RequirementsScreenState();
 }
 
-enum LeadDateFilterPreset {
-  today,
-  yesterday,
-  last7Days,
-  thisMonth,
-  customRange,
-  allTime,
-}
-
 class _RequirementsScreenState extends State<RequirementsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _wonSearchController = TextEditingController();
+
+  List<RequirementListItemViewModel> _allViewModels = [];
+  List<RequirementListItemViewModel> _filteredViewModels = [];
+  List<RequirementModel> _filteredRequirements = [];
+  Timer? _searchDebounceTimer;
+
+  void _onSearchChangedDebounced() {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) {
+        _recomputeFilteredRequirements();
+      }
+    });
+  }
+
+  void _recomputeFilteredRequirements({bool notify = true, UserModel? currentUser}) {
+    final rawLoadedList = _cachedRequirements;
+    if (rawLoadedList.isEmpty) {
+      _allViewModels = [];
+      _filteredViewModels = [];
+      _filteredRequirements = [];
+      if (notify && mounted) setState(() {});
+      return;
+    }
+
+    final user = currentUser ?? (() {
+      try {
+        final authState = context.read<AuthBloc>().state;
+        return authState is Authenticated ? authState.user : null;
+      } catch (_) {
+        return null;
+      }
+    })();
+
+    if (_allViewModels.length != rawLoadedList.length) {
+      _allViewModels = rawLoadedList
+          .map((r) => RequirementListItemViewModel.fromRequirement(r, currentUser: user))
+          .toList(growable: false);
+    }
+
+    final allKnownUsers = _getAllKnownUsers();
+
+    _filteredViewModels = RequirementFilterEngine.filterAndSort(
+      items: _allViewModels,
+      currentUser: user,
+      activeMainTab: _activeMainTab,
+      activeListingTab: _activeListingTab,
+      selectedCategoryId: _selectedCategoryId,
+      selectedConfigIds: _selectedConfigIds.toSet(),
+      selectedStatus: _selectedStatus,
+      salesLeadGroupFilter: _salesLeadGroupFilter,
+      selectedSalesFilterId: _selectedSalesFilterId,
+      selectedTelecallerFilterIds: _selectedTelecallerFilterIds.toSet(),
+      selectedReadiness: _selectedReadiness,
+      searchQuery: (_activeMainTab == 'Won' || _activeMainTab == 'My Won')
+          ? _wonSearchController.text
+          : _searchController.text,
+      datePreset: _selectedLeadDateFilter,
+      customStartDate: _customStartDate,
+      customEndDate: _customEndDate,
+      knownUsers: allKnownUsers,
+    );
+
+    _filteredRequirements = _filteredViewModels.map((vm) => vm.requirement).toList();
+
+    if (notify && mounted) {
+      setState(() {});
+    }
+  }
   final TextEditingController _allClientsFollowupSearchController = TextEditingController();
   String _allClientsFollowupSearchQuery = '';
   Timer? _allClientsFollowupSearchDebounce;
@@ -939,6 +1000,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChangedDebounced);
+    _wonSearchController.addListener(_onSearchChangedDebounced);
     if (widget.initialTab != null) {
       final tabLower = widget.initialTab!.toLowerCase();
       final authState = context.read<AuthBloc>().state;
@@ -1368,6 +1431,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
+    _searchController.removeListener(_onSearchChangedDebounced);
+    _wonSearchController.removeListener(_onSearchChangedDebounced);
     MatchCriteriaManager().removeListener(_onCriteriaChanged);
     _removeNotesPopover();
     _requirementsStreamSub?.cancel();
@@ -2228,172 +2294,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   List<RequirementModel> _getMobileFilteredRequirements(UserModel? currentUser) {
-    final rawLoadedList = _cachedRequirements;
-    if (rawLoadedList.isEmpty) return [];
-
-    final query = _searchController.text.trim().toLowerCase();
-    final userFilterActive = (_selectedSalesFilterId != "All" && _selectedSalesFilterId.isNotEmpty) || _selectedTelecallerFilterIds.isNotEmpty;
-    final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
-    final bool viewAllRejected = _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
-    final bool unassignFilter = !viewAllRejected &&
-        !isWonTab &&
-        _selectedStatus == 'Unassign' &&
-        _canSeeUnassignStatusFilter(currentUser);
-
-    final allKnownUsers = _getAllKnownUsers();
-
-    final filtered = rawLoadedList.where((r) {
-      if (_activeMainTab == 'Leads Added by Me') {
-        if (currentUser == null || !_isUserCreator(r, currentUser)) {
-          return false;
-        }
-      }
-      if (currentUser != null && currentUser.role == 'Sales') {
-        if (!_salesCanViewRequirement(r, currentUser)) {
-          return false;
-        }
-        if (_activeMainTab == 'Leads') {
-          if (_salesLeadGroupFilter == 'assigned') {
-            if (!(_isUserAssignee(r, currentUser) && !_isUserCreator(r, currentUser))) {
-              return false;
-            }
-          } else if (_salesLeadGroupFilter == 'added') {
-            if (!_isUserCreator(r, currentUser)) {
-              return false;
-            }
-          }
-        }
-      }
-      if (currentUser != null && RoleGuard.isTelecaller(currentUser.role)) {
-        final uName = currentUser.fullName.trim().toLowerCase();
-        final isCreator = r.createdBy == currentUser.id ||
-            (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
-            (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-        final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
-            (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
-        final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
-            (r.metaCustomFields != null &&
-              (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
-               r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
-               r.metaCustomFields!['telecaller_by_id'] == currentUser.id ||
-               r.metaCustomFields!['telecaller_by'] == currentUser.id ||
-               (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
-        if (!isCreator && !isAssignee && !isTaggedTelecaller) {
-          return false;
-        }
-      }
-
-      final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
-      if (!matchesListingType) return false;
-
-      final matchesCategory = _selectedCategoryId == null || r.categoryId == _selectedCategoryId;
-      if (!matchesCategory) return false;
-
-      final matchesSpec = _selectedConfigIds.isEmpty ||
-          _selectedConfigIds.contains(r.configurationId) ||
-          _selectedConfigIds.contains(r.propertyTypeId) ||
-          r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
-          r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
-      if (!matchesSpec) return false;
-
-      final bool isUnhandledAssigned = _isUnhandledAssignedLead(r, currentUser);
-      String mappedStatus = _isLeadRejected(r)
-          ? getEffectiveStatus(r)
-          : ((r.status == 'Assigned')
-              ? 'Assigned'
-              : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r)));
-      if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
-      if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-      if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
-      if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
-
-      if (isWonTab) {
-        if (!_isLeadWon(r) && mappedStatus != 'Won' && r.status != 'Won' && r.status != 'Closed') {
-          return false;
-        }
-      } else if (_activeMainTab == 'Rejected') {
-        if (!_isLeadRejected(r)) return false;
-      } else if (_activeMainTab == 'Leads') {
-        if (_selectedStatus != 'Rejected' && _isLeadRejected(r)) return false;
-        if (_isLeadWon(r) || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
-          if (_selectedStatus != 'Won') return false;
-        }
-      }
-
-      if (_activeMainTab != 'Leads Added by Me' &&
-          !isWonTab &&
-          !userFilterActive &&
-          _selectedStatus != 'Won' &&
-          !unassignFilter &&
-          mappedStatus == 'Won') return false;
-
-      final matchesStatus = isWonTab
-          ? true
-          : _activeMainTab == 'Rejected'
-          ? true
-          : viewAllRejected
-          ? true
-          : unassignFilter
-          ? _isLeadUnassigned(r)
-          : (userFilterActive
-          ? (_selectedStatus == "All" ||
-              mappedStatus == _selectedStatus ||
-              r.status == _selectedStatus)
-          : (_selectedStatus == "All" ||
-          mappedStatus == _selectedStatus ||
-          (!isUnhandledAssigned && r.status == _selectedStatus) ||
-          (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
-          (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')))));
-      if (!matchesStatus) return false;
-
-      if (_activeMainTab != 'Leads Added by Me') {
-        if (!_matchesSalesAndTelecallerFilters(r, currentUser: currentUser, knownUsers: allKnownUsers)) {
-          return false;
-        }
-      }
-
-      if (query.isNotEmpty) {
-        final clientName = r.clientName.toLowerCase();
-        final clientMobile = r.clientMobile.toLowerCase();
-        final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
-        final remarks = (r.remarks ?? '').toLowerCase();
-        final areas = r.areaNames.join(' ').toLowerCase();
-
-        bool matchesSalesman = false;
-        if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-          final creator = (r.creatorName ?? '').toLowerCase();
-          final assignee = (r.assigneeName ?? '').toLowerCase();
-          matchesSalesman = creator.contains(query) || assignee.contains(query);
-        }
-
-        final matchesSearch = clientName.contains(query) ||
-            clientMobile.contains(query) ||
-            specs.contains(query) ||
-            remarks.contains(query) ||
-            areas.contains(query) ||
-            matchesSalesman;
-        if (!matchesSearch) return false;
-      }
-
-      return _matchesLeadDateFilter(r);
-    }).toList();
-
-    if (_activeMainTab == 'Rejected') {
-      filtered.sort((a, b) {
-        final da = _rejectedAt(a) ?? a.salesAssignedAt ?? a.createdAt;
-        final db = _rejectedAt(b) ?? b.salesAssignedAt ?? b.createdAt;
-        return db.compareTo(da);
-      });
-    } else {
-      filtered.sort((a, b) {
-        final da = a.salesAssignedAt ?? a.createdAt;
-        final db = b.salesAssignedAt ?? b.createdAt;
-        return db.compareTo(da);
-      });
+    if (_cachedRequirements.isEmpty) return const [];
+    if (_allViewModels.length != _cachedRequirements.length || _filteredRequirements.isEmpty) {
+      _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
     }
-
-    return filtered;
+    return _filteredRequirements;
   }
+
 
   int _countActiveLeadFilters() {
     int count = 0;
@@ -2585,9 +2492,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       sliver: SliverList(
                         delegate: SliverChildBuilderDelegate(
-                          (context, index) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _buildMobileLeadCard(context, filteredLeads[index], currentUser),
+                          (context, index) => KeyedSubtree(
+                            key: ValueKey(filteredLeads[index].id),
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _buildMobileLeadCard(context, filteredLeads[index], currentUser),
+                            ),
                           ),
                           childCount: filteredLeads.length,
                         ),
@@ -2864,6 +2774,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        Builder(
+                          builder: (context) {
+                            final salesman = _getSalesmanName(req, currentUser);
+                            final isAssignedToSales = _isLeadAssignedToSales(req);
+                            if (!isAssignedToSales || salesman == 'Unassigned') {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.35)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.person_outline_rounded, size: 11, color: Color(0xFF2563EB)),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        'Assigned to Sales: $salesman',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF2563EB),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -3015,7 +2964,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    if (!isClosed && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser) || currentUser.role == 'Super Admin' || currentUser.role == 'Admin'))
+                    if (!isClosed && RoleGuard.isTelecaller(currentUser?.role) && _isLeadAssignedToSales(req))
+                      Expanded(
+                        child: Text(
+                          _getSalesmanName(req, currentUser),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF2563EB),
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    else if (!isClosed && (_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin'))
                       Expanded(
                         child: SizedBox(
                           height: 32,
@@ -3306,7 +3268,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       query: val,
                       module: 'Leads',
                     );
-                    setState(() {});
                   },
                 ),
               ),
@@ -3545,101 +3506,36 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
 
-    return baseList.where((req) {
-      if (!_isRequirementVisibleToUser(req, currentUser)) return false;
+    final viewModels = (_allViewModels.length == baseList.length && baseList.length == _cachedRequirements.length)
+        ? _allViewModels
+        : baseList.map((r) => RequirementListItemViewModel.fromRequirement(r, currentUser: currentUser)).toList(growable: false);
 
-      final matchesListingType = getListingTypeLabel(req) == _activeListingTab;
-      if (!matchesListingType) return false;
+    final allKnownUsers = _getAllKnownUsers();
 
-      if (_activeMainTab == 'Rejected') {
-        if (!_isLeadRejected(req)) return false;
-      } else if (_activeMainTab == 'Leads Added by Me') {
-        if (currentUser == null || !_isUserCreator(req, currentUser)) return false;
-      } else if (_activeMainTab == 'My Won' || _activeMainTab == 'Won') {
-        if (!_isLeadWon(req)) return false;
-      } else {
-        if (_isLeadRejected(req)) return false;
-        if (_selectedStatus != 'Won' && _isLeadWon(req)) return false;
-        if (currentUser != null && currentUser.role == 'Sales') {
-          if (_salesLeadGroupFilter == 'assigned' && (!_isUserAssignee(req, currentUser) || _isUserCreator(req, currentUser))) {
-            return false;
-          }
-          if (_salesLeadGroupFilter == 'added' && !_isUserCreator(req, currentUser)) {
-            return false;
-          }
-        }
-      }
+    final effectiveConfigIds = (_activeMainTab == 'Won' || _activeMainTab == 'My Won') && _wonConfigurationIds.isNotEmpty
+        ? _wonConfigurationIds.toSet()
+        : _selectedConfigIds.toSet();
 
-      if (_activeMainTab != 'Leads Added by Me') {
-        if (!_matchesSalesAndTelecallerFilters(req, currentUser: currentUser)) {
-          return false;
-        }
-      }
-
-      if (_selectedCategoryId != null && req.categoryId != _selectedCategoryId) {
-        return false;
-      }
-
-      if (_selectedConfigIds.isNotEmpty) {
-        final matchesSpec = _selectedConfigIds.contains(req.configurationId) ||
-            _selectedConfigIds.contains(req.propertyTypeId) ||
-            req.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
-            req.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
-        if (!matchesSpec) return false;
-      }
-
-      if (_activeMainTab != 'My Won' && _activeMainTab != 'Won') {
-        if (_selectedStatus != 'All') {
-        if (_selectedStatus == 'Unassign') {
-          if (!_isLeadUnassigned(req)) return false;
-        } else {
-          final isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
-          String mappedStatus = _isLeadRejected(req)
-              ? getEffectiveStatus(req)
-              : ((req.status == 'Assigned')
-                  ? 'Assigned'
-                  : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
-          if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
-          if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-          if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
-          if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
-
-          if (mappedStatus != _selectedStatus && req.status != _selectedStatus) {
-            final matchesCallAttempted = _selectedStatus == 'Call Attempted' &&
-                (req.status.startsWith('Call Attempted') || req.status.startsWith('Call attempted'));
-            final matchesRejected = _selectedStatus == 'Rejected' && req.status.startsWith('Rejected');
-            if (!matchesCallAttempted && !matchesRejected) return false;
-          }
-        }
-      }
-    }
-
-      final query = _searchController.text.trim().toLowerCase();
-      if (query.isNotEmpty) {
-        final clientName = req.clientName.toLowerCase();
-        final clientMobile = req.clientMobile.toLowerCase();
-        final specs = '${req.propertyTypeName} ${req.configurationName ?? ""} ${req.listingTypeName ?? ""} ${req.categoryName ?? ""}'.toLowerCase();
-        final remarks = (req.remarks ?? '').toLowerCase();
-        final areas = req.areaNames.join(' ').toLowerCase();
-
-        bool matchesSalesman = false;
-        if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-          final creator = (req.creatorName ?? '').toLowerCase();
-          final assignee = (req.assigneeName ?? '').toLowerCase();
-          matchesSalesman = creator.contains(query) || assignee.contains(query);
-        }
-
-        final matchesSearch = clientName.contains(query) ||
-            clientMobile.contains(query) ||
-            specs.contains(query) ||
-            remarks.contains(query) ||
-            areas.contains(query) ||
-            matchesSalesman;
-        if (!matchesSearch) return false;
-      }
-
-      return _matchesLeadDateFilterWithPreset(req, preset);
-    }).length;
+    return RequirementFilterEngine.filterAndSort(
+      items: viewModels,
+      currentUser: currentUser,
+      activeMainTab: _activeMainTab,
+      activeListingTab: _activeListingTab,
+      selectedCategoryId: _selectedCategoryId,
+      selectedConfigIds: effectiveConfigIds,
+      selectedStatus: _selectedStatus,
+      salesLeadGroupFilter: _salesLeadGroupFilter,
+      selectedSalesFilterId: _selectedSalesFilterId,
+      selectedTelecallerFilterIds: _selectedTelecallerFilterIds.toSet(),
+      selectedReadiness: _selectedReadiness,
+      searchQuery: (_activeMainTab == 'Won' || _activeMainTab == 'My Won')
+          ? _wonSearchController.text
+          : _searchController.text,
+      datePreset: preset,
+      customStartDate: _customStartDate,
+      customEndDate: _customEndDate,
+      knownUsers: allKnownUsers,
+    ).length;
   }
 
   Future<void> _pickCustomDateRange(BuildContext context) async {
@@ -4067,7 +3963,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           ),
         ),
       const DropdownMenuItem(value: 'New', child: Text('New')),
-      const DropdownMenuItem(value: 'Assigned', child: Text('Assigned')),
+      const DropdownMenuItem(value: 'Assigned', child: Text('Assigned to Sales')),
       const DropdownMenuItem(value: 'Not Started', child: Text('Not Started')),
       const DropdownMenuItem(value: 'Call Attempted', child: Text('Call Attempted')),
       const DropdownMenuItem(value: 'Follow-up', child: Text('Follow-up')),
@@ -4163,6 +4059,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     context.read<RequirementsBloc>().add(UpdateRequirementEvent(updated));
   }
 
+  bool _isLeadAssignedToSales(RequirementModel req) {
+    final s = req.status.trim().toLowerCase();
+    if (s == 'assigned' || s == 'assigned to sales') return true;
+    final transfer = req.metaCustomFields?['_transfer'];
+    if (transfer is Map && transfer['assigned_to'] != null && transfer['assigned_to'].toString().trim().isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
   String _getSalesmanName(RequirementModel req, UserModel? currentUser) {
     if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
       return req.assigneeName!.trim();
@@ -4172,6 +4078,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       if (fromAssignId != null) return fromAssignId;
       if (req.assignedTo!.trim() != 'Unassigned' && !_looksLikeUserId(req.assignedTo!)) {
         return req.assignedTo!.trim();
+      }
+    }
+    final transfer = req.metaCustomFields?['_transfer'];
+    if (transfer is Map) {
+      final transferToName = transfer['assigned_to_name']?.toString()?.trim();
+      if (transferToName != null && transferToName.isNotEmpty) return transferToName;
+      final transferToId = transfer['assigned_to']?.toString()?.trim();
+      if (transferToId != null && transferToId.isNotEmpty) {
+        final fromTransferId = _liveUserName(transferToId);
+        if (fromTransferId != null) return fromTransferId;
       }
     }
     if (req.creatorName != null && req.creatorName!.trim().isNotEmpty) {
@@ -4400,6 +4316,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String? _currentAssignedUserId(RequirementModel req, List<users_model.UserModel> users) {
     if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
       return req.assignedTo!.trim();
+    }
+    final transfer = req.metaCustomFields?['_transfer'];
+    if (transfer is Map) {
+      final transferTo = transfer['assigned_to']?.toString()?.trim();
+      if (transferTo != null && transferTo.isNotEmpty) return transferTo;
+      final transferToName = transfer['assigned_to_name']?.toString()?.trim()?.toLowerCase();
+      if (transferToName != null && transferToName.isNotEmpty) {
+        final match = users.firstWhereOrNull((u) => u.fullName.trim().toLowerCase() == transferToName);
+        if (match != null) return match.id;
+      }
     }
     if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
       final needle = req.assigneeName!.trim().toLowerCase();
@@ -5393,8 +5319,39 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
+  Widget _buildTelecallerAssignedToSalesBadge(RequirementModel req, UserModel? currentUser) {
+    final salesman = _getSalesmanName(req, currentUser);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.person_rounded, size: 14, color: Color(0xFF2563EB)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              salesman,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF2563EB),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String displayStatusLabel(String status) {
-    if (status == 'Assigned') return 'Assigned';
+    if (status == 'Assigned' || status == 'Assigned to Sales') return 'Assigned to Sales';
     if (status == 'New') return 'New';
     if (status == 'Not Started') return 'Not Started';
     if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return 'Call Attempted';
@@ -5412,7 +5369,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     Color? color,
   }) {
     final bool isSelected = currentStatus == value ||
-        (value == 'Assigned' && currentStatus == 'Assigned') ||
+        ((value == 'Assigned' || value == 'Assigned to Sales') && (currentStatus == 'Assigned' || currentStatus == 'Assigned to Sales')) ||
         (value == 'New' && currentStatus == 'New') ||
         (value == 'Not Started' && currentStatus == 'Not Started') ||
         (value == 'Not Interested' && (currentStatus == 'Not Interested' || currentStatus == 'Dead' || currentStatus == 'Suspended')) ||
@@ -6365,8 +6322,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
     final String currentStatus = _isLeadRejected(req)
         ? getEffectiveStatus(req)
-        : ((req.status == 'Assigned')
-            ? 'Assigned'
+        : ((req.status == 'Assigned' || req.status == 'Assigned to Sales')
+            ? 'Assigned to Sales'
             : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
     final statusColor = compact ? _getStatusColor(currentStatus) : CRMColors.primary;
     final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
@@ -6449,7 +6406,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         itemBuilder: (BuildContext context) {
           return [
             _buildStatusMenuItem('New', 'New', currentStatus),
-            _buildStatusMenuItem('Assigned', 'Assigned', currentStatus, color: const Color(0xFF0F766E)),
+            _buildStatusMenuItem('Assigned', 'Assigned to Sales', currentStatus, color: const Color(0xFF2563EB)),
             _buildStatusMenuItem(followupValue, followupLabel, currentStatus),
             _buildStatusMenuItem('Interested', 'Interested', currentStatus),
             _buildStatusMenuItem('Site Visit', 'Site Visit Sche.', currentStatus),
@@ -7163,170 +7120,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         List<RequirementModel> requirements = [];
 
         if (rawLoadedList.isNotEmpty) {
-          final query = _searchController.text.trim().toLowerCase();
-          requirements = rawLoadedList.where((r) {
-            if (_activeMainTab == 'Leads Added by Me') {
-              if (currentUser == null || !_isUserCreator(r, currentUser)) {
-                return false;
-              }
-            }
-            if (currentUser != null && currentUser.role == 'Sales') {
-              if (!_salesCanViewRequirement(r, currentUser)) {
-                return false;
-              }
-              if (_activeMainTab == 'Leads') {
-                if (_salesLeadGroupFilter == 'assigned') {
-                  if (!(_isUserAssignee(r, currentUser) && !_isUserCreator(r, currentUser))) {
-                    return false;
-                  }
-                } else if (_salesLeadGroupFilter == 'added') {
-                  if (!_isUserCreator(r, currentUser)) {
-                    return false;
-                  }
-                }
-              }
-            }
-            if (currentUser != null && RoleGuard.isTelecaller(currentUser.role)) {
-              final uName = currentUser.fullName.trim().toLowerCase();
-              final isCreator = r.createdBy == currentUser.id ||
-                  (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
-                  (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-              final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
-                  (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
-              final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
-                  (r.metaCustomFields != null &&
-                    (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
-                     r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
-                     r.metaCustomFields!['telecaller_by_id'] == currentUser.id ||
-                     r.metaCustomFields!['telecaller_by'] == currentUser.id ||
-                     (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
-              if (!isCreator && !isAssignee && !isTaggedTelecaller) {
-                return false;
-              }
-            }
-
-            final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
-            final matchesCategory = _selectedCategoryId == null || r.categoryId == _selectedCategoryId;
-            final matchesSpec = _selectedConfigIds.isEmpty ||
-                _selectedConfigIds.contains(r.configurationId) ||
-                _selectedConfigIds.contains(r.propertyTypeId) ||
-                r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
-                r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
-            
-            final bool isUnhandledAssigned = _isUnhandledAssignedLead(r, currentUser);
-            // Map legacy status strings to new pipeline statuses for backward compatibility
-            String mappedStatus = _isLeadRejected(r)
-                ? getEffectiveStatus(r)
-                : ((r.status == 'Assigned')
-                    ? 'Assigned'
-                    : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(r)));
-            if (mappedStatus == 'Active' || mappedStatus == 'Live') mappedStatus = 'Interested';
-            if (mappedStatus == 'Closed' || mappedStatus == 'Won') mappedStatus = 'Won';
-            if (mappedStatus == 'Suspended' || mappedStatus == 'Dead') mappedStatus = 'Not Interested';
-            if (mappedStatus.startsWith('Rejected') || mappedStatus == 'Bin') mappedStatus = 'Rejected';
-
-            final userFilterActive =
-                (_selectedSalesFilterId != "All" && _selectedSalesFilterId.isNotEmpty) ||
-                _selectedTelecallerFilterIds.isNotEmpty;
-            final bool viewAllRejected =
-                _activeMainTab == 'Rejected' && _canViewAllRejectedLeads(currentUser);
-
-            final bool isWonTab = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
-            if (isWonTab) {
-              if (!_isLeadWon(r) && mappedStatus != 'Won' && r.status != 'Won' && r.status != 'Closed') {
-                return false;
-              }
-            } else if (_activeMainTab == 'Rejected') {
-              if (!_isLeadRejected(r)) return false;
-            } else if (_activeMainTab == 'Leads') {
-              if (_selectedStatus != 'Rejected' && _isLeadRejected(r)) return false;
-              if (_isLeadWon(r) || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
-                if (_selectedStatus != 'Won') return false;
-              }
-            }
-
-            // Exclude Won requirements from the active Requirements view unless user explicitly selected "Won"
-            // or is viewing a specific team member's complete lead set.
-            final bool unassignFilter =
-                !viewAllRejected &&
-                !isWonTab &&
-                _selectedStatus == 'Unassign' &&
-                _canSeeUnassignStatusFilter(currentUser);
-
-            if (_activeMainTab != 'Leads Added by Me' &&
-                !isWonTab &&
-                !userFilterActive &&
-                _selectedStatus != 'Won' &&
-                !unassignFilter &&
-                mappedStatus == 'Won') return false;
-
-            final matchesStatus = isWonTab
-                ? true
-                : _activeMainTab == 'Rejected'
-                ? true
-                : viewAllRejected
-                ? true
-                : unassignFilter
-                ? _isLeadUnassigned(r)
-                : (userFilterActive
-                ? (_selectedStatus == "All" ||
-                    mappedStatus == _selectedStatus ||
-                    r.status == _selectedStatus)
-                : (_selectedStatus == "All" ||
-                mappedStatus == _selectedStatus ||
-                (!isUnhandledAssigned && r.status == _selectedStatus) ||
-                (!isUnhandledAssigned && _selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
-                (!isUnhandledAssigned && _selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')))));
-
-            final matchesDate = _matchesLeadDateFilter(r);
-
-            bool matchesUser = true;
-            if (_activeMainTab != 'Leads Added by Me') {
-              matchesUser = _matchesSalesAndTelecallerFilters(r, currentUser: currentUser);
-            }
-
-            bool matchesSearch = true;
-            if (query.isNotEmpty) {
-              final clientName = r.clientName.toLowerCase();
-              final clientMobile = r.clientMobile.toLowerCase();
-              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
-              final remarks = (r.remarks ?? '').toLowerCase();
-              final areas = r.areaNames.join(' ').toLowerCase();
-
-              bool matchesSalesman = false;
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-                final creator = (r.creatorName ?? '').toLowerCase();
-                final assignee = (r.assigneeName ?? '').toLowerCase();
-                matchesSalesman = creator.contains(query) || assignee.contains(query);
-              }
-
-              matchesSearch = clientName.contains(query) ||
-                  clientMobile.contains(query) ||
-                  specs.contains(query) ||
-                  remarks.contains(query) ||
-                  areas.contains(query) ||
-                  matchesSalesman;
-            }
-
-            final matchesReadiness = _selectedReadiness == "All" ||
-                (_selectedReadiness == "Needs Details" ? r.matchingReadiness != 'Ready' : r.matchingReadiness == _selectedReadiness);
-
-            return matchesListingType && matchesCategory && matchesSpec && matchesStatus && matchesSearch && matchesDate && matchesReadiness && matchesUser;
-          }).toList();
-
-          if (_activeMainTab == 'Rejected') {
-            requirements.sort((a, b) {
-              final da = _rejectedAt(a) ?? a.salesAssignedAt ?? a.createdAt;
-              final db = _rejectedAt(b) ?? b.salesAssignedAt ?? b.createdAt;
-              return db.compareTo(da);
-            });
-          } else {
-            requirements.sort((a, b) {
-              final da = a.salesAssignedAt ?? a.createdAt;
-              final db = b.salesAssignedAt ?? b.createdAt;
-              return db.compareTo(da);
-            });
+          if (_allViewModels.length != rawLoadedList.length || _filteredRequirements.isEmpty) {
+            _cachedRequirements = rawLoadedList;
+            _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
           }
+          requirements = _filteredRequirements;
         }
 
     final totalCount = requirements.length;
@@ -7443,6 +7241,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 ),
                               ),
                             ],
+                            Builder(
+                              builder: (context) {
+                                final salesman = _getSalesmanName(req, currentUser);
+                                final isAssignedToSales = _isLeadAssignedToSales(req);
+                                if (!isAssignedToSales || salesman == 'Unassigned') {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.35)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.person_outline_rounded, size: 10, color: Color(0xFF2563EB)),
+                                        const SizedBox(width: 3),
+                                        Flexible(
+                                          child: Text(
+                                            'Assigned to Sales: $salesman',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Color(0xFF2563EB),
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                             if (req.isMetaLead) ...[
                               const SizedBox(height: 3),
                               Container(
@@ -7552,12 +7389,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             )
-                          : ((_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser))
-                              ? _buildAssignToDropdown(
-                                  req,
-                                  isReassign: _canSalesReassignLead(currentUser),
-                                )
-                              : _buildSalesAssignToLabel(req, currentUser)),
+                          : (RoleGuard.isTelecaller(currentUser?.role) && _isLeadAssignedToSales(req)
+                              ? _buildTelecallerAssignedToSalesBadge(req, currentUser)
+                              : ((_canInitiallyAssignLead(currentUser) || _canSalesReassignLead(currentUser))
+                                  ? _buildAssignToDropdown(
+                                      req,
+                                      isReassign: _canSalesReassignLead(currentUser),
+                                    )
+                                  : _buildSalesAssignToLabel(req, currentUser))),
                     ),
                     DataCell(_buildSpecsConfigCell(req)),
                     DataCell(
@@ -7804,7 +7643,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       borderSide: BorderSide(color: CRMColors.border),
                     ),
                   ),
-                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),
@@ -7884,124 +7722,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         );
         final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
 
-        List<RequirementModel> requirements;
+        List<RequirementModel> requirements = [];
 
-        if (isAdminOrSuperAdmin || currentUser?.role == 'Telecaller') {
-          // Admin, Super Admin & Telecaller: see Won leads with full filters
-          requirements = rawLoadedList.where((r) {
-            if (!_isLeadWon(r)) return false;
-
-            // In Won tab, Admin and Super Admin can see all Won leads from every person/user.
-            // Listing type match (Rent vs Re-Sale):
-            final matchesListingType = getListingTypeLabel(r) == _activeListingTab;
-            if (!matchesListingType) return false;
-
-            // Category filter:
-            if (_selectedCategoryId != null && _selectedCategoryId!.isNotEmpty) {
-              if (r.categoryId != _selectedCategoryId) return false;
-            }
-
-            // BHK / Property Type filter:
-            if (_selectedConfigIds.isNotEmpty) {
-              final matchesSpec = _selectedConfigIds.contains(r.configurationId) ||
-                  _selectedConfigIds.contains(r.propertyTypeId) ||
-                  r.configurationIds.any((id) => _selectedConfigIds.contains(id)) ||
-                  r.propertyTypeIds.any((id) => _selectedConfigIds.contains(id));
-              if (!matchesSpec) return false;
-            }
-
-            // Sales & Telecaller filters:
-            final allKnownUsers = _getAllKnownUsers();
-            if (!_matchesSalesAndTelecallerFilters(r, currentUser: currentUser, knownUsers: allKnownUsers)) {
-              return false;
-            }
-
-            // Date filter:
-            if (!_matchesLeadDateFilter(r)) return false;
-
-            // Search query filter:
-            final query = _searchController.text.trim().toLowerCase();
-            if (query.isNotEmpty) {
-              final clientName = r.clientName.toLowerCase();
-              final clientMobile = r.clientMobile.toLowerCase();
-              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
-              final remarks = (r.remarks ?? '').toLowerCase();
-              final areas = r.areaNames.join(' ').toLowerCase();
-
-              final creator = (r.creatorName ?? '').toLowerCase();
-              final assignee = (r.assigneeName ?? '').toLowerCase();
-              final matchesSalesman = creator.contains(query) || assignee.contains(query);
-
-              final matchesSearch = clientName.contains(query) ||
-                  clientMobile.contains(query) ||
-                  specs.contains(query) ||
-                  remarks.contains(query) ||
-                  areas.contains(query) ||
-                  matchesSalesman;
-              if (!matchesSearch) return false;
-            }
-
-            return true;
-          }).toList();
-        } else {
-          // Non-Admin branch (e.g. Sales)
-          requirements = rawLoadedList.where((r) => _isLeadWon(r)).toList();
-
-          if (currentUser != null && currentUser.role == 'Sales') {
-            requirements = requirements.where((r) => _salesCanViewRequirement(r, currentUser)).toList();
+        if (rawLoadedList.isNotEmpty) {
+          if (_allViewModels.length != rawLoadedList.length || _filteredRequirements.isEmpty) {
+            _cachedRequirements = rawLoadedList;
+            _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
           }
-
-          if (_selectedCategoryId != null && _selectedCategoryId!.isNotEmpty) {
-            requirements = requirements.where((r) => r.categoryId == _selectedCategoryId).toList();
-          }
-
-          final selectedCat = _metadata?.categories.firstWhereOrNull((c) => c.id == _selectedCategoryId);
-          final catName = selectedCat?.name.toLowerCase() ?? '';
-          final isPropertyTypeFilter = catName.contains('commercial') ||
-              catName.contains('land') ||
-              catName.contains('plot') ||
-              catName.contains('industrial');
-
-          if (_wonConfigurationIds.isNotEmpty) {
-            requirements = requirements.where((r) {
-              if (isPropertyTypeFilter) {
-                return _wonConfigurationIds.contains(r.propertyTypeId) ||
-                    _wonConfigurationIds.any((id) => r.propertyTypeIds.contains(id));
-              } else {
-                return (r.configurationId != null && _wonConfigurationIds.contains(r.configurationId)) ||
-                    _wonConfigurationIds.any((id) => r.configurationIds.contains(id));
-              }
-            }).toList();
-          }
-
-          final query = _wonSearchController.text.trim().toLowerCase();
-
-          if (query.isNotEmpty) {
-            requirements = requirements.where((r) {
-              final clientName = r.clientName.toLowerCase();
-              final clientMobile = r.clientMobile.toLowerCase();
-              final specs = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName ?? ""}'.toLowerCase();
-              final remarks = (r.remarks ?? '').toLowerCase();
-              final areas = r.areaNames.join(' ').toLowerCase();
-
-              bool matchesSalesman = false;
-              if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-                final creator = (r.creatorName ?? '').toLowerCase();
-                final assignee = (r.assigneeName ?? '').toLowerCase();
-                matchesSalesman = creator.contains(query) || assignee.contains(query);
-              }
-
-              return clientName.contains(query) ||
-                  clientMobile.contains(query) ||
-                  specs.contains(query) ||
-                  remarks.contains(query) ||
-                  areas.contains(query) ||
-                  matchesSalesman;
-            }).toList();
-          }
+          requirements = _filteredRequirements;
         }
-
-        requirements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         final totalCount = requirements.length;
         final totalPages = (totalCount / _requirementsPerPage).ceil();
@@ -8590,22 +8319,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ],
             ),
           ),
-        ...requirements.map((req) {
-          final String budgetText = (req.minBudget > 0 || req.maxBudget > 0)
-              ? '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}'
-              : 'Budget on Request';
-          final String dateText = DateFormat("dd MMM ''yy, h:mm a").format(req.createdAt.toLocal());
-          final String specsText = '${req.propertyTypeName} (${(req.configurationName != null && req.configurationName!.isNotEmpty) ? req.configurationName : "Any Config"})';
-          final String areasText = req.displayAreasText;
-          final String listingType = getListingTypeLabel(req);
-          final bool isSelected = _selectedRequirementIds.contains(req.id);
-          final bool isHighlighted = req.id == _highlightedRequirementId;
-          final bool isClosed = _isLeadClosedOrTerminal(req);
-          final bool isWon = _isLeadWon(req);
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: requirements.length,
+          itemBuilder: (context, index) {
+            final req = requirements[index];
+            final String budgetText = (req.minBudget > 0 || req.maxBudget > 0)
+                ? '₹${BudgetFormatter.format(req.minBudget)} - ₹${BudgetFormatter.format(req.maxBudget)}'
+                : 'Budget on Request';
+            final String dateText = DateFormat("dd MMM ''yy, h:mm a").format(req.createdAt.toLocal());
+            final String specsText = '${req.propertyTypeName} (${(req.configurationName != null && req.configurationName!.isNotEmpty) ? req.configurationName : "Any Config"})';
+            final String areasText = req.displayAreasText;
+            final String listingType = getListingTypeLabel(req);
+            final bool isSelected = _selectedRequirementIds.contains(req.id);
+            final bool isHighlighted = req.id == _highlightedRequirementId;
+            final bool isClosed = _isLeadClosedOrTerminal(req);
+            final bool isWon = _isLeadWon(req);
 
-          return Padding(
-            padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-            child: CRMCard(
+            return KeyedSubtree(
+              key: ValueKey(req.id),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+                child: CRMCard(
               borderColor: isHighlighted
                   ? CRMColors.primaryOf(context)
                   : (isClosed ? CRMColors.borderOf(context).withValues(alpha: 0.5) : null),
@@ -9250,8 +8986,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 ],
               ),
             ),
-          );
-        }),
+          ),
+        );
+      },
+    ),
         const SizedBox(height: CRMSpacing.s),
         _buildPagination(totalCount, totalPages, currentPage),
       ],
@@ -9477,7 +9215,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return const Color(0xFF0288D1);
     switch (status) {
       case 'Assigned':
-        return const Color(0xFF0F766E);
+      case 'Assigned to Sales':
+        return const Color(0xFF2563EB);
       case 'Won':
         return CRMColors.success;
       case 'Follow-up':
@@ -13066,6 +12805,28 @@ class _RunMatchesButtonWithBadge extends StatefulWidget {
 
 class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> {
   int? _matchCount;
+  static List<PropertyModel>? _cachedSharedProps;
+  static DateTime? _lastPropsFetch;
+  static Future<List<PropertyModel>>? _inFlightFetch;
+
+  static Future<List<PropertyModel>> _getSharedProperties() async {
+    if (_cachedSharedProps != null &&
+        _lastPropsFetch != null &&
+        DateTime.now().difference(_lastPropsFetch!) < const Duration(minutes: 2)) {
+      return _cachedSharedProps!;
+    }
+    if (_inFlightFetch != null) {
+      return _inFlightFetch!;
+    }
+    _inFlightFetch = PropertiesRepository().getProperties();
+    try {
+      _cachedSharedProps = await _inFlightFetch!;
+      _lastPropsFetch = DateTime.now();
+      return _cachedSharedProps!;
+    } finally {
+      _inFlightFetch = null;
+    }
+  }
 
   @override
   void initState() {
@@ -13098,14 +12859,34 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
     List<PropertyModel> props = widget.properties ?? [];
     if (props.isEmpty) {
       try {
-        props = await PropertiesRepository().getProperties();
+        props = await _getSharedProperties();
       } catch (_) {}
     }
+    if (props.isEmpty) return;
+
+    final req = widget.requirement;
+    final isWonReq = req.status.toLowerCase() == 'won' || req.status.toLowerCase() == 'closed';
 
     int count = 0;
-    for (final p in props) {
-      if (await _RequirementsScreenState._isRequirementPropertyMatchAsync(p, widget.requirement)) {
-        count++;
+    if (isWonReq) {
+      final wonPropertyIds = await PropertyDealClientStore.getWonPropertyIds(req.id);
+      if (wonPropertyIds.isNotEmpty) {
+        count = props.where((p) => wonPropertyIds.contains(p.id)).length;
+      } else {
+        final reqClientName = req.clientName.trim().toLowerCase();
+        for (final p in props) {
+          final clientName = await PropertyDealClientStore.getClientName(p.id, property: p);
+          if (clientName != null && clientName.trim().toLowerCase() == reqClientName) {
+            count++;
+          }
+        }
+      }
+    } else {
+      // Synchronous, non-yielding high-speed loop on UI thread
+      for (final p in props) {
+        if (_RequirementsScreenState._isRequirementPropertyMatch(p, req)) {
+          count++;
+        }
       }
     }
 
@@ -14004,7 +13785,7 @@ String getEffectiveStatus(RequirementModel req) {
 }
 
 String displayStatusLabel(String status) {
-  if (status == 'Assigned') return 'Assigned';
+  if (status == 'Assigned' || status == 'Assigned to Sales') return 'Assigned to Sales';
   if (status == 'New') return 'New';
   if (status == 'Not Started') return 'Not Started';
   if (status == 'Not Interested') return 'Not Interested';
@@ -14819,17 +14600,25 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
   }
 
   List<Widget> _buildLeadPipelineDetailRows(RequirementModel req) {
-    final assignee = (req.assigneeName ?? '').trim().isNotEmpty
+    final authState = context.read<AuthBloc>().state;
+    final currentUser = authState is Authenticated ? authState.user : null;
+    final transfer = req.metaCustomFields?['_transfer'];
+    String? transferSalesman;
+    if (transfer is Map) {
+      transferSalesman = transfer['assigned_to_name']?.toString().trim();
+    }
+    final effectiveAssignee = (req.assigneeName ?? '').trim().isNotEmpty
         ? req.assigneeName!.trim()
-        : 'Unassigned';
+        : (transferSalesman?.isNotEmpty == true ? transferSalesman! : 'Unassigned');
+    final isAssignedToSales = req.status.trim().toLowerCase() == 'assigned' ||
+        req.status.trim().toLowerCase() == 'assigned to sales' ||
+        (transfer is Map && transfer['assigned_to'] != null && transfer['assigned_to'].toString().trim().isNotEmpty);
     final parsedFu = _parseFollowupDateTime(req.nextFollowupDate);
     final followup = parsedFu != null
         ? DateFormat('dd/MM/yyyy').format(parsedFu)
         : ((req.nextFollowupDate ?? '').trim().isNotEmpty
             ? req.nextFollowupDate!.trim()
             : '—');
-    final authState = context.read<AuthBloc>().state;
-    final currentUser = authState is Authenticated ? authState.user : null;
     final bool isManuallyAddedByCurrentUser =
         currentUser != null &&
         req.isManuallyAdded &&
@@ -14842,7 +14631,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
         _buildDetailRow("Rejection Note", req.rejectionRemark!.trim(), Icons.note_alt_outlined),
       if (isManuallyAddedByCurrentUser)
         _buildDetailRow("Lead Type", "Manually Added", Icons.person_add_alt_1_rounded),
-      _buildDetailRow("Assigned To", assignee, Icons.person_outline_rounded),
+      _buildDetailRow(isAssignedToSales ? "Assigned to Sales" : "Assigned To", effectiveAssignee, Icons.person_outline_rounded),
       _buildDetailRow("Follow-up", followup, Icons.event_rounded),
     ];
   }

@@ -463,13 +463,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
   }
 
   void _openOpenLeadsDrilldown() {
-    TelecallerKpiDialogs.showOpenLeadsDrilldown(
-      context,
-      dateFilter: _kpiDateFilter,
-      startDate: _customStartDate,
-      endDate: _customEndDate,
-      leadType: _kpiLeadType,
-    );
+    _openKpiDrilldown(category: 'open', title: 'Open Leads');
   }
 
   void _openArchiveDrilldown() {
@@ -1081,7 +1075,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
                     ),
                     _clickableKpi(
                       context,
-                      'Archive',
+                      'Listed',
                       '$_archivedKpiCount',
                       Icons.archive_outlined,
                       accentColor: const Color(0xFF64748B),
@@ -1637,7 +1631,7 @@ class _TelecallerDashboardViewState extends State<_TelecallerDashboardView> {
         onTap: _openFollowupsDrilldown,
       ),
       _MobileKpiItem(
-        label: 'Archive',
+        label: 'Listed',
         value: '$_archivedKpiCount',
         icon: Icons.archive_outlined,
         accentColor: const Color(0xFF64748B),

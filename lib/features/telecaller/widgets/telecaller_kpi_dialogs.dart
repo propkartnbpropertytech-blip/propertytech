@@ -51,15 +51,14 @@ class TelecallerKpiDialogs {
     String? endDate,
     required String leadType,
   }) {
-    return showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogCtx) => TelecallerOpenLeadsDialog(
-        dateFilter: dateFilter,
-        startDate: startDate,
-        endDate: endDate,
-        leadType: leadType,
-      ),
+    return showKpiLeadsDrilldown(
+      context,
+      category: 'open',
+      title: 'Open Leads',
+      dateFilter: dateFilter,
+      startDate: startDate,
+      endDate: endDate,
+      leadType: leadType,
     );
   }
 
@@ -2433,7 +2432,7 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
                               children: [
                                 Flexible(
                                   child: Text(
-                                    'Archived Leads',
+                                    'Listed Leads',
                                     style: TextStyle(
                                       fontSize: 16.5,
                                       fontWeight: FontWeight.bold,
@@ -2471,7 +2470,7 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Combined archive of Property Listing and Requirement Leads',
+                        'Combined list of Property Listing and Requirement Leads',
                         style: TextStyle(
                           fontSize: 11.5,
                           color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
@@ -2515,7 +2514,7 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
                             Row(
                               children: [
                                 Text(
-                                  'Archived Leads',
+                                  'Listed Leads',
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -2542,7 +2541,7 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'Combined archive of Property Listing and Requirement Leads',
+                              'Combined list of Property Listing and Requirement Leads',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
@@ -2692,8 +2691,8 @@ class _TelecallerArchiveLeadsDialogState extends State<TelecallerArchiveLeadsDia
             const SizedBox(height: 10),
             Text(
               _searchQuery.isNotEmpty
-                  ? 'No archived leads matching "$_searchQuery".'
-                  : (isListingTab ? 'No archived Property Listing leads.' : 'No archived Requirement leads.'),
+                  ? 'No listed leads matching "$_searchQuery".'
+                  : (isListingTab ? 'No Property Listed leads.' : 'No Requirement Listed leads.'),
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
             ),
           ],

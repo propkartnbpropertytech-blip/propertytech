@@ -6,6 +6,7 @@ import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/local_repositories.dart';
 import '../../../core/storage/performance_logger.dart';
+import '../../../core/api/api_exception.dart';
 
 class PropertiesRepository {
   final PropertiesService _propertiesService = PropertiesService();
@@ -386,9 +387,13 @@ class PropertiesRepository {
       final fresh = PropertyModel.fromJson(propMap);
 
       await _coordinator.propertyLocal.saveProperties([fresh.toLocal()]);
+      _lastRefreshAt = null;
       _coordinator.refreshProperties();
       return fresh;
     } catch (e) {
+      if (e is ApiException && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+        rethrow;
+      }
       final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
       final freshData = Map<String, dynamic>.from(propertyData);
       freshData['id'] = tempId;

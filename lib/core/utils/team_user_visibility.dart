@@ -103,6 +103,21 @@ class TeamUserVisibility {
     final isAssignedToSales = _matchesPerson(req.assignedTo, salesperson) ||
         _matchesPerson(req.assigneeName, salesperson);
 
+    final transfer = req.metaCustomFields?['_transfer'];
+    bool transferMatches = false;
+    if (transfer is Map) {
+      final transferTo = transfer['assigned_to']?.toString();
+      final transferToName = transfer['assigned_to_name']?.toString();
+      final transferTcId = transfer['telecaller_id']?.toString() ?? transfer['interacted_by']?.toString();
+      if ((_matchesPerson(transferTo, salesperson) || _matchesPerson(transferToName, salesperson)) &&
+          (_matchesPerson(transferTcId, currentTelecaller) ||
+           _matchesPerson(req.assignedTelecallerId, currentTelecaller) ||
+           _matchesPerson(req.createdBy, currentTelecaller) ||
+           _matchesPerson(req.creatorName, currentTelecaller))) {
+        transferMatches = true;
+      }
+    }
+
     final history = req.metaCustomFields?['assignment_history'];
     bool historyMatches = false;
     if (history is List) {
@@ -121,13 +136,15 @@ class TeamUserVisibility {
       }
     }
 
+    if (transferMatches) return true;
     if (!isAssignedToSales && !historyMatches) return false;
 
     final createdByMe = _matchesPerson(req.createdBy, currentTelecaller) ||
         _matchesPerson(req.creatorName, currentTelecaller);
     final metaTcId = req.metaCustomFields?['telecaller_id']?.toString() ??
         req.metaCustomFields?['assigned_telecaller_id']?.toString() ??
-        req.metaCustomFields?['telecaller_by']?.toString();
+        req.metaCustomFields?['telecaller_by']?.toString() ??
+        req.assignedTelecallerId;
     final tcMatches = metaTcId != null && _matchesPerson(metaTcId, currentTelecaller);
 
     return createdByMe || tcMatches || historyMatches || isAssignedToSales;
@@ -145,6 +162,29 @@ class TeamUserVisibility {
     }
     final meta = req.metaCustomFields;
     if (meta != null) {
+      if (meta['_transfer'] is Map) {
+        final t = meta['_transfer'] as Map;
+        if (_matchesPerson(t['assigned_to']?.toString(), user) ||
+            _matchesPerson(t['assigned_to_name']?.toString(), user) ||
+            _matchesPerson(t['telecaller_id']?.toString(), user) ||
+            _matchesPerson(t['interacted_by']?.toString(), user)) {
+          return true;
+        }
+      }
+      if (meta['_cnr'] is Map) {
+        final c = meta['_cnr'] as Map;
+        if (_matchesPerson(c['telecaller_id']?.toString(), user) ||
+            _matchesPerson(c['interacted_by']?.toString(), user)) {
+          return true;
+        }
+      }
+      if (meta['_callback'] is Map) {
+        final cb = meta['_callback'] as Map;
+        if (_matchesPerson(cb['telecaller_id']?.toString(), user) ||
+            _matchesPerson(cb['interacted_by']?.toString(), user)) {
+          return true;
+        }
+      }
       final keysToCheck = [
         'assigned_telecaller_id',
         'assigned_telecaller_name',

@@ -14,7 +14,7 @@ import '../../../core/design_system/widgets/inputs.dart';
 import '../models/document_model.dart';
 import 'library_widgets.dart';
 import '../../properties/models/property_model.dart';
-import '../../properties/repository/properties_repository.dart';
+import '../repository/library_repository.dart';
 
 class ResaleLibraryScreen extends StatefulWidget {
   final Map<String, dynamic>? initialArgs;
@@ -48,8 +48,6 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
 
   // Autocomplete suggestions
   List<String> _properties = ['All'];
-  List<String> _sellers = ['All'];
-  List<String> _buyers = ['All'];
   final List<String> _docTypes = [
     'All',
     'Sale Agreement',
@@ -89,9 +87,9 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
     });
   }
 
-  Future<void> _loadMasterProperties() async {
+  Future<void> _loadMasterProperties({bool forceRefresh = false}) async {
     try {
-      final list = await PropertiesRepository().getProperties();
+      final list = await LibraryRepository().getMasterProperties(forceRefresh: forceRefresh);
       if (mounted) {
         setState(() {
           _masterPropertiesList = list;
@@ -103,8 +101,6 @@ class _ResaleLibraryScreenState extends State<ResaleLibraryScreen> {
   void _updateFilterOptions() {
     setState(() {
       _properties = ['All', ..._allDocuments.map((d) => d.propertyName).toSet()];
-      _sellers = ['All', ..._allDocuments.map((d) => d.sellerName).toSet()];
-      _buyers = ['All', ..._allDocuments.map((d) => d.buyerName).toSet()];
     });
   }
 

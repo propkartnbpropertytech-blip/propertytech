@@ -802,6 +802,9 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
     if (property.maintenance > 0) {
       basicItems.add(PropertyDetailItem('Maintenance', '₹${BudgetFormatter.format(property.maintenance)}/mo', Icons.build_circle_outlined));
     }
+    if (property.brokerage != null && property.brokerage! > 0) {
+      basicItems.add(PropertyDetailItem('Brokerage', '₹${BudgetFormatter.format(property.brokerage!)}', Icons.handshake_outlined));
+    }
 
     if (isUserAdminOrSuperAdmin && _isValidValue(property.createdByName)) {
       final showCreator = currentUser?.role == 'Super Admin' ||
@@ -1509,6 +1512,9 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
                   },
                   child: CrmNetworkImage(
                     url: widget.images[index],
+                    variant: CrmImageVariant.preview,
+                    cacheLogicalWidth: 800,
+                    cacheLogicalHeight: 600,
                     fit: BoxFit.cover,
                     placeholder: (context) => const Center(
                       child: SizedBox(
@@ -1593,6 +1599,9 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
         children: [
           CrmNetworkImage(
             url: url,
+            variant: CrmImageVariant.preview,
+            cacheLogicalWidth: 400,
+            cacheLogicalHeight: 400,
             fit: BoxFit.cover,
             placeholder: (context) => const Center(
               child: SizedBox(
@@ -1724,6 +1733,9 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
                     child: Center(
                       child: CrmNetworkImage(
                         url: widget.images[index],
+                        variant: CrmImageVariant.fullscreen,
+                        cacheLogicalWidth: 1920,
+                        cacheLogicalHeight: 1080,
                         fit: BoxFit.contain,
                         placeholder: (context) => const Center(
                           child: CircularProgressIndicator(color: Colors.white),
@@ -1865,6 +1877,9 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
                               borderRadius: BorderRadius.circular(6),
                               child: CrmNetworkImage(
                                 url: widget.images[index],
+                                variant: CrmImageVariant.thumbnail,
+                                cacheLogicalWidth: 56,
+                                cacheLogicalHeight: 56,
                                 fit: BoxFit.cover,
                                 placeholder: (context) => Container(color: Colors.white10),
                                 error: (context) => Container(

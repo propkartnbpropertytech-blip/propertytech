@@ -148,8 +148,8 @@ class NewOpenLeadsDrilldownView extends StatefulWidget {
 }
 
 class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> with TickerProviderStateMixin {
-  int _selectedSourceIndex = 0; // 0: Meta, 1: Housing, 2: Webhook, 3: Manually Added
-  int _selectedTypeIndex = 0; // 0: Property Listing Leads — New, 1: Requirement Leads — New
+  int _selectedSourceIndex = 0; // 0: All Sources, 1: Meta, 2: Housing, 3: Webhook, 4: Manually Added
+  int _selectedTypeIndex = 0; // 0: All Types, 1: Property Listing Leads — New, 2: Requirement Leads — New
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -159,7 +159,7 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
   List<BusinessInsightLead> _leads = [];
   bool _isLoading = true;
 
-  final List<String> _sources = ['Meta', 'Housing', 'Webhook', 'Manually Added'];
+  final List<String> _sources = ['All Sources', 'Meta', 'Housing', 'Webhook', 'Manually Added'];
 
   @override
   void initState() {
@@ -178,14 +178,15 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
   Future<void> _fetchLeads() async {
     setState(() => _isLoading = true);
     final currentSource = _sources[_selectedSourceIndex];
+    final isAll = currentSource == 'All Sources';
     final isManual = currentSource == 'Manually Added';
-    final leadType = isManual
+    final leadType = (isManual || _selectedTypeIndex == 0)
         ? null
-        : (_selectedTypeIndex == 0 ? 'Property Listing' : 'Requirement');
+        : (_selectedTypeIndex == 1 ? 'Property Listing' : 'Requirement');
 
     try {
       final res = await BusinessInsightService.instance.fetchLeads(
-        source: currentSource == 'Manually Added' ? 'manual' : currentSource,
+        source: isAll ? 'all' : (isManual ? 'manual' : currentSource),
         leadType: leadType,
         kpi: 'new_open',
         from: widget.from,
@@ -214,14 +215,20 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
-    final isManual = _selectedSourceIndex == 3;
+    final isManual = _sources[_selectedSourceIndex] == 'Manually Added';
 
     final metaData = widget.summary.newOpenLeads.bySource['meta'] ?? const SourcePropReqBreakdown(total: 0);
     final housingData = widget.summary.newOpenLeads.bySource['housing'] ?? const SourcePropReqBreakdown(total: 0);
     final webhookData = widget.summary.newOpenLeads.bySource['webhook'] ?? const SourcePropReqBreakdown(total: 0);
     final manualData = widget.summary.newOpenLeads.bySource['manual'] ?? const SourcePropReqBreakdown(total: 0);
 
-    final counts = [metaData.total, housingData.total, webhookData.total, manualData.total];
+    final counts = [
+      widget.summary.newOpenLeads.total,
+      metaData.total,
+      housingData.total,
+      webhookData.total,
+      manualData.total,
+    ];
 
     final filteredLeads = _leads.where((l) {
       if (_searchQuery.isEmpty) return true;
@@ -326,7 +333,7 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
         ),
         const SizedBox(height: CRMSpacing.m),
 
-        // Subtabs for Meta / Housing / Webhook (Not shown for Manually Added)
+        // Subtabs for Meta / Housing / Webhook / All (Not shown for Manually Added)
         if (!isManual) ...[
           Container(
             padding: const EdgeInsets.all(4),
@@ -342,10 +349,8 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
                 children: [
                   _buildSubTabButton(
                     context,
-                    label: 'Property Listing Leads — New',
-                    count: _selectedSourceIndex == 0
-                        ? metaData.propertyListing
-                        : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
+                    label: 'All Types',
+                    count: counts[_selectedSourceIndex],
                     isSelected: _selectedTypeIndex == 0,
                     onTap: () {
                       setState(() => _selectedTypeIndex = 0);
@@ -355,13 +360,30 @@ class _NewOpenLeadsDrilldownViewState extends State<NewOpenLeadsDrilldownView> w
                   const SizedBox(width: 6),
                   _buildSubTabButton(
                     context,
-                    label: 'Requirement Leads — New',
+                    label: 'Property Listing Leads — New',
                     count: _selectedSourceIndex == 0
-                        ? metaData.requirement
-                        : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
+                        ? (metaData.propertyListing + housingData.propertyListing + webhookData.propertyListing)
+                        : (_selectedSourceIndex == 1
+                            ? metaData.propertyListing
+                            : (_selectedSourceIndex == 2 ? housingData.propertyListing : webhookData.propertyListing)),
                     isSelected: _selectedTypeIndex == 1,
                     onTap: () {
                       setState(() => _selectedTypeIndex = 1);
+                      _fetchLeads();
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _buildSubTabButton(
+                    context,
+                    label: 'Requirement Leads — New',
+                    count: _selectedSourceIndex == 0
+                        ? (metaData.requirement + housingData.requirement + webhookData.requirement)
+                        : (_selectedSourceIndex == 1
+                            ? metaData.requirement
+                            : (_selectedSourceIndex == 2 ? housingData.requirement : webhookData.requirement)),
+                    isSelected: _selectedTypeIndex == 2,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 2);
                       _fetchLeads();
                     },
                   ),
@@ -597,9 +619,9 @@ class CnrLeadsDrilldownView extends StatefulWidget {
 }
 
 class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
-  int _selectedSourceIndex = 0; // 0: Meta, 1: Housing, 2: Webhook
-  int _selectedTypeIndex = 0; // 0: Property Listing Leads, 1: Requirement Leads
-  final List<String> _sources = ['Meta', 'Housing', 'Webhook'];
+  int _selectedSourceIndex = 0; // 0: All Sources, 1: Meta, 2: Housing, 3: Webhook, 4: Manually Added
+  int _selectedTypeIndex = 0; // 0: All Types, 1: Property Listing Leads, 2: Requirement Leads
+  final List<String> _sources = ['All Sources', 'Meta', 'Housing', 'Webhook', 'Manually Added'];
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -625,12 +647,16 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
 
   Future<void> _fetchLeads() async {
     setState(() => _isLoading = true);
-    final src = _sources[_selectedSourceIndex];
-    final type = _selectedTypeIndex == 0 ? 'Property Listing' : 'Requirement';
+    final currentSource = _sources[_selectedSourceIndex];
+    final isAll = currentSource == 'All Sources';
+    final isManual = currentSource == 'Manually Added';
+    final type = (isManual || _selectedTypeIndex == 0)
+        ? null
+        : (_selectedTypeIndex == 1 ? 'Property Listing' : 'Requirement');
 
     try {
       final res = await BusinessInsightService.instance.fetchLeads(
-        source: src,
+        source: isAll ? 'all' : (isManual ? 'manual' : currentSource),
         leadType: type,
         kpi: 'cnr',
         from: widget.from,
@@ -659,11 +685,19 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
+    final isManual = _sources[_selectedSourceIndex] == 'Manually Added';
 
     final metaData = widget.summary.cnrLeads.bySource['meta'] ?? const SourcePropReqBreakdown(total: 0);
     final housingData = widget.summary.cnrLeads.bySource['housing'] ?? const SourcePropReqBreakdown(total: 0);
     final webhookData = widget.summary.cnrLeads.bySource['webhook'] ?? const SourcePropReqBreakdown(total: 0);
-    final counts = [metaData.total, housingData.total, webhookData.total];
+    final manualCount = widget.summary.sources['manual']?.rejected ?? 0;
+    final counts = [
+      widget.summary.cnrLeads.total,
+      metaData.total,
+      housingData.total,
+      webhookData.total,
+      manualCount,
+    ];
 
     final filteredLeads = _leads.where((l) {
       if (_searchQuery.isEmpty) return true;
@@ -689,7 +723,7 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
         _buildDrilldownHeader(
           context: context,
           title: 'CNR Leads',
-          subtitle: 'Total Campaign CNR Leads: ${widget.summary.cnrLeads.total} across Meta, Housing, and Webhook.',
+          subtitle: 'Total Campaign CNR Leads: ${widget.summary.cnrLeads.total} across Meta, Housing, Webhook, and Manual.',
           badge: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
@@ -708,6 +742,7 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
         // Source Tabs
         Wrap(
           spacing: 10,
+          runSpacing: 10,
           children: List.generate(_sources.length, (idx) {
             final isSelected = _selectedSourceIndex == idx;
             return InkWell(
@@ -764,47 +799,65 @@ class _CnrLeadsDrilldownViewState extends State<CnrLeadsDrilldownView> {
         const SizedBox(height: CRMSpacing.m),
 
         // Subtabs
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTypeTab(
-                  context,
-                  label: 'Property Listing Leads',
-                  count: _selectedSourceIndex == 0
-                      ? metaData.propertyListing
-                      : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
-                  isSelected: _selectedTypeIndex == 0,
-                  onTap: () {
-                    setState(() => _selectedTypeIndex = 0);
-                    _fetchLeads();
-                  },
-                ),
-                const SizedBox(width: 6),
-                _buildTypeTab(
-                  context,
-                  label: 'Requirement Leads',
-                  count: _selectedSourceIndex == 0
-                      ? metaData.requirement
-                      : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
-                  isSelected: _selectedTypeIndex == 1,
-                  onTap: () {
-                    setState(() => _selectedTypeIndex = 1);
-                    _fetchLeads();
-                  },
-                ),
-              ],
+        if (!isManual) ...[
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTypeTab(
+                    context,
+                    label: 'All Types',
+                    count: counts[_selectedSourceIndex],
+                    isSelected: _selectedTypeIndex == 0,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 0);
+                      _fetchLeads();
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _buildTypeTab(
+                    context,
+                    label: 'Property Listing Leads',
+                    count: _selectedSourceIndex == 0
+                        ? (metaData.propertyListing + housingData.propertyListing + webhookData.propertyListing)
+                        : (_selectedSourceIndex == 1
+                            ? metaData.propertyListing
+                            : (_selectedSourceIndex == 2 ? housingData.propertyListing : webhookData.propertyListing)),
+                    isSelected: _selectedTypeIndex == 1,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 1);
+                      _fetchLeads();
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _buildTypeTab(
+                    context,
+                    label: 'Requirement Leads',
+                    count: _selectedSourceIndex == 0
+                        ? (metaData.requirement + housingData.requirement + webhookData.requirement)
+                        : (_selectedSourceIndex == 1
+                            ? metaData.requirement
+                            : (_selectedSourceIndex == 2 ? housingData.requirement : webhookData.requirement)),
+                    isSelected: _selectedTypeIndex == 2,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 2);
+                      _fetchLeads();
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
+          const SizedBox(height: CRMSpacing.m),
+        ],
         const SizedBox(height: CRMSpacing.m),
 
         // Table
@@ -978,9 +1031,9 @@ class CallbackLeadsDrilldownView extends StatefulWidget {
 }
 
 class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView> {
-  int _selectedSourceIndex = 0; // 0: Meta, 1: Housing, 2: Webhook
-  int _selectedTypeIndex = 0; // 0: Property Listing, 1: Requirement
-  final List<String> _sources = ['Meta', 'Housing', 'Webhook'];
+  int _selectedSourceIndex = 0; // 0: All Sources, 1: Meta, 2: Housing, 3: Webhook, 4: Manually Added
+  int _selectedTypeIndex = 0; // 0: All Types, 1: Property Listing, 2: Requirement
+  final List<String> _sources = ['All Sources', 'Meta', 'Housing', 'Webhook', 'Manually Added'];
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -1006,12 +1059,16 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
 
   Future<void> _fetchLeads() async {
     setState(() => _isLoading = true);
-    final src = _sources[_selectedSourceIndex];
-    final type = _selectedTypeIndex == 0 ? 'Property Listing' : 'Requirement';
+    final currentSource = _sources[_selectedSourceIndex];
+    final isAll = currentSource == 'All Sources';
+    final isManual = currentSource == 'Manually Added';
+    final type = (isManual || _selectedTypeIndex == 0)
+        ? null
+        : (_selectedTypeIndex == 1 ? 'Property Listing' : 'Requirement');
 
     try {
       final res = await BusinessInsightService.instance.fetchLeads(
-        source: src,
+        source: isAll ? 'all' : (isManual ? 'manual' : currentSource),
         leadType: type,
         kpi: 'callback',
         from: widget.from,
@@ -1040,11 +1097,19 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
+    final isManual = _sources[_selectedSourceIndex] == 'Manually Added';
 
     final metaData = widget.summary.callbackLeads.bySource['meta'] ?? const SourcePropReqBreakdown(total: 0);
     final housingData = widget.summary.callbackLeads.bySource['housing'] ?? const SourcePropReqBreakdown(total: 0);
     final webhookData = widget.summary.callbackLeads.bySource['webhook'] ?? const SourcePropReqBreakdown(total: 0);
-    final counts = [metaData.total, housingData.total, webhookData.total];
+    final manualCount = widget.summary.sources['manual']?.notInterested ?? 0;
+    final counts = [
+      widget.summary.callbackLeads.total,
+      metaData.total,
+      housingData.total,
+      webhookData.total,
+      manualCount,
+    ];
 
     final filteredLeads = _leads.where((l) {
       if (_searchQuery.isEmpty) return true;
@@ -1070,7 +1135,7 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
         _buildDrilldownHeader(
           context: context,
           title: 'Callback Leads',
-          subtitle: 'Total Campaign Callback Leads: ${widget.summary.callbackLeads.total} scheduled callbacks.',
+          subtitle: 'Total Campaign Callback Leads: ${widget.summary.callbackLeads.total} scheduled callbacks across all channels.',
           badge: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
@@ -1089,6 +1154,7 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
         // Sources
         Wrap(
           spacing: 10,
+          runSpacing: 10,
           children: List.generate(_sources.length, (idx) {
             final isSelected = _selectedSourceIndex == idx;
             return InkWell(
@@ -1145,47 +1211,65 @@ class _CallbackLeadsDrilldownViewState extends State<CallbackLeadsDrilldownView>
         const SizedBox(height: CRMSpacing.m),
 
         // Subtabs
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildCallbackTypeTab(
-                  context,
-                  label: 'Property Listing Leads',
-                  count: _selectedSourceIndex == 0
-                      ? metaData.propertyListing
-                      : (_selectedSourceIndex == 1 ? housingData.propertyListing : webhookData.propertyListing),
-                  isSelected: _selectedTypeIndex == 0,
-                  onTap: () {
-                    setState(() => _selectedTypeIndex = 0);
-                    _fetchLeads();
-                  },
-                ),
-                const SizedBox(width: 6),
-                _buildCallbackTypeTab(
-                  context,
-                  label: 'Requirement Leads',
-                  count: _selectedSourceIndex == 0
-                      ? metaData.requirement
-                      : (_selectedSourceIndex == 1 ? housingData.requirement : webhookData.requirement),
-                  isSelected: _selectedTypeIndex == 1,
-                  onTap: () {
-                    setState(() => _selectedTypeIndex = 1);
-                    _fetchLeads();
-                  },
-                ),
-              ],
+        if (!isManual) ...[
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildCallbackTypeTab(
+                    context,
+                    label: 'All Types',
+                    count: counts[_selectedSourceIndex],
+                    isSelected: _selectedTypeIndex == 0,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 0);
+                      _fetchLeads();
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _buildCallbackTypeTab(
+                    context,
+                    label: 'Property Listing Leads',
+                    count: _selectedSourceIndex == 0
+                        ? (metaData.propertyListing + housingData.propertyListing + webhookData.propertyListing)
+                        : (_selectedSourceIndex == 1
+                            ? metaData.propertyListing
+                            : (_selectedSourceIndex == 2 ? housingData.propertyListing : webhookData.propertyListing)),
+                    isSelected: _selectedTypeIndex == 1,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 1);
+                      _fetchLeads();
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _buildCallbackTypeTab(
+                    context,
+                    label: 'Requirement Leads',
+                    count: _selectedSourceIndex == 0
+                        ? (metaData.requirement + housingData.requirement + webhookData.requirement)
+                        : (_selectedSourceIndex == 1
+                            ? metaData.requirement
+                            : (_selectedSourceIndex == 2 ? housingData.requirement : webhookData.requirement)),
+                    isSelected: _selectedTypeIndex == 2,
+                    onTap: () {
+                      setState(() => _selectedTypeIndex = 2);
+                      _fetchLeads();
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
+          const SizedBox(height: CRMSpacing.m),
+        ],
         const SizedBox(height: CRMSpacing.m),
 
         // Table
@@ -1621,8 +1705,8 @@ class NotInterestedLeadsDrilldownView extends StatefulWidget {
 }
 
 class _NotInterestedLeadsDrilldownViewState extends State<NotInterestedLeadsDrilldownView> {
-  int _selectedSourceIndex = 0; // 0: Meta, 1: Housing, 2: Webhook, 3: Manually Added
-  final List<String> _sources = ['Meta', 'Housing', 'Webhook', 'Manually Added'];
+  int _selectedSourceIndex = 0; // 0: All Sources, 1: Meta, 2: Housing, 3: Webhook, 4: Manually Added
+  final List<String> _sources = ['All Sources', 'Meta', 'Housing', 'Webhook', 'Manually Added'];
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -1649,9 +1733,11 @@ class _NotInterestedLeadsDrilldownViewState extends State<NotInterestedLeadsDril
   Future<void> _fetchLeads() async {
     setState(() => _isLoading = true);
     final src = _sources[_selectedSourceIndex];
+    final isAll = _selectedSourceIndex == 0;
+    final isManual = src == 'Manually Added';
     try {
       final res = await BusinessInsightService.instance.fetchLeads(
-        source: src,
+        source: isAll ? null : (isManual ? 'manual' : src),
         kpi: 'not_interested',
         from: widget.from,
         to: widget.to,
@@ -1680,11 +1766,12 @@ class _NotInterestedLeadsDrilldownViewState extends State<NotInterestedLeadsDril
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
 
+    final totalCount = widget.summary.notInterestedLeads.total;
     final metaCount = widget.summary.notInterestedLeads.bySource['meta'] ?? widget.summary.sources['meta']?.notInterested ?? 0;
     final housingCount = widget.summary.notInterestedLeads.bySource['housing'] ?? widget.summary.sources['housing']?.notInterested ?? 0;
     final webhookCount = widget.summary.notInterestedLeads.bySource['webhook'] ?? widget.summary.sources['webhook']?.notInterested ?? 0;
     final manualCount = widget.summary.notInterestedLeads.bySource['manual'] ?? widget.summary.sources['manual']?.notInterested ?? 0;
-    final counts = [metaCount, housingCount, webhookCount, manualCount];
+    final counts = [totalCount, metaCount, housingCount, webhookCount, manualCount];
 
     final filteredLeads = _leads.where((l) {
       if (_searchQuery.isEmpty) return true;

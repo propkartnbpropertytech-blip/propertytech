@@ -75,7 +75,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
-    - "assets/Luxury Gold NB Monogram Since 1946.png"
     - assets/branding/
     - assets/images/
     - assets/legal/

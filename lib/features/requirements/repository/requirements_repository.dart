@@ -75,6 +75,15 @@ class RequirementsRepository {
                  r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
                  r.metaCustomFields!['telecaller_by_id'] == currentUser.id ||
                  r.metaCustomFields!['telecaller_by'] == currentUser.id ||
+                 (r.metaCustomFields!['_transfer'] is Map &&
+                  (r.metaCustomFields!['_transfer']['interacted_by'] == currentUser.id ||
+                   r.metaCustomFields!['_transfer']['telecaller_id'] == currentUser.id)) ||
+                 (r.metaCustomFields!['_cnr'] is Map &&
+                  (r.metaCustomFields!['_cnr']['telecaller_id'] == currentUser.id ||
+                   r.metaCustomFields!['_cnr']['interacted_by'] == currentUser.id)) ||
+                 (r.metaCustomFields!['_callback'] is Map &&
+                  (r.metaCustomFields!['_callback']['telecaller_id'] == currentUser.id ||
+                   r.metaCustomFields!['_callback']['interacted_by'] == currentUser.id)) ||
                  (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
           return isCreator || isAssignee || isTaggedTelecaller;
         }).toList();
@@ -92,7 +101,7 @@ class RequirementsRepository {
     }
 
     if (listingTypeId != null && listingTypeId.isNotEmpty) {
-      requirements = requirements.where((r) => r.listingTypeId == listingTypeId).toList();
+      requirements = requirements.where((r) => r.listingTypeId == listingTypeId || r.listingTypeId == null || r.listingTypeId!.isEmpty).toList();
     }
     final jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
 
@@ -279,11 +288,15 @@ class RequirementsRepository {
     if (req.rejectionRemark != null && req.rejectionRemark!.trim().isNotEmpty) {
       RequirementLocalRepository.rememberRejectionRemark(req.id, req.rejectionRemark);
     }
+    if (req.assignedTelecallerId != null && req.assignedTelecallerId!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberAssignedTelecallerId(req.id, req.assignedTelecallerId);
+    }
   }
 
   RequirementModel _withRememberedMeta(RequirementModel req) {
     final remembered = RequirementLocalRepository.metaCustomFieldsById[req.id];
     final rememberedRemark = RequirementLocalRepository.getRejectionRemark(req.id);
+    final rememberedTelecallerId = RequirementLocalRepository.getAssignedTelecallerId(req.id);
     var updated = req;
     if (remembered != null && remembered.isNotEmpty) {
       updated = updated.copyWith(metaCustomFields: {
@@ -295,6 +308,11 @@ class RequirementsRepository {
         rememberedRemark != null &&
         rememberedRemark.trim().isNotEmpty) {
       updated = updated.copyWith(rejectionRemark: rememberedRemark);
+    }
+    if ((updated.assignedTelecallerId == null || updated.assignedTelecallerId!.trim().isEmpty) &&
+        rememberedTelecallerId != null &&
+        rememberedTelecallerId.trim().isNotEmpty) {
+      updated = updated.copyWith(assignedTelecallerId: rememberedTelecallerId);
     }
     return updated;
   }
@@ -328,6 +346,7 @@ class RequirementsRepository {
       listingTypeName: keep(incoming.listingTypeName, submitted.listingTypeName),
       assignedTo: submitted.assignedTo ?? incoming.assignedTo,
       assigneeName: keep(submitted.assigneeName, incoming.assigneeName),
+      assignedTelecallerId: keep(incoming.assignedTelecallerId, submitted.assignedTelecallerId),
       status: preservedStatus,
       rejectionRemark: (submitted.rejectionRemark != null && submitted.rejectionRemark!.trim().isNotEmpty)
           ? submitted.rejectionRemark
@@ -460,6 +479,11 @@ class RequirementsRepository {
     }
     if (data.containsKey('status') && data['status'] != null) {
       match.status = data['status'].toString();
+    }
+    if (data.containsKey('assigned_telecaller_id') && data['assigned_telecaller_id'] != null) {
+      RequirementLocalRepository.rememberAssignedTelecallerId(match.id, data['assigned_telecaller_id'].toString());
+    } else if (data.containsKey('telecaller_id') && data['telecaller_id'] != null) {
+      RequirementLocalRepository.rememberAssignedTelecallerId(match.id, data['telecaller_id'].toString());
     }
     if (data['meta_custom_fields'] is Map) {
       RequirementLocalRepository.rememberMetaCustomFields(

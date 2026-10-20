@@ -3294,7 +3294,7 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
               backgroundColor: const Color(0xFF10B981),
               icon: Icons.check_circle_rounded,
               duration: const Duration(seconds: 5),
-              actionLabel: 'View Archive',
+              actionLabel: 'View Listed',
               onAction: () {
                 context.go('/campaign/leads?view=archive_listed');
               },
@@ -3475,8 +3475,8 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
                   if (widget.isPropertyListing)
                     _buildOutcomeCard(
                       context,
-                      title: 'Archive',
-                      subtitle: 'Move to Archive',
+                      title: 'Listed',
+                      subtitle: 'Move to Listed',
                       icon: Icons.home_work_rounded,
                       color: const Color(0xFF10B981),
                       isSelected: _selectedStatus == 'Archive',
@@ -3813,7 +3813,7 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
                 )
               : Text(
                   _selectedStatus == 'Archive'
-                      ? 'Confirm Archive'
+                      ? 'Confirm Listed'
                       : (_selectedStatus == 'Picked Up'
                           ? 'Assign & Transfer Lead'
                           : (_selectedStatus == 'Callback'

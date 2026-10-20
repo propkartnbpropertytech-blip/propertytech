@@ -306,11 +306,11 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
         _lastLoaded = state as PropertiesLoaded;
       }
       emit(PropertyCreatedState(saved));
-      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     } catch (e) {
       emit(PropertiesError(e.toString()));
       if (_lastLoaded != null) emit(_lastLoaded!);
-      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: false));
+      add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
     }
   }
 

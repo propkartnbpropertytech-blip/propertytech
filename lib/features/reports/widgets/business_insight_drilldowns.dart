@@ -25,12 +25,16 @@ class LeadSourceGridView extends StatelessWidget {
   final BusinessInsightSummary summary;
   final VoidCallback onBack;
   final void Function(String source, {String? initialTab}) onSelectSource;
+  final DateTime? from;
+  final DateTime? to;
 
   const LeadSourceGridView({
     super.key,
     required this.summary,
     required this.onBack,
     required this.onSelectSource,
+    this.from,
+    this.to,
   });
 
   @override
@@ -156,6 +160,42 @@ class LeadSourceGridView extends StatelessWidget {
               ],
             );
           },
+        ),
+        const SizedBox(height: CRMSpacing.l),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'All Leads Records',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Showing ${summary.totalLeads} Total Leads',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: CRMSpacing.m),
+        LeadRecordTableView(
+          key: ValueKey('all_leads_${from}_$to'),
+          source: 'All',
+          kpi: 'all',
+          from: from,
+          to: to,
         ),
       ],
     );
@@ -1098,12 +1138,16 @@ class TelecallersListView extends StatelessWidget {
   final BusinessInsightSummary summary;
   final VoidCallback onBack;
   final Function(TelecallerSummaryItem telecaller) onSelectTelecaller;
+  final DateTime? from;
+  final DateTime? to;
 
   const TelecallersListView({
     super.key,
     required this.summary,
     required this.onBack,
     required this.onSelectTelecaller,
+    this.from,
+    this.to,
   });
 
   @override
@@ -1156,6 +1200,42 @@ class TelecallersListView extends StatelessWidget {
               }).toList(),
             );
           },
+        ),
+        const SizedBox(height: CRMSpacing.l),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'All Assigned Telecaller Leads',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Showing All Telecaller Leads',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: CRMSpacing.m),
+        LeadRecordTableView(
+          key: ValueKey('telecallers_all_${from}_$to'),
+          source: 'All',
+          kpi: 'all',
+          from: from,
+          to: to,
         ),
       ],
     );

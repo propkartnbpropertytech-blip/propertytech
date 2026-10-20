@@ -214,8 +214,11 @@ class TelecallerShiftManager {
     isInitializedNotifier.value = true;
   }
 
+  bool _isAvailabilityCheckInProgress = false;
+
   Future<void> _checkAvailabilityStatus() async {
-    if (_userId == null) return;
+    if (_userId == null || _isAvailabilityCheckInProgress) return;
+    _isAvailabilityCheckInProgress = true;
     try {
       final res = await _repository.getAvailability();
       _updateFromApiResponse(res);
@@ -224,7 +227,10 @@ class TelecallerShiftManager {
         currentStatusNotifier.value = status;
       }
       await _persistLocalState();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _isAvailabilityCheckInProgress = false;
+    }
   }
 
   void recordUserActivity() {
@@ -391,6 +397,8 @@ class TelecallerShiftManager {
     }
   }
 
+  bool get isHeartbeatActive => _heartbeatTimer != null;
+
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) => _sendHeartbeat());
@@ -402,11 +410,61 @@ class TelecallerShiftManager {
     _heartbeatTimer = null;
   }
 
+  bool _isHeartbeatInProgress = false;
+
   Future<void> _sendHeartbeat() async {
-    if (!isActive) return;
+    if (!isActive || _isHeartbeatInProgress) return;
+    _isHeartbeatInProgress = true;
     try {
       await _repository.heartbeat();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _isHeartbeatInProgress = false;
+    }
+  }
+
+  /// Pause non-essential periodic timers when application is backgrounded.
+  void pauseForBackground() {
+    _manualOffCountdownTimer?.cancel();
+    _manualOffCountdownTimer = null;
+    _shiftCheckTimer?.cancel();
+    _shiftCheckTimer = null;
+  }
+
+  /// Resume periodic timers and perform stale recalculations upon returning to foreground.
+  void resumeFromBackground() {
+    if (_userId == null) return;
+
+    // 1. Resume 1s countdown if manual OFF is active
+    if (isManualOffNotifier.value &&
+        !isOffLimitExpiredNotifier.value &&
+        !isOnInactivityBreakNotifier.value &&
+        _countdownAnchorTime != null) {
+      final elapsed = DateTime.now().difference(_countdownAnchorTime!).inSeconds;
+      final currentRemaining = (_countdownAnchorSeconds - elapsed).clamp(0, kMaxManualOffSeconds);
+      remainingOffSecondsNotifier.value = currentRemaining;
+      if (currentRemaining <= 0) {
+        remainingOffSecondsNotifier.value = 0;
+        isOffLimitExpiredNotifier.value = true;
+        _stopManualOffCountdown();
+      } else {
+        _startManualOffCountdown(initialRemaining: currentRemaining);
+      }
+    }
+
+    // 2. Resume 1-min shift check and trigger immediate stale check
+    _shiftCheckTimer?.cancel();
+    _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _checkShiftLockout();
+      _checkAvailabilityStatus();
+    });
+    _checkShiftLockout();
+    _checkAvailabilityStatus();
+
+    // 3. Ensure heartbeat is ticking if actively working
+    if (isActive && _heartbeatTimer == null) {
+      _startHeartbeat();
+    }
   }
 
   void dispose() {

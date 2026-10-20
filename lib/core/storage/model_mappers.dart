@@ -231,6 +231,11 @@ extension RequirementLocalExtensions on RequirementLocal {
       assigneeName: assigneeName,
       createdBy: createdBy,
       assignedTo: assignedTo,
+      assignedTelecallerId: RequirementLocalRepository.getAssignedTelecallerId(id) ??
+          (RequirementLocalRepository.metaCustomFieldsById[id]?['telecaller_id']?.toString() ??
+           RequirementLocalRepository.metaCustomFieldsById[id]?['assigned_telecaller_id']?.toString() ??
+           RequirementLocalRepository.metaCustomFieldsById[id]?['_transfer']?['telecaller_id']?.toString() ??
+           RequirementLocalRepository.metaCustomFieldsById[id]?['_transfer']?['interacted_by']?.toString()),
       leadSource: leadSource,
       referralName: referralName,
       nextFollowupDate: nextFollowupDate,
@@ -241,6 +246,9 @@ extension RequirementLocalExtensions on RequirementLocal {
 
 extension RequirementModelExtensions on RequirementModel {
   RequirementLocal toLocal() {
+    if (assignedTelecallerId != null && assignedTelecallerId!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberAssignedTelecallerId(id, assignedTelecallerId);
+    }
     if (rejectionRemark != null && rejectionRemark!.trim().isNotEmpty) {
       RequirementLocalRepository.rememberRejectionRemark(id, rejectionRemark);
     }

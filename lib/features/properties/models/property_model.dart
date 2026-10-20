@@ -30,6 +30,7 @@ class PropertyModel {
   final double price;
   final double deposit;
   final double maintenance;
+  final double? brokerage;
   final String? furnishingTypeId;
   final String? furnishingTypeName;
   final String? facingTypeId;
@@ -96,6 +97,7 @@ class PropertyModel {
     required this.price,
     required this.deposit,
     required this.maintenance,
+    this.brokerage,
     this.furnishingTypeId,
     this.furnishingTypeName,
     this.facingTypeId,
@@ -313,6 +315,7 @@ class PropertyModel {
       price: double.tryParse(json['price'].toString()) ?? 0.0,
       deposit: double.tryParse(json['deposit'].toString()) ?? 0.0,
       maintenance: double.tryParse(json['maintenance'].toString()) ?? 0.0,
+      brokerage: json['brokerage'] != null ? double.tryParse(json['brokerage'].toString()) : null,
       furnishingTypeId: json['furnishing_type_id'] as String?,
       furnishingTypeName: furnishing != null ? furnishing['name'] as String? : null,
       facingTypeId: json['facing_type_id'] as String?,
@@ -373,6 +376,7 @@ class PropertyModel {
       'price': price,
       'deposit': deposit,
       'maintenance': maintenance,
+      'brokerage': brokerage,
       'furnishing_type_id': furnishingTypeId,
       'facing_type_id': facingTypeId,
       'ownership_type_id': ownershipTypeId,
@@ -428,6 +432,7 @@ class PropertyModel {
     double? price,
     double? deposit,
     double? maintenance,
+    double? brokerage,
     String? furnishingTypeId,
     String? furnishingTypeName,
     String? facingTypeId,
@@ -494,6 +499,7 @@ class PropertyModel {
       price: price ?? this.price,
       deposit: deposit ?? this.deposit,
       maintenance: maintenance ?? this.maintenance,
+      brokerage: brokerage ?? this.brokerage,
       furnishingTypeId: furnishingTypeId ?? this.furnishingTypeId,
       furnishingTypeName: furnishingTypeName ?? this.furnishingTypeName,
       facingTypeId: facingTypeId ?? this.facingTypeId,

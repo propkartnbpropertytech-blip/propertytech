@@ -92,10 +92,13 @@
   <title>PropKart - Premium Property Management Software & CRM</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- Preconnect & Preload Web Fonts for Instant First Render -->
+  <!-- Preconnect & Preload Web Fonts (Non-Render-Blocking) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@400;500;600;700&family=Inclusive+Sans:wght@400;700&display=swap">
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@400;500;600;700&family=Inclusive+Sans:wght@400;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@400;500;600;700&family=Inclusive+Sans:wght@400;700&display=swap">
+  </noscript>
 
   <!-- Google Tag Manager & Microsoft Clarity Tracking (Production Only) -->
   <script type="text/javascript">
@@ -259,6 +262,9 @@
       z-index: 999999 !important;
     }
   </style>
+  <script src="https://roakbot.web.app/widget.js" data-bot-id="bot_fc456356" async></script>
+
+  <!-- Roakbot Website Guide Embed -->
   <script>
     window.roakbotConfig = {
       botId: "bot_fc456356",
@@ -266,12 +272,24 @@
       launcherAnimation: "rotate_fade",
       launcherAnimationDuration: 450,
       launcherImageUrl: "https://res.cloudinary.com/haacwr5z/image/upload/v1792041589/roakbot/k4t0dfawrgayape2ztkr.gif",
+      launcherWidth: 180,
+      launcherHeight: 108,
+      launcherMobileWidth: 120,
+      launcherMobileHeight: 120,
       invitationBubbleText: "👋 Need assistance? Tap to chat!",
       showInvitationBubble: true,
       launcherText: "👋 Need assistance? Tap to chat!",
+      launcherIdleHideMascot: true,
+      launcherIdleTimeoutSeconds: 5,
+      launcherIdleRotateDegrees: -90,
+      launcherIdleOffscreenPercent: 80,
+      launcherIdleRotateDegreesLeft: 90,
+      launcherIdleOffscreenPercentLeft: 80,
+      launcherDraggable: true,
+      launcherImageFit: "cover",
+      avatarUrl: "https://res.cloudinary.com/haacwr5z/image/upload/v1792040794/roakbot/m7x7zerh4ptv38qu5ooe.png",
       primaryColor: "#0F172A",
     };
   </script>
-  <script src="https://roakbot.web.app/widget.js" data-bot-id="bot_fc456356" async></script>
 </body>
 </html>

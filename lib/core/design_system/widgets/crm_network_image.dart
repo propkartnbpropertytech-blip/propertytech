@@ -4,7 +4,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// Network/base64 image helper that decodes at display size to cut memory and jank.
+import '../../network/crm_image_delivery.dart';
+export '../../network/crm_image_delivery.dart' show CrmImageVariant, CrmImageDelivery;
+
+/// Network/base64 image helper that applies server-side Cloudinary transformations
+/// and decodes at display size to slash network bandwidth, memory, and scroll jank.
 class CrmNetworkImage extends StatelessWidget {
   final String url;
   final BoxFit fit;
@@ -18,6 +22,10 @@ class CrmNetworkImage extends StatelessWidget {
   final double? cacheLogicalWidth;
   final double? cacheLogicalHeight;
 
+  /// Delivery variant (thumbnail, preview, fullscreen, or original).
+  /// Defaults to [CrmImageVariant.thumbnail] for safe, high-speed card/list delivery.
+  final CrmImageVariant variant;
+
   const CrmNetworkImage({
     super.key,
     required this.url,
@@ -28,12 +36,21 @@ class CrmNetworkImage extends StatelessWidget {
     this.error,
     this.cacheLogicalWidth,
     this.cacheLogicalHeight,
+    this.variant = CrmImageVariant.thumbnail,
   });
 
-  int? _cachePx(BuildContext context, double? logical) {
-    if (logical == null || logical <= 0) return null;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    return (logical * dpr).round().clamp(1, 4096);
+  Widget _defaultPlaceholder(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+      child: Center(
+        child: Icon(
+          Icons.image_outlined,
+          size: (width != null && width! < 60) ? 14 : 20,
+          color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+        ),
+      ),
+    );
   }
 
   @override
@@ -44,10 +61,14 @@ class CrmNetworkImage extends StatelessWidget {
           const Icon(Icons.broken_image_outlined, size: 16);
     }
 
-    final cacheW = _cachePx(context, cacheLogicalWidth ?? width);
-    final cacheH = _cachePx(context, cacheLogicalHeight ?? height);
-
+    // Handle data/base64 images
     if (cleanUrl.startsWith('data:image') || cleanUrl.contains('base64')) {
+      final decode = CrmImageDelivery.getDecodeDimensions(
+        context: context,
+        variant: variant,
+        logicalWidth: cacheLogicalWidth ?? width,
+        logicalHeight: cacheLogicalHeight ?? height,
+      );
       try {
         final base64Str = cleanUrl.split(',').last;
         return Image.memory(
@@ -55,8 +76,8 @@ class CrmNetworkImage extends StatelessWidget {
           fit: fit,
           width: width,
           height: height,
-          cacheWidth: cacheW,
-          cacheHeight: cacheH,
+          cacheWidth: decode.width,
+          cacheHeight: decode.height,
           gaplessPlayback: true,
         );
       } catch (_) {
@@ -65,7 +86,21 @@ class CrmNetworkImage extends StatelessWidget {
       }
     }
 
-    final normalizedUrl = cleanUrl.startsWith('//') ? 'https:$cleanUrl' : cleanUrl;
+    final rawNormalizedUrl = cleanUrl.startsWith('//') ? 'https:$cleanUrl' : cleanUrl;
+
+    // Apply Cloudinary URL optimization for the specified variant
+    final optimizedUrl = CrmImageDelivery.transformUrl(
+      rawNormalizedUrl,
+      variant: variant,
+    );
+
+    // Calculate decode dimensions respecting DPR and variant bounds
+    final decode = CrmImageDelivery.getDecodeDimensions(
+      context: context,
+      variant: variant,
+      logicalWidth: cacheLogicalWidth ?? width,
+      logicalHeight: cacheLogicalHeight ?? height,
+    );
 
     final bool useImageNetwork = kIsWeb ||
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -74,50 +109,36 @@ class CrmNetworkImage extends StatelessWidget {
 
     if (useImageNetwork) {
       return Image.network(
-        normalizedUrl,
+        optimizedUrl,
         fit: fit,
         width: width,
         height: height,
-        cacheWidth: cacheW,
-        cacheHeight: cacheH,
+        cacheWidth: decode.width,
+        cacheHeight: decode.height,
         gaplessPlayback: true,
         errorBuilder: (context, err, stackTrace) {
-          debugPrint('⚠️ [CrmNetworkImage] Error loading: $normalizedUrl -> $err');
+          debugPrint('⚠️ [CrmNetworkImage] Error loading: $optimizedUrl -> $err');
           return error?.call(context) ??
               const Icon(Icons.broken_image_outlined, size: 16);
         },
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
-          return placeholder?.call(context) ??
-              const Center(
-                child: SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 1.5),
-                ),
-              );
+          return placeholder?.call(context) ?? _defaultPlaceholder(context);
         },
       );
     }
 
     return CachedNetworkImage(
-      imageUrl: normalizedUrl,
+      imageUrl: optimizedUrl,
       fit: fit,
       width: width,
       height: height,
-      memCacheWidth: cacheW,
-      memCacheHeight: cacheH,
+      memCacheWidth: decode.width,
+      memCacheHeight: decode.height,
       fadeInDuration: Duration.zero,
       fadeOutDuration: Duration.zero,
       placeholder: (context, url) =>
-          placeholder?.call(context) ??
-          const Center(
-            child: SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 1.5),
-            ),
-          ),
+          placeholder?.call(context) ?? _defaultPlaceholder(context),
       errorWidget: (context, url, error) =>
           this.error?.call(context) ??
           const Icon(Icons.broken_image_outlined, size: 16),
