@@ -68,13 +68,19 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
   Color _getStateColor(SyncState state) {
     switch (state) {
       case SyncState.connected:
+      case SyncState.live:
         return CRMColors.success;
       case SyncState.connecting:
       case SyncState.reconnecting:
       case SyncState.syncing:
+      case SyncState.initializing:
+      case SyncState.degraded:
+      case SyncState.conflictResolution:
         return CRMColors.warning;
       case SyncState.disconnected:
       case SyncState.offline:
+      case SyncState.error:
+      case SyncState.stopped:
         return CRMColors.danger;
     }
   }
@@ -82,13 +88,24 @@ class _SyncDebugScreenState extends State<SyncDebugScreen> {
   String _getStateLabel(SyncState state) {
     switch (state) {
       case SyncState.connected:
-        return 'Connected';
+      case SyncState.live:
+        return 'Live';
+      case SyncState.initializing:
+        return 'Initializing';
       case SyncState.connecting:
         return 'Connecting';
       case SyncState.reconnecting:
         return 'Reconnecting';
       case SyncState.syncing:
         return 'Syncing';
+      case SyncState.degraded:
+        return 'Degraded';
+      case SyncState.conflictResolution:
+        return 'Resolving Conflicts';
+      case SyncState.error:
+        return 'Error';
+      case SyncState.stopped:
+        return 'Stopped';
       case SyncState.offline:
         return 'Offline';
       case SyncState.disconnected:

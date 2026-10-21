@@ -96,15 +96,21 @@ class _SupportScreenState extends State<SupportScreen> {
         return const Color(0xFF3B82F6);
       case 'in progress':
         return const Color(0xFFF59E0B);
-      case 'waiting for user':
-        return const Color(0xFF8B5CF6);
+      case 'complete':
       case 'resolved':
-        return const Color(0xFF10B981);
       case 'closed':
-        return const Color(0xFF64748B);
+        return const Color(0xFF10B981);
       default:
         return const Color(0xFF64748B);
     }
+  }
+
+  String _normalizeStatus(String status) {
+    final lower = status.trim().toLowerCase();
+    if (lower == 'open') return 'Open';
+    if (lower == 'in progress') return 'In Progress';
+    if (lower == 'complete' || lower == 'resolved' || lower == 'closed') return 'Complete';
+    return 'Open';
   }
 
   Color _getPriorityColor(String priority) {
@@ -209,7 +215,7 @@ class _SupportScreenState extends State<SupportScreen> {
                   const SizedBox(width: 12),
                   _buildKpiCard('In Progress', _stats.inProgress.toString(), Icons.pending_actions_rounded, const Color(0xFFF59E0B), isDark),
                   const SizedBox(width: 12),
-                  _buildKpiCard('Resolved', _stats.resolved.toString(), Icons.check_circle_outline_rounded, const Color(0xFF10B981), isDark),
+                  _buildKpiCard('Complete', _stats.complete.toString(), Icons.check_circle_outline_rounded, const Color(0xFF10B981), isDark),
                 ],
               ),
               const SizedBox(height: 16),
@@ -254,7 +260,7 @@ class _SupportScreenState extends State<SupportScreen> {
                       child: DropdownButton<String>(
                         value: _statusFilter,
                         isDense: true,
-                        items: const ['All', 'Open', 'In Progress', 'Waiting for User', 'Resolved', 'Closed']
+                        items: const ['All', 'Open', 'In Progress', 'Complete']
                             .map((s) => DropdownMenuItem(value: s, child: Text('Status: $s', style: const TextStyle(fontSize: 12.5))))
                             .toList(),
                         onChanged: (val) {
@@ -378,7 +384,7 @@ class _SupportScreenState extends State<SupportScreen> {
                                               borderRadius: BorderRadius.circular(12),
                                             ),
                                             child: Text(
-                                              issue.status,
+                                              _normalizeStatus(issue.status),
                                               style: TextStyle(
                                                 fontSize: 11.5,
                                                 fontWeight: FontWeight.bold,

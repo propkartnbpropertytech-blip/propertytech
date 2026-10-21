@@ -1,8 +1,9 @@
-import '../../../core/api/dio_client.dart';
+import '../../../core/api/api_client.dart';
 import '../models/business_insight_summary.dart';
 
 class BusinessInsightService {
   static final BusinessInsightService instance = BusinessInsightService._();
+  final ApiClient _apiClient = ApiClient();
   BusinessInsightService._();
 
   /// Fetches authoritative business insight summary counts from PostgreSQL backend
@@ -39,7 +40,7 @@ class BusinessInsightService {
         queryParams['organization_id'] = organizationId;
       }
 
-      final response = await DioClient.dio.get(
+      final response = await _apiClient.get(
         '/reports/business-insight',
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
@@ -88,7 +89,7 @@ class BusinessInsightService {
         queryParams['telecallerId'] = telecallerId;
       }
 
-      final response = await DioClient.dio.get(
+      final response = await _apiClient.get(
         '/reports/business-insight/leads',
         queryParameters: queryParams,
       );

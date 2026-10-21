@@ -42,6 +42,7 @@ import '../mobile/mobile_layout.dart';
 import '../mobile/mobile_top_bar.dart';
 import '../../../../features/settings/services/page_control_service.dart';
 import 'under_development_screen.dart';
+import 'floating_action_menu.dart';
 
 class CRMAppShell extends StatefulWidget {
   final Widget child;
@@ -1738,6 +1739,10 @@ class _CRMAppShellState extends State<CRMAppShell>
             ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           _buildSyncOverlay(),
+          FloatingActionMenu(
+            role: currentUserRole,
+            isMobile: false,
+          ),
         ],
       ),
     );
@@ -1829,6 +1834,10 @@ class _CRMAppShellState extends State<CRMAppShell>
           ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           _buildSyncOverlay(),
+          FloatingActionMenu(
+            role: role,
+            isMobile: true,
+          ),
         ],
       ),
     );

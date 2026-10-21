@@ -6,7 +6,7 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/widgets/skeletons.dart';
 import '../models/area_analytics_model.dart';
 import '../models/kpi_models.dart';
-import '../services/dashboard_service.dart';
+import '../repository/dashboard_repository.dart';
 import 'kpi_drilldown_dialogs.dart';
 
 class InventoryDemandAnalyticsSection extends StatefulWidget {
@@ -26,7 +26,7 @@ class InventoryDemandAnalyticsSection extends StatefulWidget {
 
 class _InventoryDemandAnalyticsSectionState
     extends State<InventoryDemandAnalyticsSection> {
-  final DashboardService _dashboardService = DashboardService();
+  final DashboardRepository _dashboardRepository = DashboardRepository();
   final MapController _mapController = MapController();
 
   // Unified Locality Intelligence state
@@ -118,7 +118,7 @@ class _InventoryDemandAnalyticsSectionState
     });
 
     try {
-      final data = await _dashboardService.getLocalityIntelligence(
+      final data = await _dashboardRepository.getLocalityIntelligence(
         businessType: widget.businessType,
       );
       if (!mounted) return;
@@ -151,7 +151,7 @@ class _InventoryDemandAnalyticsSectionState
     });
 
     try {
-      final data = await _dashboardService.getLeadsByArea(
+      final data = await _dashboardRepository.getLeadsByArea(
         type: _selectedLeadDemandType,
       );
       if (!mounted) return;

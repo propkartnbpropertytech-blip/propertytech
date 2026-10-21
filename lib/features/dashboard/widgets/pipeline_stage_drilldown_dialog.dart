@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/theme_manager.dart';
-import '../services/dashboard_service.dart';
+import '../repository/dashboard_repository.dart';
 
 /// Modal dialog that visualizes the multi-table pipeflow derivation
 /// and displays the authoritative leads list for any pipeline stage or sales agent.
@@ -49,7 +49,7 @@ class PipelineStageDrilldownDialog extends StatefulWidget {
 
 class _PipelineStageDrilldownDialogState
     extends State<PipelineStageDrilldownDialog> {
-  final DashboardService _service = DashboardService();
+  final DashboardRepository _repository = DashboardRepository();
   final TextEditingController _searchController = TextEditingController();
 
   bool _isLoading = true;
@@ -82,7 +82,7 @@ class _PipelineStageDrilldownDialogState
       final endDate = widget.initialFilters?['endDate'];
       final leadType = widget.initialFilters?['leadType'] ?? 'Both';
 
-      final res = await _service.getLifecycleLeads(
+      final res = await _repository.getLifecycleLeads(
         stage: widget.stage,
         salesUserId: widget.salesUserId,
         leadType: leadType,

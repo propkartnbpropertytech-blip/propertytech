@@ -8,7 +8,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:url_launcher/url_launcher.dart';
-import '../../../core/api/dio_client.dart';
+import '../domain/usecases/reclassify_campaign_lead_usecase.dart';
+import '../widgets/campaign_column_settings_dialog.dart';
+import '../widgets/lead_reclassify_dialog.dart';
 import '../../../core/config/app_env.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -122,7 +124,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
       _selectedSourceFilter = widget.initialSource!;
     }
-    final incomingLock = (widget.lockSource ?? widget.initialSource ?? '').toLowerCase();
+    final incomingLock = (widget.lockSource ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
     if (incomingLock.contains('meta') || incomingLock.contains('housing')) {
       _selectedDateFilter = CampaignDateFilter.allTime;
     }
@@ -137,7 +139,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.ensureLoaded();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final curLock = (widget.lockSource ?? widget.initialSource ?? '').toLowerCase();
+      final curLock = (widget.lockSource ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
       if (curLock.contains('meta') || curLock.contains('housing')) {
         _selectedDateFilter = CampaignDateFilter.allTime;
         context.read<CampaignLeadsBloc>().add(
@@ -953,8 +955,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       userRole = authState.user.role;
     }
 
-    // RBAC Guard
-    if (!RoleGuard.canAccessCampaign(userRole)) {
+    // RBAC Guard: Zero interference - Sales users strictly blocked from telecaller queue
+    if (!RoleGuard.canAccessCampaign(userRole) || RoleGuard.isSales(userRole)) {
       return Scaffold(
         backgroundColor: CRMColors.backgroundOf(context),
         body: SafeArea(
@@ -986,7 +988,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final curSrc = (widget.lockSource ?? _selectedSourceFilter).toUpperCase().trim();
     final isMetaPage = curSrc == 'META' || curSrc == 'META ADS' || curSrc == 'FACEBOOK';
-    final isHousingPage = curSrc == 'HOUSING' || curSrc == 'HOUSING.COM';
+    final isHousingPage = (widget.portalTabId?.toLowerCase() == 'housing') || curSrc == 'HOUSING' || curSrc == 'HOUSING.COM';
     final isMetaOrHousingPage = isMetaPage || isHousingPage;
 
     return BlocListener<UsersBloc, UsersState>(
@@ -4095,10 +4097,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final role = RoleGuard.currentUser?.role ?? '';
     final isAdminOrSuperAdmin = role == 'Admin' || role == 'Super Admin';
     try {
-      final res = await DioClient.dio.get('/telecaller/partner-telecallers');
-      final list = List<dynamic>.from(res.data['data'] ?? []);
+      final list = await _service.getPartnerTelecallers();
       final partners = list
-          .map((u) => Map<String, dynamic>.from(u as Map))
           .where((u) {
             if (!isAdminOrSuperAdmin && myId != null && myId.isNotEmpty && u['id']?.toString() == myId) {
               return false;
@@ -4305,10 +4305,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Future<List<Map<String, dynamic>>> _fetchSalesUsersForTransfer() async {
     try {
-      final res = await DioClient.dio.get('/telecaller/sales-users');
-      final list = List<dynamic>.from(res.data['data'] ?? []);
+      final list = await _service.getSalesUsersForTransfer();
       if (list.isNotEmpty) {
-        return list.map((u) => Map<String, dynamic>.from(u as Map)).toList();
+        return list;
       }
     } catch (e) {
       debugPrint('[TransferDialog] /telecaller/sales-users fetch error: $e');
@@ -5433,7 +5432,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         return true;
       }).toList();
     }
-    return allItems;
+    // Default-deny: Non-telecaller and non-admin cannot view telecaller followups
+    return const [];
   }
 
   int _pendingDueFollowupLeadCount() {
@@ -6587,20 +6587,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       )).toList();
     }
 
-    final propListingCount = notInterestedLeads.where((l) => l.leadType == 'Property Listing').length;
-    final reqCount = notInterestedLeads.where((l) => l.leadType == 'Requirement').length;
+    int propListingCount = 0;
+    int reqCount = 0;
+    int todayCount = 0;
     final totalCount = notInterestedLeads.length;
-    final todayCount = notInterestedLeads
-        .where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? _queueTime(l), CampaignDateFilter.today))
-        .length;
+    final todayLeads = <IntegrationLeadModel>[];
+    final propLeads = <IntegrationLeadModel>[];
+    final reqLeads = <IntegrationLeadModel>[];
+
+    for (final l in notInterestedLeads) {
+      if (l.leadType == 'Property Listing') {
+        propListingCount++;
+        propLeads.add(l);
+      } else if (l.leadType == 'Requirement') {
+        reqCount++;
+        reqLeads.add(l);
+      }
+      if (CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? _queueTime(l), CampaignDateFilter.today)) {
+        todayCount++;
+        todayLeads.add(l);
+      }
+    }
 
     List<IntegrationLeadModel> filteredBySub = notInterestedLeads;
     if (_notInterestedSubFilter == 'today') {
-      filteredBySub = notInterestedLeads.where((l) => CampaignLeadsState.matchesDateFilter(l.notInterestedAt ?? _queueTime(l), CampaignDateFilter.today)).toList();
+      filteredBySub = todayLeads;
     } else if (_notInterestedSubFilter == 'property_listing') {
-      filteredBySub = notInterestedLeads.where((l) => l.leadType == 'Property Listing').toList();
+      filteredBySub = propLeads;
     } else if (_notInterestedSubFilter == 'requirement') {
-      filteredBySub = notInterestedLeads.where((l) => l.leadType == 'Requirement').toList();
+      filteredBySub = reqLeads;
     }
 
     final query = _notInterestedSearchQuery.trim().toLowerCase();
@@ -11274,13 +11289,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     try {
-      final response = await DioClient.dio.get<List<int>>(
-        '/export/leads',
-        options: Options(responseType: ResponseType.bytes),
-      );
-      if (response.data != null && response.data!.isNotEmpty) {
+      final responseData = await _service.exportLeads();
+      if (responseData != null && responseData is List<int> && responseData.isNotEmpty) {
         final filename = 'Campaign_Leads_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
-        await FileDownloader.download(response.data!, filename);
+        await FileDownloader.download(responseData, filename);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

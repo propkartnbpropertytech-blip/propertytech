@@ -104,6 +104,45 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   List<PropertyListItemViewModel> _filteredViewModels = [];
   List<PropertyModel> _filteredProperties = [];
   Timer? _searchDebounceTimer;
+  String? _lastComputedPropertyFilterKey;
+  List<PropertyModel>? _lastSourcePropertyList;
+
+  String _buildPropertyFilterCacheKey(String? currentUserId, List<PropertyModel> rawList) {
+    final query = _searchController.text.trim().toLowerCase();
+    final configKey = (List.of(_selectedConfigurations)..sort()).join(',');
+    final areaKey = (List.of(_selectedAreas)..sort()).join(',');
+    final archivedCount = _archivedPropertyIds.length;
+    return '${rawList.length}|$_activeListingTab|$_selectedCategory|$_activeCategoryTab|'
+        '$configKey|$areaKey|$_selectedPriceSortOrRange|$_minPrice|$_maxPrice|$query|'
+        '$_myAddedOnly|$currentUserId|$_archiveTabOnly|$archivedCount|'
+        '$_selectedStatusFilter|$_activeBhkFilter|$_selectedFurnishingFilter|'
+        '$_imageFilter|$_noImagesOnly|${_selectedPropertyDateFilter.name}|'
+        '${_propertyCustomStartDate?.millisecondsSinceEpoch}|${_propertyCustomEndDate?.millisecondsSinceEpoch}';
+  }
+
+  List<PropertyModel> _getEffectiveFilteredProperties(String? currentUserId, [List<PropertyModel>? rawList, PropertyMetadataModel? metadata]) {
+    final list = rawList ?? _cachedProperties;
+    if (list.isEmpty) {
+      _allViewModels = [];
+      _filteredViewModels = [];
+      _filteredProperties = [];
+      _lastComputedPropertyFilterKey = null;
+      _lastSourcePropertyList = null;
+      return const [];
+    }
+
+    final key = _buildPropertyFilterCacheKey(currentUserId, list);
+    if (_lastComputedPropertyFilterKey == key && identical(_lastSourcePropertyList, list)) {
+      return _filteredProperties;
+    }
+
+    _cachedProperties = list;
+    if (metadata != null) _cachedMetadata = metadata;
+    _recomputeFilteredProperties(notify: false, currentUserId: currentUserId);
+    _lastComputedPropertyFilterKey = key;
+    _lastSourcePropertyList = list;
+    return _filteredProperties;
+  }
 
   @override
   void initState() {
@@ -117,6 +156,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
+        _lastComputedPropertyFilterKey = null;
         _recomputeFilteredProperties();
       }
     });
@@ -128,24 +168,31 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _allViewModels = [];
       _filteredViewModels = [];
       _filteredProperties = [];
+      _lastComputedPropertyFilterKey = null;
+      _lastSourcePropertyList = null;
       if (notify && mounted) setState(() {});
       return;
     }
 
-    if (_allViewModels.length != rawLoadedList.length) {
+    if (_allViewModels.length != rawLoadedList.length || !identical(_lastSourcePropertyList, rawLoadedList)) {
       _allViewModels = rawLoadedList
           .map((p) => PropertyListItemViewModel.fromProperty(p, _cachedMetadata))
           .toList(growable: false);
+      _lastSourcePropertyList = rawLoadedList;
     }
 
-    final effUserId = currentUserId ?? (() {
+    final authUser = (() {
       try {
         final authState = context.read<AuthBloc>().state;
-        return authState is Authenticated ? authState.user.id : null;
+        return authState is Authenticated ? authState.user : null;
       } catch (_) {
         return null;
       }
     })();
+
+    final effUserId = currentUserId ?? authUser?.id;
+    final effUserName = authUser?.fullName;
+    final effUserEmail = authUser?.email;
 
     _filteredViewModels = PropertyFilterEngine.filterAndSort(
       items: _allViewModels,
@@ -153,12 +200,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       selectedCategory: _selectedCategory,
       activeCategoryTab: _activeCategoryTab,
       selectedConfigurations: _selectedConfigurations.toSet(),
+      selectedAreas: _selectedAreas.toSet(),
+      metadata: _cachedMetadata,
       selectedPriceSortOrRange: _selectedPriceSortOrRange ?? 'all',
       minPrice: _minPrice,
       maxPrice: _maxPrice,
       searchQuery: _searchController.text,
       myAddedOnly: _myAddedOnly,
       currentUserId: effUserId,
+      currentUserName: effUserName,
+      currentUserEmail: effUserEmail,
       archiveTabOnly: _archiveTabOnly,
       archivedPropertyIds: _archivedPropertyIds,
       selectedStatusFilter: _selectedStatusFilter,
@@ -172,6 +223,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
 
     _filteredProperties = _filteredViewModels.map((vm) => vm.property).toList();
+    _lastComputedPropertyFilterKey = _buildPropertyFilterCacheKey(effUserId, rawLoadedList);
 
     if (notify && mounted) {
       setState(() {});
@@ -1975,7 +2027,21 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Widget _buildHousingStyleResultsHeader(BuildContext context, int totalCount, int pageStart, int pageEnd) {
     final categoryText = _activeCategoryTab == 'All' ? '' : '$_activeCategoryTab ';
     final searchText = _searchController.text.trim();
-    final locationTitle = searchText.isNotEmpty ? 'in $searchText' : 'in Area';
+    final String locationTitle;
+    if (_selectedAreas.isNotEmpty) {
+      final names = _selectedAreas.map((id) {
+        final match = _cachedMetadata?.areas.firstWhere(
+          (a) => a.id == id,
+          orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''),
+        );
+        return match?.name ?? id;
+      }).toList();
+      locationTitle = 'in ${names.join(', ')}';
+    } else if (searchText.isNotEmpty) {
+      locationTitle = 'in $searchText';
+    } else {
+      locationTitle = 'in Area';
+    }
     final listingText = _activeListingTab == 'Rent' ? 'Rent' : 'Re-Sale';
 
     return Container(
@@ -2032,7 +2098,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         _selectedPriceSortOrRange = val;
                         _currentPage = 0;
                       });
-                      _loadProperties();
+                      _recomputeFilteredProperties();
                     },
                   ),
                 ),
@@ -3000,12 +3066,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           }
 
           if (rawLoadedList.isNotEmpty) {
-            if (_allViewModels.length != rawLoadedList.length || _filteredProperties.isEmpty) {
-              _cachedProperties = rawLoadedList;
-              _cachedMetadata = metadata;
-              _recomputeFilteredProperties(notify: false, currentUserId: currentUserId);
-            }
-            properties = _filteredProperties;
+properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metadata);
             final action =
                 GoRouterState.of(context).uri.queryParameters['action'];
             if (action == 'add' &&
@@ -3594,6 +3655,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       _activeCategoryTab = cat;
                       _currentPage = 0;
                     });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                   }
                 },
               ),
@@ -3614,6 +3677,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               _activeListingTab = tab;
               _currentPage = 0;
             });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
           },
           myAddedOnly: _myAddedOnly,
           onToggleMyAdded: () {
@@ -3621,6 +3686,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               _myAddedOnly = !_myAddedOnly;
               _currentPage = 0;
             });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
           },
           currentUserId: currentUser?.id,
           isSalesOrTelecaller: isSalesOrTelecaller,
@@ -3703,7 +3770,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       query: val,
                       module: 'Properties',
                     );
-                    _loadProperties();
+                  },
+                  onSubmitted: (_) {
+                    _recomputeFilteredProperties();
                   },
                 );
 
@@ -3716,7 +3785,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       page: '/properties',
                       extra: {'query': _searchController.text.trim()},
                     );
-                    _loadProperties();
+                    _recomputeFilteredProperties();
                   },
                 );
 
@@ -3859,10 +3928,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                               .toList(),
                           onChanged: (val) {
                             setState(() {
-                              _selectedStatusFilter = val;
+                              _selectedStatusFilter = (val == null || val == 'All' || val == 'All Status') ? null : val;
                               _currentPage = 0;
                             });
-                            _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                           },
                           width: double.infinity,
                         ),
@@ -3880,9 +3950,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           items: configurations,
                           onChanged: (vals) {
                             setState(() {
+                              _selectedConfigurations.clear();
+                              _selectedConfigurations.addAll(vals);
                               _currentPage = 0;
                             });
-                            _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                           },
                         ),
                       ),
@@ -3897,10 +3970,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                               .toList(),
                           onChanged: (val) {
                             setState(() {
-                              _selectedFurnishingFilter = val;
+                              _selectedFurnishingFilter = (val == null || val == 'All' || val == 'All Furnished') ? null : val;
                               _currentPage = 0;
                             });
-                            _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                           },
                           width: double.infinity,
                         ),
@@ -3913,9 +3987,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           items: areas,
                           onChanged: (vals) {
                             setState(() {
+                              _selectedAreas.clear();
+                              _selectedAreas.addAll(vals);
                               _currentPage = 0;
                             });
-                            _loadProperties();
+                            _lastComputedPropertyFilterKey = null;
+                            _recomputeFilteredProperties();
                           },
                         ),
                       ),
@@ -3947,12 +4024,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                               _showCustomPriceRangeDialog();
                             } else {
                               setState(() {
-                                _selectedPriceSortOrRange = val;
+                                _selectedPriceSortOrRange = (val == null || val == 'All' || val == 'all') ? null : val;
                                 _minPrice = null;
                                 _maxPrice = null;
                                 _currentPage = 0;
                               });
-                              _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                             }
                           },
                           width: double.infinity,
@@ -3990,10 +4068,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             .toList(),
                         onChanged: (val) {
                           setState(() {
-                            _selectedStatusFilter = val;
+                            _selectedStatusFilter = (val == null || val == 'All' || val == 'All Status') ? null : val;
                             _currentPage = 0;
                           });
-                          _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                         },
                         width: columnWidth,
                       ),
@@ -4010,9 +4089,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           items: configurations,
                           onChanged: (vals) {
                             setState(() {
+                              _selectedConfigurations.clear();
+                              _selectedConfigurations.addAll(vals);
                               _currentPage = 0;
                             });
-                            _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                           },
                         ),
                       ),
@@ -4025,10 +4107,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             .toList(),
                         onChanged: (val) {
                           setState(() {
-                            _selectedFurnishingFilter = val;
+                            _selectedFurnishingFilter = (val == null || val == 'All' || val == 'All Furnished') ? null : val;
                             _currentPage = 0;
                           });
-                          _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                         },
                         width: columnWidth,
                       ),
@@ -4040,9 +4123,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           items: areas,
                           onChanged: (vals) {
                             setState(() {
+                              _selectedAreas.clear();
+                              _selectedAreas.addAll(vals);
                               _currentPage = 0;
                             });
-                            _loadProperties();
+                            _lastComputedPropertyFilterKey = null;
+                            _recomputeFilteredProperties();
                           },
                         ),
                       ),
@@ -4072,12 +4158,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                             _showCustomPriceRangeDialog();
                           } else {
                             setState(() {
-                              _selectedPriceSortOrRange = val;
+                              _selectedPriceSortOrRange = (val == null || val == 'All' || val == 'all') ? null : val;
                               _minPrice = null;
                               _maxPrice = null;
                               _currentPage = 0;
                             });
-                            _loadProperties();
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                           }
                         },
                         width: columnWidth,
@@ -4206,6 +4293,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           _currentPage = 0;
           _selectedStatusFilter = null;
         });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
       },
       child: AnimatedContainer(
         duration: CRMMotion.fast,
@@ -4237,7 +4326,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           if (_myAddedOnly) {
             _archiveTabOnly = false;
           }
+          _currentPage = 0;
         });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
       },
       child: AnimatedContainer(
         duration: CRMMotion.fast,
@@ -4282,7 +4374,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           if (_archiveTabOnly) {
             _myAddedOnly = false;
           }
+          _currentPage = 0;
         });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
       },
       child: AnimatedContainer(
         duration: CRMMotion.fast,
@@ -4325,6 +4420,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     setState(() {
       _searchController.clear();
       _selectedCategory = null;
+      _activeCategoryTab = 'Residential';
       _selectedConfigurations.clear();
       _selectedAreas.clear();
       _selectedListingType = null;
@@ -4332,6 +4428,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _activeListingTab = 'Rent';
       _selectedPriceSortOrRange = null;
       _selectedFurnishingFilter = null;
+      _imageFilter = null;
+      _noImagesOnly = false;
       _minPrice = null;
       _maxPrice = null;
       _currentPage = 0;
@@ -4341,7 +4439,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _propertyCustomStartDate = null;
       _propertyCustomEndDate = null;
     });
-    _loadProperties();
+    _lastComputedPropertyFilterKey = null;
+    _recomputeFilteredProperties();
   }
 
   Future<void> _showCustomPriceRangeDialog() async {
@@ -4536,7 +4635,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       _selectedPriceSortOrRange = (_minPrice != null || _maxPrice != null) ? 'custom' : null;
                       _currentPage = 0;
                     });
-                    _loadProperties();
+                    _recomputeFilteredProperties();
                     Navigator.of(context).pop();
                   },
                   child: const Text('Apply'),
@@ -4783,7 +4882,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       setState(() {
                         _imageFilter = _imageFilter == 'with_images' ? null : 'with_images';
                         _noImagesOnly = false;
+                        _currentPage = 0;
                       });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                     },
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
@@ -4840,7 +4942,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         final isCurrentlySelected = _imageFilter == 'no_images' || _noImagesOnly;
                         _imageFilter = isCurrentlySelected ? null : 'no_images';
                         _noImagesOnly = !isCurrentlySelected;
+                        _currentPage = 0;
                       });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                     },
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
@@ -4994,7 +5099,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   setState(() {
                     _imageFilter = selected ? 'with_images' : null;
                     _noImagesOnly = false;
+                    _currentPage = 0;
                   });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                 },
               ),
               const SizedBox(width: 8),
@@ -5030,7 +5138,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   setState(() {
                     _imageFilter = selected ? 'no_images' : null;
                     _noImagesOnly = selected;
+                    _currentPage = 0;
                   });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                 },
               ),
             ],
@@ -5462,9 +5573,64 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       if (!matchesConfig) return false;
     }
 
-    final matchesArea = _selectedAreas.isEmpty ||
-        _selectedAreas.contains(p.areaId);
-    if (!matchesArea) return false;
+    if (_selectedAreas.isNotEmpty) {
+      bool matchesArea = false;
+      if (p.areaId.isNotEmpty && _selectedAreas.contains(p.areaId)) {
+        matchesArea = true;
+      } else {
+        final pAreaLower = p.areaName.trim().toLowerCase();
+        final pAddrLower = p.address.trim().toLowerCase();
+        final pLandmarkLower = (p.landmark ?? '').trim().toLowerCase();
+
+        for (final areaIdOrName in _selectedAreas) {
+          final targetLower = areaIdOrName.trim().toLowerCase();
+          if (targetLower.isEmpty) continue;
+          if (pAreaLower.isNotEmpty &&
+              (pAreaLower == targetLower ||
+                  pAreaLower.contains(targetLower) ||
+                  targetLower.contains(pAreaLower))) {
+            matchesArea = true;
+            break;
+          }
+          if (pAddrLower.isNotEmpty && pAddrLower.contains(targetLower)) {
+            matchesArea = true;
+            break;
+          }
+          if (pLandmarkLower.isNotEmpty && pLandmarkLower.contains(targetLower)) {
+            matchesArea = true;
+            break;
+          }
+
+          if (metadata != null && metadata.areas.isNotEmpty) {
+            final areaMatch = metadata.areas.firstWhere(
+              (a) => a.id == areaIdOrName || a.name.toLowerCase() == targetLower,
+              orElse: () => AreaLookup(id: '', name: '', cityId: '', pincode: ''),
+            );
+            if (areaMatch.id.isNotEmpty) {
+              final aNameLower = areaMatch.name.trim().toLowerCase();
+              if (aNameLower.isNotEmpty) {
+                if (pAreaLower.isNotEmpty &&
+                    (pAreaLower == aNameLower ||
+                        pAreaLower.contains(aNameLower) ||
+                        aNameLower.contains(pAreaLower))) {
+                  matchesArea = true;
+                  break;
+                }
+                if (pAddrLower.isNotEmpty && pAddrLower.contains(aNameLower)) {
+                  matchesArea = true;
+                  break;
+                }
+                if (pLandmarkLower.isNotEmpty && pLandmarkLower.contains(aNameLower)) {
+                  matchesArea = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (!matchesArea) return false;
+    }
 
     if (_selectedPriceSortOrRange == 'custom') {
       if (_minPrice != null && p.price < _minPrice!) {
@@ -5499,7 +5665,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       if (!matchesSearch) return false;
     }
 
-    final matchesMyAdded = !_myAddedOnly || (p.createdBy == currentUserId);
+    final matchesMyAdded = !_myAddedOnly ||
+        (currentUserId != null &&
+            currentUserId.isNotEmpty &&
+            p.createdBy.trim().toLowerCase() == currentUserId.trim().toLowerCase());
     if (!matchesMyAdded) return false;
 
     final matchesArchive = _archiveTabOnly
@@ -5605,18 +5774,30 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     if (_allViewModels.length != baseList.length) {
       _allViewModels = baseList.map((p) => PropertyListItemViewModel.fromProperty(p, metadata)).toList(growable: false);
     }
+    final authUser = (() {
+      try {
+        final authState = context.read<AuthBloc>().state;
+        return authState is Authenticated ? authState.user : null;
+      } catch (_) {
+        return null;
+      }
+    })();
     return PropertyFilterEngine.filterAndSort(
       items: _allViewModels,
       activeListingTab: _activeListingTab,
       selectedCategory: _selectedCategory,
       activeCategoryTab: _activeCategoryTab,
       selectedConfigurations: _selectedConfigurations.toSet(),
+      selectedAreas: _selectedAreas.toSet(),
+      metadata: metadata,
       selectedPriceSortOrRange: _selectedPriceSortOrRange ?? 'all',
       minPrice: _minPrice,
       maxPrice: _maxPrice,
       searchQuery: _searchController.text,
       myAddedOnly: _myAddedOnly,
-      currentUserId: currentUserId,
+      currentUserId: currentUserId ?? authUser?.id,
+      currentUserName: authUser?.fullName,
+      currentUserEmail: authUser?.email,
       archiveTabOnly: _archiveTabOnly,
       archivedPropertyIds: _archivedPropertyIds,
       selectedStatusFilter: _selectedStatusFilter,
@@ -5670,6 +5851,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         _selectedPropertyDateFilter = PropertyDateFilterPreset.customRange;
         _currentPage = 0;
       });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
     }
   }
 
@@ -5748,6 +5931,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         _selectedPropertyDateFilter = filter;
                         _currentPage = 0;
                       });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
                     }
                   },
                   child: AnimatedContainer(
@@ -5868,6 +6053,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   int _countActivePropertyFilters() {
     int count = 0;
+    if (_selectedAreas.isNotEmpty) count++;
+    if (_selectedConfigurations.isNotEmpty) count++;
     if (_activeBhkFilter != null && _activeBhkFilter != 'All' && _activeBhkFilter!.isNotEmpty) count++;
     if (_selectedPriceSortOrRange != null && _selectedPriceSortOrRange != 'default') count++;
     if (_selectedFurnishingFilter != null && _selectedFurnishingFilter != 'All' && _selectedFurnishingFilter!.isNotEmpty) count++;
@@ -5903,7 +6090,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     selected: selected,
                     onSelected: (val) {
                       setSheetState(() => _activeBhkFilter = bhk);
-                      setState(() => _activeBhkFilter = bhk);
+                      setState(() {
+                        _activeBhkFilter = bhk;
+                        _currentPage = 0;
+                      });
+                      _lastComputedPropertyFilterKey = null;
+                      _recomputeFilteredProperties(notify: false);
                     },
                   );
                 }).toList(),
@@ -5921,7 +6113,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     selected: selected,
                     onSelected: (val) {
                       setSheetState(() => _selectedFurnishingFilter = f == 'All' ? null : f);
-                      setState(() => _selectedFurnishingFilter = f == 'All' ? null : f);
+                      setState(() {
+                        _selectedFurnishingFilter = f == 'All' ? null : f;
+                        _currentPage = 0;
+                      });
+                      _lastComputedPropertyFilterKey = null;
+                      _recomputeFilteredProperties(notify: false);
                     },
                   );
                 }).toList(),
@@ -5939,7 +6136,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     selected: selected,
                     onSelected: (val) {
                       setSheetState(() => _selectedPriceSortOrRange = opt.$1 == 'default' ? null : opt.$1);
-                      setState(() => _selectedPriceSortOrRange = opt.$1 == 'default' ? null : opt.$1);
+                      setState(() {
+                        _selectedPriceSortOrRange = opt.$1 == 'default' ? null : opt.$1;
+                        _currentPage = 0;
+                      });
+                      _lastComputedPropertyFilterKey = null;
+                      _recomputeFilteredProperties(notify: false);
                     },
                   );
                 }).toList(),
@@ -5957,8 +6159,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 _activeBhkFilter = 'All';
                 _selectedPriceSortOrRange = null;
                 _selectedFurnishingFilter = null;
+                _selectedConfigurations.clear();
+                _selectedAreas.clear();
+                _selectedStatusFilter = null;
                 _searchController.clear();
+                _currentPage = 0;
               });
+_lastComputedPropertyFilterKey = null;
+_recomputeFilteredProperties();
               Navigator.pop(context);
             },
             child: const Text('Reset All'),
@@ -5971,7 +6179,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               backgroundColor: CRMColors.primaryOf(context),
               foregroundColor: Colors.white,
             ),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              _recomputeFilteredProperties();
+              Navigator.pop(context);
+            },
             child: const Text('Apply'),
           ),
         ),
@@ -6185,6 +6396,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             _activeListingTab = label;
             _currentPage = 0;
           });
+          _lastComputedPropertyFilterKey = null;
+          _recomputeFilteredProperties(notify: false);
         }
       },
       child: AnimatedContainer(

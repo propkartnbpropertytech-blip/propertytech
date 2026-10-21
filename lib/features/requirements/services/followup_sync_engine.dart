@@ -261,6 +261,13 @@ class CategorizedFollowupsResult {
 }
 
 class FollowupSyncEngine {
+  static bool _matchesListingType(RequirementModel req, String targetListingType) {
+    if (targetListingType.isEmpty || targetListingType.toLowerCase() == 'all') {
+      return true;
+    }
+    return getListingTypeLabel(req).toLowerCase() == targetListingType.toLowerCase();
+  }
+
   static RequirementModel? findMatchingRequirement(
     DashboardFollowup f,
     List<RequirementModel> reqsList,
@@ -303,7 +310,7 @@ class FollowupSyncEngine {
       for (final req in reqsList) {
         final reqStatus = req.status;
         if (!isSiteVisitStatus(reqStatus)) continue;
-        if (getListingTypeLabel(req) != targetListingType) continue;
+        if (!_matchesListingType(req, targetListingType)) continue;
 
         final matchingFollowups = allFollowups.where((f) =>
             (f.requirementId != null && f.requirementId!.isNotEmpty && req.id == f.requirementId) ||
@@ -385,7 +392,7 @@ class FollowupSyncEngine {
         if (req != null) {
           if (!isSiteVisitStatus(req.status) && !visitIsOpen) continue;
           if (!isSiteVisitStatus(req.status) && !isSiteVisitStatus(sv.status)) continue;
-          if (getListingTypeLabel(req) != targetListingType) continue;
+          if (!_matchesListingType(req, targetListingType)) continue;
         } else if (!visitIsOpen) {
           continue;
         }
@@ -477,7 +484,7 @@ class FollowupSyncEngine {
         if (req == null) continue;
 
         // Listing type check (Rent vs Re-Sale)
-        if (getListingTypeLabel(req) != targetListingType) continue;
+        if (!_matchesListingType(req, targetListingType)) continue;
 
         // From those leads, active leads (not won/closed and not rejected) appear on the Follow-ups tab
         final reqStatusLower = req.status.trim().toLowerCase();
@@ -565,7 +572,7 @@ class FollowupSyncEngine {
         if (isSiteVisitStatus(reqStatus)) continue;
         final rStatusLower = reqStatus.trim().toLowerCase();
         if (rStatusLower.startsWith('rejected') || rStatusLower == 'won' || rStatusLower == 'closed') continue;
-        if (getListingTypeLabel(req) != targetListingType) continue;
+        if (!_matchesListingType(req, targetListingType)) continue;
 
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');
         if (handledReqIds.contains(req.id) || (cleanMob.isNotEmpty && handledMobiles.contains(cleanMob))) {
@@ -700,15 +707,19 @@ class FollowupSyncEngine {
       allClients = allClients.where(matchesSalesperson).toList();
     }
 
-    // Filter Future by customDateFilter if specified
+    // Filter by customDateFilter if specified
     if (customDateFilter != null) {
-      future = future.where((f) {
+      bool matchesDate(DashboardFollowup f) {
         final parsed = parseFollowupDateTime(f.followupDate);
         if (parsed == null) return false;
         return parsed.year == customDateFilter.year &&
             parsed.month == customDateFilter.month &&
             parsed.day == customDateFilter.day;
-      }).toList();
+      }
+
+      today = today.where(matchesDate).toList();
+      future = future.where(matchesDate).toList();
+      allClients = allClients.where(matchesDate).toList();
     }
 
     return CategorizedFollowupsResult(
