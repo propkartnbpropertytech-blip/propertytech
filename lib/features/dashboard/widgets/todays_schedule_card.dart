@@ -6,7 +6,7 @@ import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../models/dashboard_summary.dart';
-import '../services/dashboard_service.dart';
+import '../repository/dashboard_repository.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 
 class PersonalNoteItem {
@@ -76,6 +76,7 @@ class TodaysScheduleCard extends StatefulWidget {
 }
 
 class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
+  final DashboardRepository _dashboardRepository = DashboardRepository();
   List<PersonalNoteItem> _notes = [];
   bool _isLoading = true;
   String? _currentUserId;
@@ -125,7 +126,7 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
     }
 
     try {
-      final remoteNotesJson = await DashboardService().getDashboardNotes();
+      final remoteNotesJson = await _dashboardRepository.getDashboardNotes();
       final loadedNotes = remoteNotesJson
           .map((item) => PersonalNoteItem.fromJson(item))
           .toList();
@@ -159,7 +160,7 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
       _currentPage = 1;
     });
 
-    final createdData = await DashboardService().createDashboardNote(text.trim());
+    final createdData = await _dashboardRepository.createDashboardNote(text.trim());
     if (createdData != null && mounted) {
       final createdNote = PersonalNoteItem.fromJson(createdData);
       setState(() {
@@ -182,7 +183,7 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
       });
 
       if (!id.startsWith('temp_')) {
-        await DashboardService().updateDashboardNote(id, isCompleted: newStatus);
+        await _dashboardRepository.updateDashboardNote(id, isCompleted: newStatus);
       }
     }
   }
@@ -197,7 +198,7 @@ class _TodaysScheduleCardState extends State<TodaysScheduleCard> {
     });
 
     if (!id.startsWith('temp_')) {
-      await DashboardService().deleteDashboardNote(id);
+      await _dashboardRepository.deleteDashboardNote(id);
     }
   }
 

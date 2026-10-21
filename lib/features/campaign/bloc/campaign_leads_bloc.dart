@@ -87,10 +87,20 @@ class AcknowledgeNewLeadsEvent extends CampaignLeadsEvent {
 /// Fast local synchronization when IntegrationService updates in-memory leads
 class SyncLocalLeadsEvent extends CampaignLeadsEvent {
   final List<IntegrationLeadModel> leads;
-  const SyncLocalLeadsEvent(this.leads);
+  final int _contentHash;
+
+  SyncLocalLeadsEvent(this.leads) : _contentHash = _computeLeadsHash(leads);
+
+  static int _computeLeadsHash(List<IntegrationLeadModel> leads) {
+    var hash = leads.length;
+    for (final lead in leads) {
+      hash = Object.hash(hash, lead.id, lead.campaignStatus, lead.statusUpdatedAt?.millisecondsSinceEpoch);
+    }
+    return hash;
+  }
 
   @override
-  List<Object?> get props => [leads.length, leads.isNotEmpty ? leads.first.id : ''];
+  List<Object?> get props => [leads.length, _contentHash];
 }
 
 // --- STATE ---
@@ -108,6 +118,8 @@ class CampaignLeadsState extends Equatable {
   final int newLeadsJustArrivedCount;
   final List<IntegrationLeadModel> recentlyArrivedLeads;
   final String? errorMessage;
+  final List<IntegrationLeadModel> dateFilteredLeads;
+  final Map<String, int> filterCounts;
 
   const CampaignLeadsState({
     this.status = CampaignLeadsStatus.initial,
@@ -120,6 +132,8 @@ class CampaignLeadsState extends Equatable {
     this.newLeadsJustArrivedCount = 0,
     this.recentlyArrivedLeads = const [],
     this.errorMessage,
+    this.dateFilteredLeads = const [],
+    this.filterCounts = const {},
   });
 
   CampaignLeadsState copyWith({
@@ -134,30 +148,45 @@ class CampaignLeadsState extends Equatable {
     List<IntegrationLeadModel>? recentlyArrivedLeads,
     String? errorMessage,
   }) {
+    final newLeads = leads ?? this.leads;
+    final newDateFilter = dateFilter ?? this.dateFilter;
+    final newCustomStart = customStartDate ?? this.customStartDate;
+    final newCustomEnd = customEndDate ?? this.customEndDate;
+
+    final bool leadsChanged = leads != null && !identical(leads, this.leads);
+    final bool filterChanged = dateFilter != null && dateFilter != this.dateFilter;
+    final bool boundsChanged = customStartDate != this.customStartDate || customEndDate != this.customEndDate;
+
+    final computedFilteredLeads = (leadsChanged || filterChanged || boundsChanged)
+        ? _precomputeFilteredLeads(newLeads, newDateFilter, newCustomStart, newCustomEnd)
+        : dateFilteredLeads;
+
+    final computedCounts = (leadsChanged || boundsChanged)
+        ? _precomputeCounts(newLeads, newCustomStart, newCustomEnd)
+        : filterCounts;
+
     return CampaignLeadsState(
       status: status ?? this.status,
-      leads: leads ?? this.leads,
-      dateFilter: dateFilter ?? this.dateFilter,
-      customStartDate: customStartDate ?? this.customStartDate,
-      customEndDate: customEndDate ?? this.customEndDate,
+      leads: newLeads,
+      dateFilter: newDateFilter,
+      customStartDate: newCustomStart,
+      customEndDate: newCustomEnd,
       isPinging: isPinging ?? this.isPinging,
       lastPingAt: lastPingAt ?? this.lastPingAt,
       newLeadsJustArrivedCount: newLeadsJustArrivedCount ?? this.newLeadsJustArrivedCount,
       recentlyArrivedLeads: recentlyArrivedLeads ?? this.recentlyArrivedLeads,
       errorMessage: errorMessage,
+      dateFilteredLeads: computedFilteredLeads,
+      filterCounts: computedCounts,
     );
-  }
-
-  /// Get leads matching current date filter
-  List<IntegrationLeadModel> get dateFilteredLeads {
-    return leads.where((lead) {
-      return matchesDateFilter(lead.receivedAt, dateFilter,
-          customStart: customStartDate, customEnd: customEndDate);
-    }).toList();
   }
 
   /// Count of leads matching a specific date filter
   int countForFilter(CampaignDateFilter filter, {String? section}) {
+    final key = section != null ? '${filter.name}_$section' : filter.name;
+    if (filterCounts.containsKey(key)) {
+      return filterCounts[key] ?? 0;
+    }
     return leads.where((lead) {
       if (section != null && lead.leadType != section) return false;
       return matchesDateFilter(lead.receivedAt, filter,
@@ -182,7 +211,7 @@ class CampaignLeadsState extends Equatable {
             local.month == now.month &&
             local.day == now.day;
       case CampaignDateFilter.yesterday:
-        final yest = DateTime(now.year, now.month, now.day - 1);
+        final yest = now.subtract(const Duration(days: 1));
         return local.year == yest.year &&
             local.month == yest.month &&
             local.day == yest.day;
@@ -204,6 +233,48 @@ class CampaignLeadsState extends Equatable {
       case CampaignDateFilter.allTime:
         return true;
     }
+  }
+
+  static List<IntegrationLeadModel> _precomputeFilteredLeads(
+    List<IntegrationLeadModel> leads,
+    CampaignDateFilter filter,
+    DateTime? customStart,
+    DateTime? customEnd,
+  ) {
+    if (leads.isEmpty) return const [];
+    if (filter == CampaignDateFilter.allTime) return leads;
+    return leads.where((lead) {
+      return matchesDateFilter(lead.receivedAt, filter,
+          customStart: customStart, customEnd: customEnd);
+    }).toList();
+  }
+
+  static Map<String, int> _precomputeCounts(
+    List<IntegrationLeadModel> leads,
+    DateTime? customStart,
+    DateTime? customEnd,
+  ) {
+    if (leads.isEmpty) return const {};
+    final counts = <String, int>{};
+    for (final filter in CampaignDateFilter.values) {
+      counts[filter.name] = 0;
+    }
+
+    for (final lead in leads) {
+      final received = lead.receivedAt;
+      final leadType = lead.leadType;
+      for (final filter in CampaignDateFilter.values) {
+        if (matchesDateFilter(received, filter, customStart: customStart, customEnd: customEnd)) {
+          final filterName = filter.name;
+          counts[filterName] = (counts[filterName] ?? 0) + 1;
+          if (leadType.isNotEmpty) {
+            final sectionKey = '${filterName}_$leadType';
+            counts[sectionKey] = (counts[sectionKey] ?? 0) + 1;
+          }
+        }
+      }
+    }
+    return counts;
   }
 
   @override

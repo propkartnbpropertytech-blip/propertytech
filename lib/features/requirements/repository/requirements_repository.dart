@@ -531,4 +531,60 @@ class RequirementsRepository {
       includeNearby: includeNearby,
     );
   }
+
+  Future<dynamic> exportRequirements(Map<String, dynamic> queryParameters) {
+    return _requirementsService.exportRequirements(queryParameters);
+  }
+
+  Future<void> addRequirementNote(String id, String note) {
+    return _requirementsService.addRequirementNote(id, note);
+  }
+
+  Future<void> postSiteVisit(Map<String, dynamic> data) {
+    return _requirementsService.postSiteVisit(data);
+  }
+
+  Future<void> postFollowup(Map<String, dynamic> data) {
+    return _requirementsService.postFollowup(data);
+  }
+
+  Future<dynamic> getSiteVisits(Map<String, dynamic> queryParameters) {
+    return _requirementsService.getSiteVisits(queryParameters);
+  }
+
+  Future<dynamic> getFollowups(Map<String, dynamic> queryParameters) {
+    return _requirementsService.getFollowups(queryParameters);
+  }
+
+  Future<void> updateFollowup(String id, Map<String, dynamic> data) {
+    return _requirementsService.updateFollowup(id, data);
+  }
+
+  Future<void> patchFollowup(String id, Map<String, dynamic> data) {
+    return _requirementsService.patchFollowup(id, data);
+  }
+
+  Future<void> deleteFollowup(String endpoint, Map<String, dynamic> data) {
+    return _requirementsService.deleteFollowup(endpoint, data);
+  }
+
+  Future<dynamic> getShareSessions(String requirementId) {
+    return _requirementsService.getShareSessions(requirementId);
+  }
+
+  Future<void> revokeShareSession(String sessionId) {
+    return _requirementsService.revokeShareSession(sessionId);
+  }
+
+  Future<dynamic> createShareSession(Map<String, dynamic> data) {
+    return _requirementsService.createShareSession(data);
+  }
+
+  Future<void> logShareAction(Map<String, dynamic> data) {
+    return _requirementsService.logShareAction(data);
+  }
+
+  Future<void> downloadFile(String url, String savePath) {
+    return _requirementsService.downloadFile(url, savePath);
+  }
 }

@@ -100,8 +100,12 @@ class TeamUserVisibility {
     dynamic salesperson,
     dynamic currentTelecaller,
   ) {
-    final isAssignedToSales = _matchesPerson(req.assignedTo, salesperson) ||
-        _matchesPerson(req.assigneeName, salesperson);
+    final bool isAssignedToSales = salesperson != null
+        ? (_matchesPerson(req.assignedTo, salesperson) || _matchesPerson(req.assigneeName, salesperson))
+        : (req.assignedTo != null &&
+            req.assignedTo!.trim().isNotEmpty &&
+            req.assignedTo!.trim().toLowerCase() != 'unassigned' &&
+            req.assignedTo!.trim().toLowerCase() != 'null');
 
     final transfer = req.metaCustomFields?['_transfer'];
     bool transferMatches = false;
@@ -109,7 +113,13 @@ class TeamUserVisibility {
       final transferTo = transfer['assigned_to']?.toString();
       final transferToName = transfer['assigned_to_name']?.toString();
       final transferTcId = transfer['telecaller_id']?.toString() ?? transfer['interacted_by']?.toString();
-      if ((_matchesPerson(transferTo, salesperson) || _matchesPerson(transferToName, salesperson)) &&
+      final bool toMatches = salesperson != null
+          ? (_matchesPerson(transferTo, salesperson) || _matchesPerson(transferToName, salesperson))
+          : (transferTo != null &&
+              transferTo.trim().isNotEmpty &&
+              transferTo.trim().toLowerCase() != 'unassigned' &&
+              transferTo.trim().toLowerCase() != 'null');
+      if (toMatches &&
           (_matchesPerson(transferTcId, currentTelecaller) ||
            _matchesPerson(req.assignedTelecallerId, currentTelecaller) ||
            _matchesPerson(req.createdBy, currentTelecaller) ||
@@ -127,7 +137,13 @@ class TeamUserVisibility {
           final toName = item['user_name']?.toString();
           final byId = item['assigned_by']?.toString();
           final byName = item['assigned_by_name']?.toString();
-          if ((_matchesPerson(toId, salesperson) || _matchesPerson(toName, salesperson)) &&
+          final bool toMatches = salesperson != null
+              ? (_matchesPerson(toId, salesperson) || _matchesPerson(toName, salesperson))
+              : (toId != null &&
+                  toId.trim().isNotEmpty &&
+                  toId.trim().toLowerCase() != 'unassigned' &&
+                  toId.trim().toLowerCase() != 'null');
+          if (toMatches &&
               (_matchesPerson(byId, currentTelecaller) || _matchesPerson(byName, currentTelecaller))) {
             historyMatches = true;
             break;
@@ -147,7 +163,7 @@ class TeamUserVisibility {
         req.assignedTelecallerId;
     final tcMatches = metaTcId != null && _matchesPerson(metaTcId, currentTelecaller);
 
-    return createdByMe || tcMatches || historyMatches || isAssignedToSales;
+    return (createdByMe || tcMatches || historyMatches) && isAssignedToSales;
   }
 
   static bool requirementBelongsToUser(RequirementModel req, dynamic user) {
@@ -244,12 +260,7 @@ class TeamUserVisibility {
       if (req.assigneeName != null && req.assigneeName!.trim().toLowerCase().contains(uName)) {
         return true;
       }
-      if (req.remarks != null && req.remarks!.toLowerCase().contains(uName)) {
-        return true;
-      }
-      if (req.notes != null && req.notes!.toLowerCase().contains(uName)) {
-        return true;
-      }
+
     }
     return false;
   }

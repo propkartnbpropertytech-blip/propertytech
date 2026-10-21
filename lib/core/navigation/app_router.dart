@@ -8,7 +8,7 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/telecaller/screens/telecaller_callbacks_screen.dart';
-import '../../features/admin/bloc/lead_allocation_monitor_bloc.dart';
+import '../../features/admin/screens/lead_allocation_monitor_screen.dart';
 import '../../features/properties/screens/properties_screen.dart';
 import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';

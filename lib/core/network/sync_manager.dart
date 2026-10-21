@@ -31,14 +31,56 @@ import '../../features/settings/services/upload_limits_manager.dart';
 import '../../features/campaign/bloc/campaign_connections_bloc.dart';
 import '../utils/app_logger.dart';
 import 'sync_engine.dart';
+import 'sync_telemetry.dart';
 
 enum SyncState {
-  disconnected,
+  initializing,
+  offline,
   connecting,
-  connected,
-  reconnecting,
   syncing,
-  offline
+  live,
+  degraded,
+  reconnecting,
+  conflictResolution,
+  error,
+  stopped,
+
+  // Legacy aliases for backward compatibility
+  connected,
+  disconnected,
+}
+
+extension SyncStateX on SyncState {
+  String get nameUpper {
+    switch (this) {
+      case SyncState.initializing:
+        return 'INITIALIZING';
+      case SyncState.offline:
+        return 'OFFLINE';
+      case SyncState.connecting:
+        return 'CONNECTING';
+      case SyncState.syncing:
+        return 'SYNCING';
+      case SyncState.live:
+      case SyncState.connected:
+        return 'LIVE';
+      case SyncState.degraded:
+        return 'DEGRADED';
+      case SyncState.reconnecting:
+        return 'RECONNECTING';
+      case SyncState.conflictResolution:
+        return 'CONFLICT_RESOLUTION';
+      case SyncState.error:
+        return 'ERROR';
+      case SyncState.stopped:
+      case SyncState.disconnected:
+        return 'STOPPED';
+    }
+  }
+
+  bool get isLive => this == SyncState.live || this == SyncState.connected;
+  bool get isOffline => this == SyncState.offline || this == SyncState.disconnected;
+  bool get isSyncing => this == SyncState.syncing;
 }
 
 class SyncManager {
@@ -137,10 +179,64 @@ class SyncManager {
     await connect(skipDeltaSync: true);
   }
 
-  void _updateState(SyncState newState) {
+  static bool isValidTransition(SyncState from, SyncState to) {
+    if (from == to) return false;
+    // Normalize aliases
+    final f = (from == SyncState.connected) ? SyncState.live : (from == SyncState.disconnected ? SyncState.offline : from);
+    final t = (to == SyncState.connected) ? SyncState.live : (to == SyncState.disconnected ? SyncState.offline : to);
+    if (f == t) return false;
+
+    switch (f) {
+      case SyncState.initializing:
+        return t == SyncState.connecting || t == SyncState.offline || t == SyncState.error;
+      case SyncState.offline:
+        return t == SyncState.connecting || t == SyncState.stopped;
+      case SyncState.connecting:
+        return t == SyncState.syncing || t == SyncState.live || t == SyncState.reconnecting || t == SyncState.offline || t == SyncState.error;
+      case SyncState.syncing:
+        return t == SyncState.live || t == SyncState.conflictResolution || t == SyncState.degraded || t == SyncState.reconnecting || t == SyncState.offline || t == SyncState.error;
+      case SyncState.live:
+        return t == SyncState.syncing || t == SyncState.reconnecting || t == SyncState.offline || t == SyncState.conflictResolution || t == SyncState.stopped;
+      case SyncState.degraded:
+        return t == SyncState.syncing || t == SyncState.live || t == SyncState.reconnecting || t == SyncState.offline || t == SyncState.stopped;
+      case SyncState.reconnecting:
+        return t == SyncState.connecting || t == SyncState.syncing || t == SyncState.offline || t == SyncState.error || t == SyncState.stopped;
+      case SyncState.conflictResolution:
+        return t == SyncState.syncing || t == SyncState.live || t == SyncState.error;
+      case SyncState.error:
+        return t == SyncState.initializing || t == SyncState.connecting || t == SyncState.stopped;
+      case SyncState.stopped:
+        return t == SyncState.initializing || t == SyncState.connecting || t == SyncState.offline;
+      default:
+        return true;
+    }
+  }
+
+  bool transitionTo(SyncState newState, {String? reason}) {
+    if (!isValidTransition(_state, newState)) {
+      AppLogger.w("Invalid or redundant SyncState transition: $_state -> $newState (${reason ?? 'no reason'})");
+      return false;
+    }
+    final oldState = _state;
     _state = newState;
     _stateController.add(newState);
-    AppLogger.d("Sync State changed to: $newState");
+    AppLogger.d("Sync State changed: $oldState -> $newState (${reason ?? ''})");
+    return true;
+  }
+
+  void _updateState(SyncState newState, {String? reason}) {
+    if (_state == newState) return;
+    SyncState target = newState;
+    if (target == SyncState.connected) target = SyncState.live;
+    if (target == SyncState.disconnected) target = SyncState.offline;
+
+    if (isValidTransition(_state, target)) {
+      transitionTo(target, reason: reason);
+    } else {
+      _state = target;
+      _stateController.add(target);
+      AppLogger.d("Sync State set to: $target (${reason ?? ''})");
+    }
   }
 
   Future<void> connect({bool skipDeltaSync = false}) async {
@@ -533,8 +629,35 @@ class SyncManager {
         totalMs: totalMs,
       );
 
+      SyncTelemetryLogger().record(SyncTelemetryRecord(
+        syncId: 'sync_${DateTime.now().millisecondsSinceEpoch}',
+        syncType: 'DELTA',
+        stateFrom: 'SYNCING',
+        stateTo: 'LIVE',
+        startedAt: start,
+        completedAt: DateTime.now(),
+        durationMs: totalMs,
+        recordsReceived: pList.length + rList.length + bList.length + oList.length,
+        recordsApplied: totalChanges,
+        recordsSkipped: (pList.length + rList.length + bList.length + oList.length) - totalChanges,
+        conflictsDetected: conflictedIds.length,
+        conflictsResolved: conflictedIds.length,
+        success: true,
+      ));
+
     } catch (e) {
       AppLogger.e("Delta Sync failed: $e");
+      SyncTelemetryLogger().record(SyncTelemetryRecord(
+        syncId: 'sync_err_${DateTime.now().millisecondsSinceEpoch}',
+        syncType: 'DELTA',
+        stateFrom: 'SYNCING',
+        stateTo: 'ERROR',
+        startedAt: start,
+        completedAt: DateTime.now(),
+        durationMs: DateTime.now().difference(start).inMilliseconds,
+        success: false,
+        failureReason: e.toString(),
+      ));
     }
   }
 
@@ -976,46 +1099,67 @@ class SyncManager {
     return 1;
   }
 
-  Future<void> processOutboxQueue() async {
+  Future<int> processOutboxQueue() async {
     AppLogger.sync("Replaying Outbox Queue...");
     final start = DateTime.now();
     final outboxItems = await _coordinator.outboxLocal.getQueuedRequests();
 
-    if (outboxItems.isEmpty) return;
+    if (outboxItems.isEmpty) return 0;
 
     final apiClient = ApiClient();
     int replayedCount = 0;
+    int failedCount = 0;
 
     for (final item in outboxItems) {
       try {
         final payload = jsonDecode(item.payloadJson) as Map<String, dynamic>;
 
+        final options = Options(headers: {
+          'X-Idempotency-Key': item.id,
+        });
+
         Response? response;
         if (item.method == 'POST') {
-          response = await apiClient.post(item.endpoint, payload);
+          response = await apiClient.post(item.endpoint, payload, options: options);
         } else if (item.method == 'PUT') {
-          response = await apiClient.put(item.endpoint, payload);
+          response = await apiClient.put(item.endpoint, payload, options: options);
         } else if (item.method == 'DELETE') {
-          response = await apiClient.delete(item.endpoint);
+          response = await apiClient.delete(item.endpoint, options: options);
         }
 
         if (response != null && (response.statusCode == 200 || response.statusCode == 201)) {
           await _coordinator.outboxLocal.removeRequest(item.id);
           replayedCount++;
+        } else if (response != null && response.statusCode != null && response.statusCode! >= 400 && response.statusCode! < 500) {
+          failedCount++;
+          await _coordinator.outboxLocal.removeRequest(item.id);
+          AppLogger.w("Non-retryable outbox failure (${response.statusCode}) for ${item.endpoint}");
         }
       } catch (e) {
+        failedCount++;
         AppLogger.w("Outbox replay failed for ${item.endpoint}: $e");
         break; // Stop replaying on network failure, retry on next cycle
       }
     }
 
-    if (replayedCount > 0) {
-      final totalMs = DateTime.now().difference(start).inMilliseconds;
+    final totalMs = DateTime.now().difference(start).inMilliseconds;
+    if (replayedCount > 0 || failedCount > 0) {
       PerformanceLogger().logMetric(
-        operation: 'SyncManager: Replayed $replayedCount outbox items successfully',
+        operation: 'SyncManager: Replayed $replayedCount outbox items ($failedCount failed)',
         totalMs: totalMs,
       );
     }
+    return replayedCount;
+  }
+
+  Future<void> saveCheckpoint(String entityType, String checkpoint) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('checkpoint_$entityType', checkpoint);
+  }
+
+  Future<String?> getCheckpoint(String entityType) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('checkpoint_$entityType');
   }
 
   Future<Map<String, dynamic>> _enrichRawRecord(String table, Map<String, dynamic> record) async {

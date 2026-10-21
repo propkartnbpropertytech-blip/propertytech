@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../dashboard/models/kpi_models.dart';
-import '../../dashboard/services/dashboard_service.dart';
+import '../../dashboard/repository/dashboard_repository.dart';
 
 /// Clean, authoritative, and simplified KPI Configuration screen.
 /// Directly maps KPI names, database count source tables, target display pages,
@@ -15,7 +15,7 @@ class KpiConfigScreen extends StatefulWidget {
 }
 
 class _KpiConfigScreenState extends State<KpiConfigScreen> {
-  final DashboardService _service = DashboardService();
+  final DashboardRepository _service = DashboardRepository();
 
   bool _isLoading = true;
   String _errorMessage = '';
@@ -987,7 +987,7 @@ class _KpiConfigModal extends StatefulWidget {
 }
 
 class _KpiConfigModalState extends State<_KpiConfigModal> {
-  final DashboardService _service = DashboardService();
+  final DashboardRepository _service = DashboardRepository();
   late TextEditingController _labelController;
   late TextEditingController _keyController;
   late TextEditingController _whyController;

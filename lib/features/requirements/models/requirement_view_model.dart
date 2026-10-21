@@ -435,19 +435,22 @@ class RequirementFilterEngine {
     final query = searchQuery.trim().toLowerCase();
     final bool hasSearch = query.isNotEmpty;
 
+    final String userRole = currentUser?.role.trim().toLowerCase() ?? '';
+    final bool isSuperAdmin = userRole == 'super admin';
+    final bool isAdmin = userRole == 'admin' || isSuperAdmin;
+    final bool isSales = userRole == 'sales' || userRole == 'salesperson' || userRole == 'employee' || userRole == 'broker' || RoleGuard.isSales(userRole);
+    final bool isTelecaller = userRole == 'telecaller' || RoleGuard.isTelecaller(userRole);
+
     final bool isWonTab = activeMainTab == 'My Won' || activeMainTab == 'Won';
     final bool isRejectedTab = activeMainTab == 'Rejected';
     final bool isLeadsAddedByMe = activeMainTab == 'Leads Added by Me';
 
-    final bool viewAllRejected = isRejectedTab &&
-        currentUser != null &&
-        (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+    final bool viewAllRejected = isRejectedTab && (currentUser == null || isAdmin);
 
     final bool unassignFilter = !viewAllRejected &&
         !isWonTab &&
         selectedStatus == 'Unassign' &&
-        currentUser != null &&
-        (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+        (currentUser == null || isAdmin);
 
     final filtered = <RequirementListItemViewModel>[];
 
@@ -462,51 +465,34 @@ class RequirementFilterEngine {
         }
       }
 
-      // 2. Sales role view permissions
-      if (currentUser != null && currentUser.role == 'Sales') {
-        if (RequirementListItemViewModel._checkLeadTransferredAway(r, currentUser)) {
-          continue;
-        }
-        final canView = RequirementListItemViewModel._checkUserCreator(r, currentUser) ||
-            RequirementListItemViewModel._checkUserAssignee(r, currentUser);
-        if (!canView) continue;
-
-        if (activeMainTab == 'Leads') {
-          if (salesLeadGroupFilter == 'assigned') {
-            final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
-            final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
-            if (!isAssigned || isCreator) continue;
-          } else if (salesLeadGroupFilter == 'added') {
-            if (!RequirementListItemViewModel._checkUserCreator(r, currentUser)) continue;
+      // 2. Authoritative RBAC Scoping
+      if (currentUser != null) {
+        if (isSales) {
+          // SALES USER: STRICTLY CAN ONLY SEE LEADS ASSIGNED TO THEM
+          if (RequirementListItemViewModel._checkLeadTransferredAway(r, currentUser)) {
+            continue;
           }
-        }
-      }
+          final canView = RequirementListItemViewModel._checkUserCreator(r, currentUser) ||
+              RequirementListItemViewModel._checkUserAssignee(r, currentUser);
+          if (!canView) continue;
 
-      // 3. Telecaller role view permissions
-      if (currentUser != null && RoleGuard.isTelecaller(currentUser.role)) {
-        final uName = currentUser.fullName.trim().toLowerCase();
-        final isCreator = r.createdBy == currentUser.id ||
-            (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
-            (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-        final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
-            (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
-        final isTaggedTelecaller = (r.assignedTelecallerId != null && r.assignedTelecallerId == currentUser.id) ||
-            (r.metaCustomFields != null &&
-                (r.metaCustomFields!['telecaller_id'] == currentUser.id ||
-                    r.metaCustomFields!['assigned_telecaller_id'] == currentUser.id ||
-                    r.metaCustomFields!['telecaller_by_id'] == currentUser.id ||
-                    r.metaCustomFields!['telecaller_by'] == currentUser.id ||
-                    (r.metaCustomFields!['_transfer'] is Map &&
-                        (r.metaCustomFields!['_transfer']['interacted_by'] == currentUser.id ||
-                            r.metaCustomFields!['_transfer']['telecaller_id'] == currentUser.id)) ||
-                    (r.metaCustomFields!['_cnr'] is Map &&
-                        (r.metaCustomFields!['_cnr']['telecaller_id'] == currentUser.id ||
-                            r.metaCustomFields!['_cnr']['interacted_by'] == currentUser.id)) ||
-                    (r.metaCustomFields!['_callback'] is Map &&
-                        (r.metaCustomFields!['_callback']['telecaller_id'] == currentUser.id ||
-                            r.metaCustomFields!['_callback']['interacted_by'] == currentUser.id)) ||
-                    (r.metaCustomFields!['telecaller_by'] != null && uName.isNotEmpty && r.metaCustomFields!['telecaller_by'].toString().trim().toLowerCase() == uName)));
-        if (!isCreator && !isAssignee && !isTaggedTelecaller) {
+          if (activeMainTab == 'Leads') {
+            if (salesLeadGroupFilter == 'assigned') {
+              final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
+              final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
+              if (!isAssigned || isCreator) continue;
+            } else if (salesLeadGroupFilter == 'added') {
+              if (!RequirementListItemViewModel._checkUserCreator(r, currentUser)) continue;
+            }
+          }
+        } else if (isTelecaller) {
+          // TELECALLER USER: CAN ONLY SEE LEADS OF ITSELF ASSIGNED TO SALES
+          final canView = TeamUserVisibility.telecallerLeadSentToSalesperson(r, null, currentUser);
+          if (!canView) continue;
+        } else if (isAdmin) {
+          // ADMIN / SUPER ADMIN: CAN SEE ALL LEADS IN ORGANIZATION
+        } else {
+          // DEFAULT-DENY: ANY UNRECOGNIZED CALLER GETS ZERO LEADS
           continue;
         }
       }
@@ -587,7 +573,7 @@ class RequirementFilterEngine {
         if (salesFilterActive) {
           bool matchesSales = false;
           if (selectedSales != null) {
-            matchesSales = currentUser != null && currentUser.role == 'Telecaller'
+            matchesSales = (isTelecaller || (currentUser != null && currentUser.role == 'Telecaller'))
                 ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedSales, currentUser)
                 : TeamUserVisibility.requirementBelongsToUser(r, selectedSales);
           } else {
@@ -639,8 +625,8 @@ class RequirementFilterEngine {
       if (hasSearch) {
         final queryTokens = query.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
         bool matchesSalesman(String token) {
-          if (currentUser != null &&
-              (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+          if (isAdmin || (currentUser != null &&
+              (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller'))) {
             return vm.creatorNameLower.contains(token) || vm.assigneeNameLower.contains(token);
           }
           return false;

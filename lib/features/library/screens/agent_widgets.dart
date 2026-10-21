@@ -12,6 +12,7 @@ import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 
 // ignore_for_file: depend_on_referenced_packages
 
@@ -92,7 +93,13 @@ class _AgentImageUploadWidgetState extends State<AgentImageUploadWidget> {
             child: _isUploading
                 ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 36, height: 36, child: CircularProgressIndicator(value: _uploadProgress > 0 ? _uploadProgress : null, strokeWidth: 2.5, color: CRMColors.primaryOf(context)))])
                 : _imageUrl != null && _imageUrl!.isNotEmpty
-                    ? Image.network(_imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _defaultIcon(context))
+                    ? CrmNetworkImage(
+                        url: _imageUrl!,
+                        fit: BoxFit.cover,
+                        cacheLogicalWidth: 100,
+                        cacheLogicalHeight: 100,
+                        error: (context) => _defaultIcon(context),
+                      )
                     : _defaultIcon(context),
           ),
         ),

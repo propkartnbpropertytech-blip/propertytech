@@ -43,14 +43,8 @@ void main() async {
     WidgetsFlutterBinding.ensureInitialized();
     ApiConstants.assertConfig();
     initWindowsVideoPlayer();
-    try {
-      await PushNotificationService.initialize();
-    } catch (e) {
-      debugPrint('[PushNotificationService] startup init skipped: $e');
-    }
-
-    // Keep Isar on the critical path (offline reads). Defer logging/sync
-    // until after the first frame so Android cold start stays responsive.
+    // Keep Isar on the critical path (offline reads). Defer push notifications,
+    // logging, and sync until after the first frame so cold start stays responsive.
     try {
       await IsarService().initialize();
     } catch (e, stackTrace) {
@@ -64,6 +58,11 @@ void main() async {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
+        try {
+          await PushNotificationService.initialize();
+        } catch (e) {
+          debugPrint('[PushNotificationService] startup init skipped: $e');
+        }
         await PerformanceLogger().initialize();
         await SyncManager().initialize();
 

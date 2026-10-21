@@ -232,4 +232,149 @@ class RequirementsService {
       throw ApiException(message: e.toString());
     }
   }
+
+  Future<dynamic> exportRequirements(Map<String, dynamic> queryParameters) async {
+    try {
+      final response = await _apiClient.get(
+        '/requirements/export',
+        queryParameters: queryParameters,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> addRequirementNote(String id, String note) async {
+    try {
+      await _apiClient.post('/requirements/$id/notes', {'note': note});
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> postSiteVisit(Map<String, dynamic> data) async {
+    try {
+      await _apiClient.post('/site-visits', data);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> postFollowup(Map<String, dynamic> data) async {
+    try {
+      await _apiClient.post('/followups', data);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<dynamic> getSiteVisits(Map<String, dynamic> queryParameters) async {
+    try {
+      final res = await _apiClient.get('/site-visits', queryParameters: queryParameters);
+      return res.data;
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<dynamic> getFollowups(Map<String, dynamic> queryParameters) async {
+    try {
+      final res = await _apiClient.get('/followups', queryParameters: queryParameters);
+      return res.data;
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> updateFollowup(String id, Map<String, dynamic> data) async {
+    try {
+      await _apiClient.put('/followups/$id', data);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> patchFollowup(String id, Map<String, dynamic> data) async {
+    try {
+      await _apiClient.patch('/followups/$id', data);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> deleteFollowup(String endpoint, Map<String, dynamic> data) async {
+    try {
+      await _apiClient.post(endpoint, data);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<dynamic> getShareSessions(String requirementId) async {
+    try {
+      final res = await _apiClient.get('/share-sessions/requirement/$requirementId');
+      return res.data;
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> revokeShareSession(String sessionId) async {
+    try {
+      await _apiClient.post('/share-sessions/$sessionId/revoke', {});
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<dynamic> createShareSession(Map<String, dynamic> data) async {
+    try {
+      final res = await _apiClient.post('/share-sessions', data);
+      return res.data;
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<void> logShareAction(Map<String, dynamic> data) async {
+    try {
+      await _apiClient.post('/audit/share', data);
+    } catch (_) {}
+  }
+
+  Future<void> downloadFile(String url, String savePath) async {
+    try {
+      await _apiClient.download(url, savePath);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
 }

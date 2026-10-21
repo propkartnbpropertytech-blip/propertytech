@@ -634,6 +634,15 @@ class KpiAuditLogItem {
   }
 }
 
+int _safeInt(dynamic val) {
+  if (val == null) return 0;
+  if (val is num) return val.toInt();
+  if (val is String) {
+    return int.tryParse(val) ?? (double.tryParse(val)?.toInt() ?? 0);
+  }
+  return 0;
+}
+
 class DashboardKpiCounts {
   final int availableInventory;
   final int totalLeads;
@@ -649,6 +658,14 @@ class DashboardKpiCounts {
   final int salesUsers;
   final int notInterested;
   final int cnr;
+
+  // ── Step 8.5 Legacy & Alternative Alias Getters ──────────────────────────
+  int get closedDeals => dealWon;
+  int get convertedClients => dealWon;
+  int get totalAllocated => leadsAllocated;
+  int get newAllocated => leadsAllocated;
+  int get globalAvailableInventory => allAvailableInventory;
+  int get globalTotalLeads => allTotalLeads;
 
   // ── Group A: Inventory Sourcing (KPIs 1-7) ────────────────────────────────
   final int propertiesBySalesAvailable;
@@ -739,55 +756,63 @@ class DashboardKpiCounts {
 
   factory DashboardKpiCounts.fromJson(Map<String, dynamic> json) {
     return DashboardKpiCounts(
-      availableInventory: (json['available_inventory'] as num?)?.toInt() ?? 0,
-      totalLeads: (json['total_leads'] as num?)?.toInt() ?? 0,
-      allAvailableInventory: (json['all_available_inventory'] as num?)?.toInt() ??
-          (json['global_available_inventory'] as num?)?.toInt() ?? 0,
-      allTotalLeads: (json['all_total_leads'] as num?)?.toInt() ??
-          (json['global_total_leads'] as num?)?.toInt() ?? 0,
-      telecallers: (json['telecallers'] as num?)?.toInt() ?? 0,
-      leadsAllocated: (json['leads_allocated'] as num?)?.toInt() ?? (json['new_leads_allocated'] as num?)?.toInt() ?? 0,
-      oldLeadsAllocated: (json['old_leads_allocated'] as num?)?.toInt() ?? 0,
-      assignedToSales: (json['assigned_to_sales'] as num?)?.toInt() ?? 0,
-      siteVisitsDone: (json['site_visits_done'] as num?)?.toInt() ?? 0,
-      rejectedAfterSiteVisit: (json['rejected_after_site_visit'] as num?)?.toInt() ?? 0,
-      dealWon: (json['deal_won'] as num?)?.toInt() ?? 0,
-      salesUsers: (json['sales_users'] as num?)?.toInt() ?? 0,
-      notInterested: (json['not_interested'] as num?)?.toInt() ?? 0,
-      cnr: (json['cnr'] as num?)?.toInt() ?? 0,
+      availableInventory: _safeInt(json['available_inventory']),
+      totalLeads: _safeInt(json['total_leads']),
+      allAvailableInventory: _safeInt(json['all_available_inventory'] ??
+          json['global_available_inventory'] ??
+          json['total_available_inventory']),
+      allTotalLeads: _safeInt(json['all_total_leads'] ??
+          json['global_total_leads'] ??
+          json['total_leads_all']),
+      telecallers: _safeInt(json['telecallers']),
+      leadsAllocated: _safeInt(json['leads_allocated'] ??
+          json['new_leads_allocated'] ??
+          json['total_allocated'] ??
+          json['allocated_leads']),
+      oldLeadsAllocated: _safeInt(json['old_leads_allocated']),
+      assignedToSales: _safeInt(json['assigned_to_sales']),
+      siteVisitsDone: _safeInt(json['site_visits_done'] ??
+          json['site_visits_done_req']),
+      rejectedAfterSiteVisit: _safeInt(json['rejected_after_site_visit']),
+      dealWon: _safeInt(json['deal_won'] ??
+          json['closed_deals'] ??
+          json['converted_clients']),
+      salesUsers: _safeInt(json['sales_users']),
+      notInterested: _safeInt(json['not_interested']),
+      cnr: _safeInt(json['cnr']),
       // Group A
-      propertiesBySalesAvailable: (json['properties_by_sales_available'] as num?)?.toInt() ?? 0,
-      propertiesBySalesTotal: (json['properties_by_sales_total'] as num?)?.toInt() ?? 0,
-      propertiesByTelecallerAvailable: (json['properties_by_telecaller_available'] as num?)?.toInt() ?? 0,
-      propertiesByTelecallerTotal: (json['properties_by_telecaller_total'] as num?)?.toInt() ?? 0,
-      propertiesByAdminAvailable: (json['properties_by_admin_available'] as num?)?.toInt() ?? 0,
-      propertiesByAdminTotal: (json['properties_by_admin_total'] as num?)?.toInt() ?? 0,
-      totalPortfolio: (json['total_portfolio'] as num?)?.toInt() ?? 0,
-      rentedOutCount: (json['rented_out_count'] as num?)?.toInt() ?? 0,
-      soldOutCount: (json['sold_out_count'] as num?)?.toInt() ?? 0,
-      rentalCount: (json['rental_count'] as num?)?.toInt() ?? 0,
-      resaleCount: (json['resale_count'] as num?)?.toInt() ?? 0,
+      propertiesBySalesAvailable: _safeInt(json['properties_by_sales_available']),
+      propertiesBySalesTotal: _safeInt(json['properties_by_sales_total']),
+      propertiesByTelecallerAvailable: _safeInt(json['properties_by_telecaller_available']),
+      propertiesByTelecallerTotal: _safeInt(json['properties_by_telecaller_total']),
+      propertiesByAdminAvailable: _safeInt(json['properties_by_admin_available']),
+      propertiesByAdminTotal: _safeInt(json['properties_by_admin_total']),
+      totalPortfolio: _safeInt(json['total_portfolio']),
+      rentedOutCount: _safeInt(json['rented_out_count']),
+      soldOutCount: _safeInt(json['sold_out_count']),
+      rentalCount: _safeInt(json['rental_count']),
+      resaleCount: _safeInt(json['resale_count']),
       // Group B
-      manualLeadsTotal: (json['manual_leads_total'] as num?)?.toInt() ?? 0,
-      manualLeadsBySales: (json['manual_leads_by_sales'] as num?)?.toInt() ?? 0,
-      manualLeadsByTelecaller: (json['manual_leads_by_telecaller'] as num?)?.toInt() ?? 0,
-      manualLeadsByAdmin: (json['manual_leads_by_admin'] as num?)?.toInt() ?? 0,
+      manualLeadsTotal: _safeInt(json['manual_leads_total']),
+      manualLeadsBySales: _safeInt(json['manual_leads_by_sales']),
+      manualLeadsByTelecaller: _safeInt(json['manual_leads_by_telecaller']),
+      manualLeadsByAdmin: _safeInt(json['manual_leads_by_admin']),
       // Group C
-      activeRequirements: (json['active_requirements'] as num?)?.toInt() ?? 0,
-      allocationTelecaller: (json['allocation_telecaller'] as num?)?.toInt() ?? 0,
-      allocationSelf: (json['allocation_self'] as num?)?.toInt() ?? 0,
-      followupActive: (json['followup_active'] as num?)?.toInt() ?? 0,
-      refollowupActive: (json['refollowup_active'] as num?)?.toInt() ?? 0,
-      siteVisitsScheduled: (json['site_visits_scheduled'] as num?)?.toInt() ?? 0,
-      siteVisitsDoneReq: (json['site_visits_done_req'] as num?)?.toInt() ?? 0,
-      salesRejectionCount: (json['sales_rejection_count'] as num?)?.toInt() ?? 0,
-      dealsWonCount: (json['deals_won_count'] as num?)?.toInt() ?? 0,
+      activeRequirements: _safeInt(json['active_requirements']),
+      allocationTelecaller: _safeInt(json['allocation_telecaller']),
+      allocationSelf: _safeInt(json['allocation_self']),
+      followupActive: _safeInt(json['followup_active']),
+      refollowupActive: _safeInt(json['refollowup_active']),
+      siteVisitsScheduled: _safeInt(json['site_visits_scheduled']),
+      siteVisitsDoneReq: _safeInt(json['site_visits_done_req']),
+      salesRejectionCount: _safeInt(json['sales_rejection_count']),
+      dealsWonCount: _safeInt(json['deals_won_count']),
       // Group D
-      qualifiedInterested: (json['qualified_interested'] as num?)?.toInt() ?? 0,
-      wantRentCount: (json['want_rent_count'] as num?)?.toInt() ?? 0,
-      wantListCount: (json['want_list_count'] as num?)?.toInt() ?? 0,
-      wantResaleCount: (json['want_resale_count'] as num?)?.toInt() ?? 0,
-      activeInSalesCount: (json['active_in_sales_count'] as num?)?.toInt() ?? 0,
+      qualifiedInterested: _safeInt(json['qualified_interested']),
+      wantRentCount: _safeInt(json['want_rent_count']),
+      wantListCount: _safeInt(json['want_list_count']),
+      wantResaleCount: _safeInt(json['want_resale_count']),
+      activeInSalesCount: _safeInt(json['active_in_sales_count']),
     );
   }
 }
@@ -824,8 +849,9 @@ class DashboardKpisResponse {
     final countsMap = json['counts'] is Map
         ? Map<String, dynamic>.from(json['counts'])
         : <String, dynamic>{};
-    final dateRangeMap = json['date_range'] is Map
-        ? Map<String, dynamic>.from(json['date_range'])
+    final rawDateRange = json['date_range'] ?? json['dateRange'];
+    final dateRangeMap = rawDateRange is Map
+        ? Map<String, dynamic>.from(rawDateRange)
         : null;
     return DashboardKpisResponse(
       config: cfgList,

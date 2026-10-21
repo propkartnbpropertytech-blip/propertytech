@@ -32,6 +32,7 @@ import '../../campaign/bloc/campaign_leads_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../models/dashboard_summary.dart';
 import '../models/kpi_models.dart';
+import '../repository/dashboard_repository.dart';
 import '../widgets/kpi_drilldown_dialogs.dart';
 import '../widgets/generic_kpi_drilldown_dialog.dart';
 import '../../../core/api/dio_client.dart';
@@ -69,6 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   late AnimationController _nameShimmerController;
   static bool _greetingPlayedThisSession = false;
   final Map<String, Future<PropertyModel?>> _propertyDetailFutures = {};
+  final DashboardRepository _dashboardRepository = DashboardRepository();
 
   bool get _isRent => ThemeManager().isRentMode;
 
@@ -83,7 +85,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (!mounted) return;
     setState(() => _loadingLifecycle = true);
     try {
-      final res = await DashboardService().getLifecycleBreakdown(
+      final res = await _dashboardRepository.getLifecycleBreakdown(
         dateFilter: kpiFilters.dateFilter,
         startDate: kpiFilters.startDate,
         endDate: kpiFilters.endDate,
@@ -175,9 +177,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       _nameShimmerController.value = 1.0;
     }
     final currentDashboardState = context.read<DashboardBloc>().state;
-    if (currentDashboardState is DashboardLoadedState) {
-      context.read<DashboardBloc>().add(RefreshDashboard());
-    } else {
+    if (currentDashboardState is! DashboardLoadedState) {
       context.read<DashboardBloc>().add(LoadDashboard());
     }
   }
@@ -2291,14 +2291,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                   onPressed: () async {
                     final notes = notesController.text.trim();
                     try {
-                      await DioClient.dio.patch(
-                        '/followups/${f.id}',
-                        data: {
-                          'notes': notes,
-                          'followup_date': selectedDate
-                              .toUtc()
-                              .toIso8601String(),
-                        },
+                      await _dashboardRepository.updateFollowup(
+                        f.id,
+                        notes: notes,
+                        followupDate: selectedDate,
                       );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -2453,16 +2449,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                     if (clientName.isNotEmpty && mobile.isNotEmpty) {
                       try {
-                        await DioClient.dio.post(
-                          '/followups',
-                          data: {
-                            'client_name': clientName,
-                            'mobile': mobile,
-                            'notes': notes,
-                            'followup_date': selectedDate
-                                .toUtc()
-                                .toIso8601String(),
-                          },
+                        await _dashboardRepository.scheduleFollowup(
+                          clientName: clientName,
+                          mobile: mobile,
+                          notes: notes,
+                          followupDate: selectedDate,
                         );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
