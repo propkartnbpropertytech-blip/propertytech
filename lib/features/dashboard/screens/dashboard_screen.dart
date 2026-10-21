@@ -1162,13 +1162,16 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-              color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           if (count != null) ...[

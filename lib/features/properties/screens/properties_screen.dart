@@ -4795,8 +4795,11 @@ _recomputeFilteredProperties();
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Top row: Select All & Export Properties
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 if (pagedProperties.isNotEmpty)
                   Row(

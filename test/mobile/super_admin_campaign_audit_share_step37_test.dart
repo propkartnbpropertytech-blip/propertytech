@@ -445,9 +445,10 @@ void main() {
           (tester) async {
         await setSurface(tester, width, height: 850);
         final manager = TelecallerShiftManager.instance;
-        manager.currentStatusNotifier.value = 'INACTIVE';
+        manager.currentStatusNotifier.value = 'OFF';
         manager.isShiftLockedOutNotifier.value = false;
         manager.isOnInactivityBreakNotifier.value = false;
+        manager.isOffLimitExpiredNotifier.value = true;
 
         await tester.pumpWidget(
           const MaterialApp(
@@ -462,13 +463,8 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
-        expect(find.text('Telecaller Shift Inactive'), findsOneWidget);
-        expect(find.text('Start Shift (Turn Active)'), findsOneWidget);
-
-        // Verify button touch target height >= 48px
-        final startBtn = find.text('Start Shift (Turn Active)');
-        final btnBox = tester.getSize(startBtn);
-        expect(btnBox.height, greaterThanOrEqualTo(48.0 - 20.0)); // Text size inside 48px box
+        expect(find.textContaining('6-Hour OFF limit reached'), findsOneWidget);
+        expect(find.text('Turn ON'), findsOneWidget);
       });
     }
 

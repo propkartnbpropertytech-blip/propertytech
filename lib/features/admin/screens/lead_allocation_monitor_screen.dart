@@ -355,6 +355,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<int>(
+                            isDense: true,
                                 value: [4, 8, 12, 24].contains(expirationHours) ? expirationHours : 8,
                                 icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF4F46E5)),
                                 style: TextStyle(
@@ -535,11 +536,14 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'Active Toggle:',
+                                          Wrap(
+                                             spacing: 4,
+                                             runSpacing: 2,
+                                             alignment: WrapAlignment.spaceBetween,
+                                             crossAxisAlignment: WrapCrossAlignment.center,
+                                             children: [
+                                               const Text(
+                                                 'Active Toggle:',
                                                 style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                                               ),
                                               Container(
@@ -598,10 +602,13 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                             ],
                                           ),
                                           const SizedBox(height: 5),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                          Wrap(
+                                             spacing: 4,
+                                             runSpacing: 2,
+                                             alignment: WrapAlignment.spaceBetween,
+                                             crossAxisAlignment: WrapCrossAlignment.center,
+                                             children: [
+                                               const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                                               Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
@@ -647,10 +654,13 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                             ],
                                           ),
                                           const SizedBox(height: 3),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                          Wrap(
+                                             spacing: 4,
+                                             runSpacing: 2,
+                                             alignment: WrapAlignment.spaceBetween,
+                                             crossAxisAlignment: WrapCrossAlignment.center,
+                                             children: [
+                                               const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                                               Text(
                                                 isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(liveRemainingSeconds)} / 6h',
                                                 style: TextStyle(
@@ -874,21 +884,22 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
                     children: [
-                      Expanded(
-                        child: Text(
-                          'Lead Allocation Monitoring',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
-                          ),
+                      Text(
+                        'Lead Allocation Monitoring',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         decoration: BoxDecoration(
                           color: (isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
@@ -902,19 +913,19 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                           children: [
                             Icon(
                               isEngineOn ? Icons.check_circle : Icons.pause_circle_outline,
-                              size: 15,
+                              size: 14,
                               color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
                             ),
-                            const SizedBox(width: 5),
+                            const SizedBox(width: 3),
                             Text(
-                              isEngineOn ? 'Active' : 'Paused',
+                              isEngineOn ? 'Engine: Active' : 'Engine: Paused',
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
                                 color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 4),
                             SizedBox(
                               height: 20,
                               width: 32,
@@ -1118,8 +1129,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const Text(
                         'Shift Duration:',
@@ -1136,6 +1150,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
+                            isDense: true,
                             value: [4, 8, 12, 24].contains(expirationHours) ? expirationHours : 8,
                             icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF4F46E5)),
                             style: TextStyle(
@@ -1146,7 +1161,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                             dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                             items: const [
                               DropdownMenuItem(value: 4, child: Text('4 Hours')),
-                              DropdownMenuItem(value: 8, child: Text('8 Hours (Standard Shift)')),
+                              DropdownMenuItem(value: 8, child: Text('8 Hours')),
                               DropdownMenuItem(value: 12, child: Text('12 Hours')),
                               DropdownMenuItem(value: 24, child: Text('24 Hours')),
                             ],
@@ -1353,8 +1368,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text(
                             'Active Toggle:',
@@ -1416,8 +1434,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ],
                       ),
                       const SizedBox(height: 5),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                           Row(
@@ -1465,8 +1486,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                           Text(
@@ -1485,8 +1509,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 2,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       'Sales: ${t['salesTransfers'] ?? 0}',
@@ -1636,8 +1663,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     OutlinedButton.icon(
                       onPressed: () => _showLeadDetailsDialog(context, h),

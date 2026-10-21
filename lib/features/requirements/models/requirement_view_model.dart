@@ -453,10 +453,14 @@ class RequirementFilterEngine {
         (currentUser == null || isAdmin);
 
     final filtered = <RequirementListItemViewModel>[];
+    final Set<String> seenRequirementIds = {};
 
     for (int i = 0; i < items.length; i++) {
       final vm = items[i];
       final r = vm.requirement;
+      if (r.id.isNotEmpty && !seenRequirementIds.add(r.id)) {
+        continue;
+      }
 
       // 1. Leads Added by Me check
       if (isLeadsAddedByMe) {

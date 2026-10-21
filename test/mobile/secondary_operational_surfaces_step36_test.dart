@@ -189,7 +189,7 @@ void main() {
       expect(find.text('Amit Verma'), findsOneWidget);
     });
 
-    testWidgets('renders cleanly without overflow on 320px narrow mobile', (tester) async {
+        testWidgets('renders cleanly without overflow on 320px narrow mobile', (tester) async {
       await setSurface(tester, 320);
       await tester.pumpWidget(
         buildTestApp(child: LeadAllocationMonitorScreen(bloc: MockLeadAllocationMonitorBloc())),
@@ -226,7 +226,7 @@ void main() {
       expect(find.text('Employees'), findsWidgets);
       expect(find.text('Rajesh Kumar'), findsOneWidget);
       expect(find.text('Priya Sharma'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('UsersScreen renders without overflow on 320px narrow mobile', (tester) async {
@@ -238,7 +238,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('Employees'), findsWidgets);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('EmployeeDetailScreen renders MobileScreenScaffold with back button on 360px', (tester) async {
@@ -252,7 +252,7 @@ void main() {
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
       expect(find.text('Vikram Malhotra'), findsWidgets);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('EmployeeDetailScreen preserves desktop layout at 1024px', (tester) async {
@@ -282,7 +282,7 @@ void main() {
       expect(find.text('Rental Library'), findsOneWidget);
       expect(find.text('Re-Sale Library'), findsOneWidget);
       expect(find.text('Service Agent Library'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('LibraryMainScreen renders without overflow on 320px narrow mobile', (tester) async {
@@ -295,7 +295,7 @@ void main() {
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
       expect(find.text('Rental Library'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('LibraryMainScreen preserves grid layout at 1024px', (tester) async {
@@ -322,7 +322,7 @@ void main() {
 
       expect(find.byWidgetPredicate((w) => w is PopScope), findsWidgets);
       expect(find.text('Team Messages'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('TeamMessagesScreen renders without overflow on 320px', (tester) async {
@@ -333,7 +333,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('TeamMessagesScreen preserves desktop layout at 1024px', (tester) async {
@@ -345,7 +345,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('Team Messages'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
   });
 
@@ -360,7 +360,7 @@ void main() {
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
       expect(find.text('Deleted Properties'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('RecycleBinScreen renders cleanly without overflow on 320px', (tester) async {
@@ -372,7 +372,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('RecycleBinScreen preserves desktop layout at 1024px', (tester) async {
@@ -458,7 +458,7 @@ void main() {
       expect(find.text('Realtime Sync Status'), findsOneWidget);
       expect(find.text('Force Connect'), findsOneWidget);
       expect(find.text('Sync Data'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('SyncDebugScreen renders without overflow on 320px narrow mobile', (tester) async {
@@ -470,7 +470,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('SyncDebugScreen preserves desktop layout at 1024px', (tester) async {
@@ -497,7 +497,7 @@ void main() {
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
       expect(find.text('Personal Details'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('ProfileScreen renders without overflow on 320px narrow mobile', (tester) async {
@@ -509,7 +509,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('MfaSecurityCard renders responsively without overflow on 320px', (tester) async {
@@ -537,7 +537,7 @@ void main() {
 
       expect(find.text('Two-Factor Auth (2FA)'), findsOneWidget);
       expect(find.text('ENABLED'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
     });
 
     testWidgets('ProfileScreen preserves desktop layout at 1024px', (tester) async {
@@ -564,7 +564,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {
@@ -581,7 +581,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {
@@ -598,7 +598,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {
@@ -615,7 +615,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         expect(find.text('Team Messages'), findsOneWidget);
       });
     }
@@ -628,7 +628,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {
@@ -645,7 +645,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {
@@ -662,7 +662,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {
@@ -679,7 +679,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException(); if (err is FlutterError) { for (final d in (err as FlutterError).diagnostics) { print(d.toString(minLevel: DiagnosticLevel.debug)); } } expect(err, isNull);
         if (width < 768) {
           expect(find.byType(MobileScreenScaffold), findsOneWidget);
         } else {

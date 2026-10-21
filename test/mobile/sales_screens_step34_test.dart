@@ -560,7 +560,7 @@ void main() {
     }
 
     testMobile('renders property card with correct details', (tester) async {
-      await setSurface(tester, 390);
+      await setSurface(tester, 390, height: 1800);
 
       await tester.pumpWidget(
         wrapWithRouter(

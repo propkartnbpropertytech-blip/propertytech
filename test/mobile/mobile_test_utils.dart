@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:propkart/features/campaign/bloc/campaign_leads_bloc.dart';
+
+class TestCampaignLeadsBloc extends Bloc<CampaignLeadsEvent, CampaignLeadsState> implements CampaignLeadsBloc {
+  TestCampaignLeadsBloc() : super(const CampaignLeadsState(status: CampaignLeadsStatus.success)) {
+    on<CampaignLeadsEvent>((event, emit) {});
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 /// Widths required by Step 3.0 verification.
 const kStep30Widths = <double>[
@@ -21,4 +32,7 @@ Future<void> setSurface(WidgetTester tester, double width,
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
+Widget wrap(Widget child) => BlocProvider<CampaignLeadsBloc>(
+  create: (_) => TestCampaignLeadsBloc(),
+  child: MaterialApp(home: Scaffold(body: child)),
+);

@@ -328,7 +328,7 @@ void main() {
 
       // KPI items
       expect(find.text('Total Leads'), findsOneWidget);
-      expect(find.text('Archive'), findsOneWidget);
+      expect(find.text('Listed'), findsOneWidget);
       // Full-width chevron on Archive tile
       expect(find.byIcon(Icons.chevron_right_rounded), findsWidgets);
     });
