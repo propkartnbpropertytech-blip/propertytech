@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/support_issue_model.dart';
 import '../services/support_service.dart';
@@ -363,39 +366,259 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
 
           // Attachments Section
           if (_issue!.attachments.isNotEmpty) ...[
-            const Text('Attachments & Screenshots:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            const SizedBox(height: 8),
-            Column(
-              children: _issue!.attachments.map((att) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.attach_file_rounded, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          att.fileName,
-                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      Text(
-                        att.filePath,
-                        style: TextStyle(fontSize: 11, color: primaryColor, decoration: TextDecoration.underline),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
+            _buildAttachmentsSection(isDark, primaryColor),
           ],
         ],
       ),
+    );
+  }
+
+  bool _isImageAttachment(SupportAttachment att) {
+    final type = (att.fileType ?? '').toLowerCase();
+    if (type.contains('image') || type == 'png' || type == 'jpg' || type == 'jpeg' || type == 'webp' || type == 'gif') {
+      return true;
+    }
+    final path = att.filePath.toLowerCase();
+    if (path.contains('/image/upload/') ||
+        path.endsWith('.png') ||
+        path.endsWith('.jpg') ||
+        path.endsWith('.jpeg') ||
+        path.endsWith('.webp') ||
+        path.endsWith('.gif')) {
+      return true;
+    }
+    return false;
+  }
+
+  Widget _buildAttachmentsSection(bool isDark, Color primaryColor) {
+    final imageAttachments = _issue!.attachments.where(_isImageAttachment).toList();
+    final otherAttachments = _issue!.attachments.where((a) => !_isImageAttachment(a)).toList();
+    final allImageUrls = imageAttachments.map((a) => a.filePath).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.photo_library_outlined, size: 17, color: primaryColor),
+            const SizedBox(width: 8),
+            const Text(
+              'Attachments & Screenshots:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${_issue!.attachments.length}',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: primaryColor),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Image Previews Grid
+        if (imageAttachments.isNotEmpty) ...[
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 480;
+              final crossAxisCount = isNarrow ? (constraints.maxWidth < 300 ? 1 : 2) : 3;
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: imageAttachments.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1.15,
+                ),
+                itemBuilder: (context, index) {
+                  final att = imageAttachments[index];
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Thumbnail Preview with Zoom on tap
+                          Expanded(
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                CrmNetworkImage(
+                                  url: att.filePath,
+                                  fit: BoxFit.cover,
+                                  cacheLogicalWidth: 400,
+                                  cacheLogicalHeight: 300,
+                                  placeholder: (ctx) => Container(
+                                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                    child: const Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                    ),
+                                  ),
+                                  error: (ctx) => Image.network(
+                                    att.filePath,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, s) => Container(
+                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                      child: const Center(
+                                        child: Icon(Icons.broken_image_rounded, size: 28, color: Colors.grey),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Zoom hint overlay & tap handler
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () {
+                                      showDialog(
+                                        context: context,
+                                        barrierColor: Colors.black.withValues(alpha: 0.9),
+                                        builder: (ctx) => CRMImageZoomViewer(
+                                          images: allImageUrls,
+                                          initialIndex: index,
+                                        ),
+                                      );
+                                    },
+                                    child: Align(
+                                      alignment: Alignment.topRight,
+                                      child: Container(
+                                        margin: const EdgeInsets.all(6),
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.6),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Icon(Icons.zoom_in_rounded, size: 16, color: Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Card Footer
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: primaryColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Screenshot ${index + 1}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    att.fileName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ),
+                                Tooltip(
+                                  message: 'Open in new tab',
+                                  child: InkWell(
+                                    onTap: () => launchUrlString(att.filePath),
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2),
+                                      child: Icon(
+                                        Icons.open_in_new_rounded,
+                                        size: 14,
+                                        color: primaryColor,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+        ],
+
+        // Non-image attachments (if any)
+        if (otherAttachments.isNotEmpty)
+          Column(
+            children: otherAttachments.map((att) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.attach_file_rounded, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        att.fileName,
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => launchUrlString(att.filePath),
+                      child: Text(
+                        'Download / View',
+                        style: TextStyle(fontSize: 11, color: primaryColor, decoration: TextDecoration.underline),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
     );
   }
 

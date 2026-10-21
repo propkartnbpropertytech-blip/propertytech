@@ -197,6 +197,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       activeCategoryTab: _activeCategoryTab,
       selectedConfigurations: _selectedConfigurations.toSet(),
       selectedAreas: _selectedAreas.toSet(),
+      metadata: _cachedMetadata,
       selectedPriceSortOrRange: _selectedPriceSortOrRange ?? 'all',
       minPrice: _minPrice,
       maxPrice: _maxPrice,
@@ -2020,7 +2021,21 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Widget _buildHousingStyleResultsHeader(BuildContext context, int totalCount, int pageStart, int pageEnd) {
     final categoryText = _activeCategoryTab == 'All' ? '' : '$_activeCategoryTab ';
     final searchText = _searchController.text.trim();
-    final locationTitle = searchText.isNotEmpty ? 'in $searchText' : 'in Area';
+    final String locationTitle;
+    if (_selectedAreas.isNotEmpty) {
+      final names = _selectedAreas.map((id) {
+        final match = _cachedMetadata?.areas.firstWhere(
+          (a) => a.id == id,
+          orElse: () => AreaLookup(id: id, name: id, cityId: '', pincode: ''),
+        );
+        return match?.name ?? id;
+      }).toList();
+      locationTitle = 'in ${names.join(', ')}';
+    } else if (searchText.isNotEmpty) {
+      locationTitle = 'in $searchText';
+    } else {
+      locationTitle = 'in Area';
+    }
     final listingText = _activeListingTab == 'Rent' ? 'Rent' : 'Re-Sale';
 
     return Container(
@@ -3965,11 +3980,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           items: areas,
                           onChanged: (vals) {
                             setState(() {
+                              _selectedAreas.clear();
+                              _selectedAreas.addAll(vals);
                               _currentPage = 0;
                             });
                             _lastComputedPropertyFilterKey = null;
-                            _recomputeFilteredProperties(notify: false);
-                            _loadProperties();
+                            _recomputeFilteredProperties();
                           },
                         ),
                       ),
@@ -4102,11 +4118,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           items: areas,
                           onChanged: (vals) {
                             setState(() {
+                              _selectedAreas.clear();
+                              _selectedAreas.addAll(vals);
                               _currentPage = 0;
                             });
                             _lastComputedPropertyFilterKey = null;
-                            _recomputeFilteredProperties(notify: false);
-                            _loadProperties();
+                            _recomputeFilteredProperties();
                           },
                         ),
                       ),
@@ -4416,7 +4433,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       _propertyCustomEndDate = null;
     });
     _lastComputedPropertyFilterKey = null;
-    _recomputeFilteredProperties(notify: false);
+    _recomputeFilteredProperties();
     _loadProperties();
   }
 
@@ -5550,9 +5567,64 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       if (!matchesConfig) return false;
     }
 
-    final matchesArea = _selectedAreas.isEmpty ||
-        _selectedAreas.contains(p.areaId);
-    if (!matchesArea) return false;
+    if (_selectedAreas.isNotEmpty) {
+      bool matchesArea = false;
+      if (p.areaId.isNotEmpty && _selectedAreas.contains(p.areaId)) {
+        matchesArea = true;
+      } else {
+        final pAreaLower = p.areaName.trim().toLowerCase();
+        final pAddrLower = p.address.trim().toLowerCase();
+        final pLandmarkLower = (p.landmark ?? '').trim().toLowerCase();
+
+        for (final areaIdOrName in _selectedAreas) {
+          final targetLower = areaIdOrName.trim().toLowerCase();
+          if (targetLower.isEmpty) continue;
+          if (pAreaLower.isNotEmpty &&
+              (pAreaLower == targetLower ||
+                  pAreaLower.contains(targetLower) ||
+                  targetLower.contains(pAreaLower))) {
+            matchesArea = true;
+            break;
+          }
+          if (pAddrLower.isNotEmpty && pAddrLower.contains(targetLower)) {
+            matchesArea = true;
+            break;
+          }
+          if (pLandmarkLower.isNotEmpty && pLandmarkLower.contains(targetLower)) {
+            matchesArea = true;
+            break;
+          }
+
+          if (metadata != null && metadata.areas.isNotEmpty) {
+            final areaMatch = metadata.areas.firstWhere(
+              (a) => a.id == areaIdOrName || a.name.toLowerCase() == targetLower,
+              orElse: () => AreaLookup(id: '', name: '', cityId: '', pincode: ''),
+            );
+            if (areaMatch.id.isNotEmpty) {
+              final aNameLower = areaMatch.name.trim().toLowerCase();
+              if (aNameLower.isNotEmpty) {
+                if (pAreaLower.isNotEmpty &&
+                    (pAreaLower == aNameLower ||
+                        pAreaLower.contains(aNameLower) ||
+                        aNameLower.contains(pAreaLower))) {
+                  matchesArea = true;
+                  break;
+                }
+                if (pAddrLower.isNotEmpty && pAddrLower.contains(aNameLower)) {
+                  matchesArea = true;
+                  break;
+                }
+                if (pLandmarkLower.isNotEmpty && pLandmarkLower.contains(aNameLower)) {
+                  matchesArea = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (!matchesArea) return false;
+    }
 
     if (_selectedPriceSortOrRange == 'custom') {
       if (_minPrice != null && p.price < _minPrice!) {
@@ -5700,6 +5772,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       activeCategoryTab: _activeCategoryTab,
       selectedConfigurations: _selectedConfigurations.toSet(),
       selectedAreas: _selectedAreas.toSet(),
+      metadata: metadata,
       selectedPriceSortOrRange: _selectedPriceSortOrRange ?? 'all',
       minPrice: _minPrice,
       maxPrice: _maxPrice,
@@ -5961,6 +6034,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   int _countActivePropertyFilters() {
     int count = 0;
+    if (_selectedAreas.isNotEmpty) count++;
+    if (_selectedConfigurations.isNotEmpty) count++;
     if (_activeBhkFilter != null && _activeBhkFilter != 'All' && _activeBhkFilter!.isNotEmpty) count++;
     if (_selectedPriceSortOrRange != null && _selectedPriceSortOrRange != 'default') count++;
     if (_selectedFurnishingFilter != null && _selectedFurnishingFilter != 'All' && _selectedFurnishingFilter!.isNotEmpty) count++;

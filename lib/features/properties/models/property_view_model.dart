@@ -220,6 +220,7 @@ class PropertyFilterEngine {
     String activeCategoryTab = 'All',
     Set<String> selectedConfigurations = const {},
     Set<String> selectedAreas = const {},
+    PropertyMetadataModel? metadata,
     String selectedPriceSortOrRange = 'all',
     double? minPrice,
     double? maxPrice,
@@ -287,6 +288,29 @@ class PropertyFilterEngine {
     final isRentTab = activeListingTab == 'Rent';
     final lowerStatusFilter = selectedStatusFilter?.toLowerCase();
 
+    // Pre-calculate selected area tokens ONCE outside the loop
+    final bool hasAreaFilter = selectedAreas.isNotEmpty;
+    final Set<String> targetAreaIds = hasAreaFilter ? selectedAreas : const {};
+    final Set<String> targetAreaNamesLower = {};
+    if (hasAreaFilter) {
+      if (metadata != null && metadata.areas.isNotEmpty) {
+        for (final area in metadata.areas) {
+          if (targetAreaIds.contains(area.id) || targetAreaIds.contains(area.name)) {
+            final nameClean = area.name.trim().toLowerCase();
+            if (nameClean.isNotEmpty) {
+              targetAreaNamesLower.add(nameClean);
+            }
+          }
+        }
+      }
+      for (final id in targetAreaIds) {
+        final idClean = id.trim().toLowerCase();
+        if (idClean.isNotEmpty) {
+          targetAreaNamesLower.add(idClean);
+        }
+      }
+    }
+
     final filtered = <PropertyListItemViewModel>[];
 
     for (int i = 0; i < items.length; i++) {
@@ -317,6 +341,42 @@ class PropertyFilterEngine {
         matchesCategoryTab = vm.isLandPlot;
       }
       if (!matchesCategoryTab) continue;
+
+      // 4. Area Filter
+      if (hasAreaFilter) {
+        bool matchesArea = false;
+        // Direct ID match
+        if (p.areaId.isNotEmpty && targetAreaIds.contains(p.areaId)) {
+          matchesArea = true;
+        }
+
+        // Name, address, or landmark match
+        if (!matchesArea && targetAreaNamesLower.isNotEmpty) {
+          final pAreaLower = p.areaName.trim().toLowerCase();
+          final pAddrLower = p.address.trim().toLowerCase();
+          final pLandmarkLower = (p.landmark ?? '').trim().toLowerCase();
+
+          for (final targetName in targetAreaNamesLower) {
+            if (pAreaLower.isNotEmpty &&
+                (pAreaLower == targetName ||
+                    pAreaLower.contains(targetName) ||
+                    targetName.contains(pAreaLower))) {
+              matchesArea = true;
+              break;
+            }
+            if (pAddrLower.isNotEmpty && pAddrLower.contains(targetName)) {
+              matchesArea = true;
+              break;
+            }
+            if (pLandmarkLower.isNotEmpty && pLandmarkLower.contains(targetName)) {
+              matchesArea = true;
+              break;
+            }
+          }
+        }
+
+        if (!matchesArea) continue;
+      }
 
       // 4. Configuration filter
       if (selectedConfigurations.isNotEmpty) {
