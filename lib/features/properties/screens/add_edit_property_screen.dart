@@ -88,6 +88,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   Map<String, dynamic>? _selectedPlaceDetails;
   String? _selectedBrokerage;
   bool _isSaved = false;
+  bool _isSubmitting = false;
   String? _selectedParkingType;
   String? _selectedParkingOption;
   bool _isVerified = false;
@@ -1052,7 +1053,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   }
 
   void _submitForm() async {
+    if (_isSubmitting) return;
     if (!CRMFormUtils.validateAndScroll(_formKey, context)) return;
+    setState(() => _isSubmitting = true);
 
     final selectedType = widget.metadata.listingTypes.firstWhere(
       (l) => l.id == _selectedListingType,
@@ -1082,6 +1085,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           backgroundColor: CRMColors.danger,
         ),
       );
+      if (mounted) setState(() => _isSubmitting = false);
       return;
     }
 
@@ -1122,7 +1126,10 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 ],
               ),
             );
-            if (proceed != true) return;
+            if (proceed != true) {
+              if (mounted) setState(() => _isSubmitting = false);
+              return;
+            }
           }
         }
       } catch (e) {
@@ -1297,6 +1304,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           ) ?? false;
 
           if (!proceed) {
+            if (mounted) setState(() => _isSubmitting = false);
             return; // Abort submission
           }
 
@@ -1332,6 +1340,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSubmitting = false);
         Navigator.pop(context); // pop loading spinner
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to publish property: $e"), backgroundColor: CRMColors.danger),
@@ -3725,14 +3734,16 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         : CRMButton(
             label: isEdit ? 'Save Changes' : 'Save Property',
             variant: CRMButtonVariant.primary,
-            onPressed: _submitForm,
+            isLoading: _isSubmitting,
+            onPressed: _isSubmitting ? null : _submitForm,
           );
 
     final saveChangesButton = (isEdit && _currentStep < 3)
         ? CRMButton(
             label: 'Save Changes',
             variant: CRMButtonVariant.outline,
-            onPressed: _submitForm,
+            isLoading: _isSubmitting,
+            onPressed: _isSubmitting ? null : _submitForm,
           )
         : null;
 

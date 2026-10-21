@@ -798,6 +798,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
+        _currentPage = 1;
         _recomputeFilteredRequirements();
       }
     });
@@ -849,6 +850,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       customStartDate: _customStartDate,
       customEndDate: _customEndDate,
       knownUsers: allKnownUsers,
+      metadata: _metadata,
     );
 
     _filteredRequirements = _filteredViewModels.map((vm) => vm.requirement).toList();
@@ -1410,6 +1412,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _metadata = meta;
         _isLoadingMetadata = false;
       });
+      _recomputeFilteredRequirements();
       _triggerFetch();
     } catch (e) {
       if (!mounted) return;
@@ -1488,6 +1491,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _activeListingTab = "Rent";
       _currentPage = 1;
     });
+    _recomputeFilteredRequirements();
     _triggerFetch();
   }
 
@@ -1961,6 +1965,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         listener: (context, state) {
           if (state is RequirementsLoaded) {
             _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
+            _recomputeFilteredRequirements();
           }
           if (state is RequirementsSuccess) {
             final isWonActive = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
@@ -1999,6 +2004,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         listener: (context, state) {
           if (state is RequirementsLoaded) {
             _cachedRequirements = _withLocalRequirementOverrides(state.requirements);
+            _recomputeFilteredRequirements();
           }
           if (state is RequirementsSuccess) {
             final isWonActive = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
@@ -2222,7 +2228,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
   List<RequirementModel> _getMobileFilteredRequirements(UserModel? currentUser) {
     if (_cachedRequirements.isEmpty) return const [];
-    if (_allViewModels.length != _cachedRequirements.length || _filteredRequirements.isEmpty) {
+    if (_allViewModels.isEmpty || _allViewModels.length != _cachedRequirements.length) {
       _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
     }
     return _filteredRequirements;
@@ -2529,6 +2535,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             _selectedConfigIds.clear();
             _currentPage = 1;
           });
+          _recomputeFilteredRequirements();
+          _triggerFetch();
         }
       },
       child: AnimatedContainer(
@@ -3195,6 +3203,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       query: val,
                       module: 'Leads',
                     );
+                    _onSearchChangedDebounced();
+                  },
+                  onSubmitted: (val) {
+                    _searchDebounceTimer?.cancel();
+                    _currentPage = 1;
+                    _recomputeFilteredRequirements();
                   },
                 ),
               ),
@@ -3208,6 +3222,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     page: '/requirements',
                     extra: {'query': _searchController.text.trim()},
                   );
+                  _searchDebounceTimer?.cancel();
+                  _currentPage = 1;
+                  _recomputeFilteredRequirements();
                   _triggerFetch();
                 },
               ),
@@ -3233,7 +3250,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               setState(() {
                                 _selectedCategoryId = val;
                                 _selectedConfigIds.clear();
+                                _currentPage = 1;
                               });
+                              _recomputeFilteredRequirements();
                               _triggerFetch();
                             },
                           ),
@@ -3245,7 +3264,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             selectedIds: _selectedConfigIds,
                             items: specLookupItems,
                             onChanged: (vals) {
-                              setState(() {});
+                              setState(() {
+                                _selectedConfigIds
+                                  ..clear()
+                                  ..addAll(vals);
+                                _currentPage = 1;
+                              });
+                              _recomputeFilteredRequirements();
                               _triggerFetch();
                             },
                           ),
@@ -3263,7 +3288,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               items: statusItems,
                               isMobile: isMobile,
                               onChanged: (val) {
-                                setState(() => _selectedStatus = val ?? "All");
+                                setState(() {
+                                  _selectedStatus = val ?? "All";
+                                  _currentPage = 1;
+                                });
+                                _recomputeFilteredRequirements();
                                 _triggerFetch();
                               },
                             ),
@@ -3302,7 +3331,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         setState(() {
                           _selectedCategoryId = val;
                           _selectedConfigIds.clear();
+                          _currentPage = 1;
                         });
+                        _recomputeFilteredRequirements();
                         _triggerFetch();
                       },
                     ),
@@ -3313,7 +3344,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         selectedIds: _selectedConfigIds,
                         items: specLookupItems,
                         onChanged: (vals) {
-                          setState(() {});
+                          setState(() {
+                            _selectedConfigIds
+                              ..clear()
+                              ..addAll(vals);
+                            _currentPage = 1;
+                          });
+                          _recomputeFilteredRequirements();
                           _triggerFetch();
                         },
                       ),
@@ -3325,7 +3362,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         items: statusItems,
                         isMobile: isMobile,
                         onChanged: (val) {
-                          setState(() => _selectedStatus = val ?? "All");
+                          setState(() {
+                            _selectedStatus = val ?? "All";
+                            _currentPage = 1;
+                          });
+                          _recomputeFilteredRequirements();
                           _triggerFetch();
                         },
                       ),
@@ -3462,6 +3503,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       customStartDate: _customStartDate,
       customEndDate: _customEndDate,
       knownUsers: allKnownUsers,
+      metadata: _metadata,
     ).length;
   }
 
@@ -3505,6 +3547,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _selectedLeadDateFilter = LeadDateFilterPreset.customRange;
         _currentPage = 1;
       });
+      _recomputeFilteredRequirements();
     }
   }
 
@@ -3585,6 +3628,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         _selectedLeadDateFilter = filter;
                         _currentPage = 1;
                       });
+                      _recomputeFilteredRequirements();
                     }
                   },
                   child: AnimatedContainer(
@@ -3666,6 +3710,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _activeListingTab = label;
           _currentPage = 1;
         });
+        _recomputeFilteredRequirements();
         _triggerFetch();
       },
       child: AnimatedContainer(
@@ -3731,8 +3776,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           onChanged: (val) {
             setState(() {
               _selectedSalesFilterId = val ?? 'All';
+              _salesLeadGroupFilter = 'all';
               _currentPage = 1;
             });
+            _recomputeFilteredRequirements();
             _triggerFetch();
           },
         );
@@ -3777,6 +3824,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 _selectedTelecallerFilterIds = vals;
                 _currentPage = 1;
               });
+              _recomputeFilteredRequirements();
               _triggerFetch();
             },
           ),
@@ -7047,7 +7095,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         List<RequirementModel> requirements = [];
 
         if (rawLoadedList.isNotEmpty) {
-          if (_allViewModels.length != rawLoadedList.length || _filteredRequirements.isEmpty) {
+          if (_allViewModels.isEmpty || _allViewModels.length != rawLoadedList.length) {
             _cachedRequirements = rawLoadedList;
             _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
           }
@@ -7652,7 +7700,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         List<RequirementModel> requirements = [];
 
         if (rawLoadedList.isNotEmpty) {
-          if (_allViewModels.length != rawLoadedList.length || _filteredRequirements.isEmpty) {
+          if (_allViewModels.isEmpty || _allViewModels.length != rawLoadedList.length) {
             _cachedRequirements = rawLoadedList;
             _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
           }

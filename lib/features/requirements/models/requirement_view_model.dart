@@ -7,6 +7,7 @@ import '../../../core/utils/budget_formatter.dart';
 import '../../../core/utils/team_user_visibility.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/storage/local_repositories.dart';
+import '../../properties/models/property_model.dart' show PropertyMetadataModel;
 
 enum LeadDateFilterPreset {
   today,
@@ -173,6 +174,8 @@ class RequirementListItemViewModel {
     // Normalized search tokens
     final cNameLower = r.clientName.toLowerCase();
     final cMobileLower = r.clientMobile.toLowerCase();
+    final reqCodeLower = r.requirementCode.toLowerCase();
+    final reqIdLower = r.id.toLowerCase();
     final crNameLower = (r.creatorName ?? '').toLowerCase();
     final asNameLower = (r.assigneeName ?? '').toLowerCase();
     final specsCombined = '${r.propertyTypeName} ${r.configurationName ?? ""} ${r.listingTypeName ?? ""} ${r.categoryName}'.toLowerCase();
@@ -182,6 +185,8 @@ class RequirementListItemViewModel {
     final searchBuffer = StringBuffer()
       ..write(cNameLower)..write(' ')
       ..write(cMobileLower)..write(' ')
+      ..write(reqCodeLower)..write(' ')
+      ..write(reqIdLower)..write(' ')
       ..write(specsCombined)..write(' ')
       ..write(remarksLower)..write(' ')
       ..write(areasLower)..write(' ')
@@ -277,6 +282,76 @@ class RequirementListItemViewModel {
 /// Standalone filter and sorting pipeline for Requirement records.
 /// Executes completely outside of widget build() methods.
 class RequirementFilterEngine {
+  static bool _matchStatus(String rStatus, String mappedStatus, String selected) {
+    if (selected == 'All' || selected.isEmpty) return true;
+    final sel = selected.trim().toLowerCase();
+    final rSt = rStatus.trim().toLowerCase();
+    final mSt = mappedStatus.trim().toLowerCase();
+
+    if (sel == rSt || sel == mSt) return true;
+
+    final selNorm = sel.replaceAll(RegExp(r'[\s\-_]'), '');
+    final rStNorm = rSt.replaceAll(RegExp(r'[\s\-_]'), '');
+    final mStNorm = mSt.replaceAll(RegExp(r'[\s\-_]'), '');
+    if (selNorm == rStNorm || selNorm == mStNorm) return true;
+
+    // Assigned to Sales / Assigned
+    if (sel == 'assigned' || sel == 'assigned to sales') {
+      return rSt == 'assigned' ||
+          rSt == 'assigned to sales' ||
+          mSt == 'assigned' ||
+          mSt == 'assigned to sales';
+    }
+
+    // Site Visit Done
+    if (sel == 'site visit done') {
+      return rSt == 'site visit done' || mSt == 'site visit done';
+    }
+
+    // Site Visit Sche. / Site Visit Scheduled / Site Visit
+    if (sel == 'site visit' || sel == 'site visit sche.' || sel == 'site visit scheduled') {
+      if (rSt == 'site visit done' || mSt == 'site visit done') return false;
+      return rSt.startsWith('site visit') || mSt.startsWith('site visit');
+    }
+
+    // Call Attempted
+    if (sel == 'call attempted') {
+      return rSt.startsWith('call attempted') || mSt.startsWith('call attempted');
+    }
+
+    // Won / Closed
+    if (sel == 'won' || sel == 'closed') {
+      return rSt == 'won' || rSt == 'closed' || rSt == 'deal won' || mSt == 'won' || mSt == 'closed';
+    }
+
+    // Interested / Active / Live
+    if (sel == 'interested') {
+      return rSt == 'interested' || rSt == 'active' || rSt == 'live' || mSt == 'interested';
+    }
+
+    // Negotiation
+    if (sel == 'negotiation') {
+      return rSt.contains('negotiat') || mSt.contains('negotiat');
+    }
+
+    // Not Started
+    if (sel == 'not started') {
+      return rSt == 'not started' || mSt == 'not started';
+    }
+
+    // New
+    if (sel == 'new') {
+      return mSt == 'new' || rSt == 'new';
+    }
+
+    // Rejected
+    if (sel == 'rejected') {
+      return rSt.startsWith('rejected') || mSt.startsWith('rejected');
+    }
+
+    return false;
+  }
+
   static List<RequirementListItemViewModel> filterAndSort({
     required List<RequirementListItemViewModel> items,
     UserModel? currentUser,
@@ -295,6 +370,7 @@ class RequirementFilterEngine {
     DateTime? customEndDate,
     List<users_model.UserModel> knownUsers = const [],
     Set<String>? unassignedLeadIds,
+    PropertyMetadataModel? metadata,
   }) {
     if (items.isEmpty) return const [];
 
@@ -329,6 +405,31 @@ class RequirementFilterEngine {
     List<users_model.UserModel> selectedTelecallers = const [];
     if (telecallerFilterActive) {
       selectedTelecallers = knownUsers.where((u) => selectedTelecallerFilterIds.contains(u.id)).toList();
+    }
+
+    // Pre-resolve selected category name
+    String? selectedCategoryName;
+    if (selectedCategoryId != null && selectedCategoryId.isNotEmpty && metadata != null) {
+      final cat = metadata.categories.firstWhereOrNull((c) => c.id == selectedCategoryId);
+      if (cat != null) {
+        selectedCategoryName = cat.name.trim().toLowerCase();
+      }
+    }
+
+    // Pre-resolve selected configuration & property type names
+    final Set<String> selectedConfigNames = {};
+    final Set<String> selectedTypeNames = {};
+    if (selectedConfigIds.isNotEmpty && metadata != null) {
+      for (final cfg in metadata.configurations) {
+        if (selectedConfigIds.contains(cfg.id) || selectedConfigIds.contains(cfg.name)) {
+          selectedConfigNames.add(cfg.name.trim().toLowerCase());
+        }
+      }
+      for (final t in metadata.types) {
+        if (selectedConfigIds.contains(t.id) || selectedConfigIds.contains(t.name)) {
+          selectedTypeNames.add(t.name.trim().toLowerCase());
+        }
+      }
     }
 
     final query = searchQuery.trim().toLowerCase();
@@ -415,15 +516,26 @@ class RequirementFilterEngine {
 
       // 5. Category filter
       if (selectedCategoryId != null && selectedCategoryId.isNotEmpty) {
-        if (r.categoryId != selectedCategoryId) continue;
+        final matchesCatId = r.categoryId == selectedCategoryId;
+        final matchesCatName = selectedCategoryName != null &&
+            r.categoryName.trim().toLowerCase() == selectedCategoryName;
+        if (!matchesCatId && !matchesCatName) continue;
       }
 
       // 6. Config / BHK / Spec filter
       if (selectedConfigIds.isNotEmpty) {
+        final rConfigName = (r.configurationName ?? '').trim().toLowerCase();
+        final rTypeName = r.propertyTypeName.trim().toLowerCase();
         final matchesSpec = selectedConfigIds.contains(r.configurationId) ||
             selectedConfigIds.contains(r.propertyTypeId) ||
             r.configurationIds.any((id) => selectedConfigIds.contains(id)) ||
-            r.propertyTypeIds.any((id) => selectedConfigIds.contains(id));
+            r.propertyTypeIds.any((id) => selectedConfigIds.contains(id)) ||
+            (rConfigName.isNotEmpty && selectedConfigNames.contains(rConfigName)) ||
+            (rTypeName.isNotEmpty && selectedTypeNames.contains(rTypeName)) ||
+            selectedConfigIds.any((id) {
+              final idLower = id.trim().toLowerCase();
+              return idLower == rConfigName || idLower == rTypeName;
+            });
         if (!matchesSpec) continue;
       }
 
@@ -464,71 +576,81 @@ class RequirementFilterEngine {
           final isUnassigned = assigned.isEmpty || assigned == 'unassigned' || name == 'unassigned';
           if (!isUnassigned) continue;
         }
-      } else if (userFilterActive) {
-        if (selectedStatus != "All" && mappedStatus != selectedStatus && r.status != selectedStatus) {
-          final isAssignedMatch = (selectedStatus == 'Assigned' || selectedStatus == 'Assigned to Sales') &&
-              (mappedStatus == 'Assigned' || mappedStatus == 'Assigned to Sales' || r.status == 'Assigned' || r.status == 'Assigned to Sales');
-          if (!isAssignedMatch) {
-            continue;
-          }
-        }
-      } else {
-        if (selectedStatus != "All") {
-          final isAssignedMatch = (selectedStatus == 'Assigned' || selectedStatus == 'Assigned to Sales') &&
-              (mappedStatus == 'Assigned' || mappedStatus == 'Assigned to Sales' || r.status == 'Assigned' || r.status == 'Assigned to Sales');
-          final bool statusMatch = mappedStatus == selectedStatus ||
-              (!vm.isUnhandledAssigned && r.status == selectedStatus) ||
-              (!vm.isUnhandledAssigned && isAssignedMatch) ||
-              (!vm.isUnhandledAssigned && selectedStatus == 'Rejected' && r.status.startsWith('Rejected')) ||
-              (!vm.isUnhandledAssigned && selectedStatus == 'Call Attempted' && (r.status.startsWith('Call Attempted') || r.status.startsWith('Call attempted')));
-          if (!statusMatch) continue;
+      } else if (selectedStatus != "All") {
+        if (!_matchStatus(r.status, mappedStatus, selectedStatus)) {
+          continue;
         }
       }
 
       // 9. Sales & Telecaller filters
       if (!isLeadsAddedByMe && userFilterActive) {
         if (salesFilterActive) {
-          if (selectedSales == null) continue;
-          final matchesSales = currentUser != null && currentUser.role == 'Telecaller'
-              ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedSales, currentUser)
-              : TeamUserVisibility.requirementBelongsToUser(r, selectedSales);
+          bool matchesSales = false;
+          if (selectedSales != null) {
+            matchesSales = currentUser != null && currentUser.role == 'Telecaller'
+                ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedSales, currentUser)
+                : TeamUserVisibility.requirementBelongsToUser(r, selectedSales);
+          } else {
+            matchesSales = r.assignedTo == selectedSalesFilterId || r.createdBy == selectedSalesFilterId;
+          }
           if (!matchesSales) continue;
 
-          if (activeMainTab == 'Leads' && salesLeadGroupFilter != 'all' && selectedSales.roleName.toLowerCase().contains('sales')) {
-            if (salesLeadGroupFilter == 'assigned') {
-              if (!(RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
-                  !RequirementListItemViewModel._checkUserCreator(r, selectedSales))) {
-                continue;
-              }
-            } else if (salesLeadGroupFilter == 'added') {
-              if (!RequirementListItemViewModel._checkUserCreator(r, selectedSales)) {
-                continue;
+          if (activeMainTab == 'Leads' && salesLeadGroupFilter != 'all') {
+            final salesRole = selectedSales?.roleName ?? '';
+            if (salesRole.toLowerCase().contains('sales') || selectedSales == null) {
+              if (salesLeadGroupFilter == 'assigned') {
+                final isAssigned = selectedSales != null
+                    ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
+                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales))
+                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId);
+                if (!isAssigned) continue;
+              } else if (salesLeadGroupFilter == 'added') {
+                final isCreator = selectedSales != null
+                    ? RequirementListItemViewModel._checkUserCreator(r, selectedSales)
+                    : (r.createdBy == selectedSalesFilterId);
+                if (!isCreator) continue;
               }
             }
           }
         }
 
         if (telecallerFilterActive) {
-          if (selectedTelecallers.isEmpty) continue;
-          final matchesTelecaller = selectedTelecallers.any(
-            (tc) => TeamUserVisibility.requirementBelongsToUser(r, tc),
-          );
+          bool matchesTelecaller = false;
+          if (selectedTelecallers.isNotEmpty) {
+            matchesTelecaller = selectedTelecallers.any(
+              (tc) => TeamUserVisibility.requirementBelongsToUser(r, tc),
+            );
+          }
+          if (!matchesTelecaller) {
+            matchesTelecaller = selectedTelecallerFilterIds.contains(r.assignedTelecallerId) ||
+                selectedTelecallerFilterIds.contains(r.createdBy) ||
+                selectedTelecallerFilterIds.contains(r.assignedTo) ||
+                (r.metaCustomFields != null &&
+                    (selectedTelecallerFilterIds.contains(r.metaCustomFields!['telecaller_id']) ||
+                        selectedTelecallerFilterIds.contains(r.metaCustomFields!['assigned_telecaller_id']) ||
+                        selectedTelecallerFilterIds.contains(r.metaCustomFields!['telecaller_by_id']) ||
+                        selectedTelecallerFilterIds.contains(r.metaCustomFields!['telecaller_by'])));
+          }
           if (!matchesTelecaller) continue;
         }
       }
 
       // 10. Search query
       if (hasSearch) {
-        bool matchesSalesman = false;
-        if (currentUser != null &&
-            (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
-          matchesSalesman = vm.creatorNameLower.contains(query) || vm.assigneeNameLower.contains(query);
+        final queryTokens = query.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+        bool matchesSalesman(String token) {
+          if (currentUser != null &&
+              (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller')) {
+            return vm.creatorNameLower.contains(token) || vm.assigneeNameLower.contains(token);
+          }
+          return false;
         }
 
-        final matchesSearch = vm.clientNameLower.contains(query) ||
-            vm.clientMobileLower.contains(query) ||
-            vm.normalizedSearchTokens.contains(query) ||
-            matchesSalesman;
+        final matchesSearch = queryTokens.every((token) =>
+            vm.clientNameLower.contains(token) ||
+            vm.clientMobileLower.contains(token) ||
+            vm.normalizedSearchTokens.contains(token) ||
+            matchesSalesman(token));
         if (!matchesSearch) continue;
       }
 

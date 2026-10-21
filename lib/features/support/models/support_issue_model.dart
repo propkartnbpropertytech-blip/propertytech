@@ -296,6 +296,7 @@ class SupportStats {
   final int total;
   final int open;
   final int inProgress;
+  final int complete;
   final int waitingForUser;
   final int resolved;
   final int closed;
@@ -304,19 +305,24 @@ class SupportStats {
     required this.total,
     required this.open,
     required this.inProgress,
-    required this.waitingForUser,
-    required this.resolved,
-    required this.closed,
+    this.complete = 0,
+    this.waitingForUser = 0,
+    this.resolved = 0,
+    this.closed = 0,
   });
 
   factory SupportStats.fromJson(Map<String, dynamic> json) {
+    final comp = int.tryParse(json['complete']?.toString() ?? '0') ?? 0;
+    final res = int.tryParse(json['resolved']?.toString() ?? '0') ?? 0;
+    final cls = int.tryParse(json['closed']?.toString() ?? '0') ?? 0;
     return SupportStats(
       total: int.tryParse(json['total']?.toString() ?? '0') ?? 0,
       open: int.tryParse(json['open']?.toString() ?? '0') ?? 0,
       inProgress: int.tryParse(json['inProgress']?.toString() ?? '0') ?? 0,
+      complete: comp > 0 ? comp : (res + cls),
       waitingForUser: int.tryParse(json['waitingForUser']?.toString() ?? '0') ?? 0,
-      resolved: int.tryParse(json['resolved']?.toString() ?? '0') ?? 0,
-      closed: int.tryParse(json['closed']?.toString() ?? '0') ?? 0,
+      resolved: res,
+      closed: cls,
     );
   }
 }

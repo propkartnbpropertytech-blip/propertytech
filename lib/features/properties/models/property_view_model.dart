@@ -227,6 +227,8 @@ class PropertyFilterEngine {
     String searchQuery = '',
     bool myAddedOnly = false,
     String? currentUserId,
+    String? currentUserName,
+    String? currentUserEmail,
     bool archiveTabOnly = false,
     Set<String> archivedPropertyIds = const {},
     String? selectedStatusFilter,
@@ -309,11 +311,46 @@ class PropertyFilterEngine {
       }
     }
 
+    // Pre-calculate selected configuration / BHK tokens ONCE outside the loop
+    final bool hasConfigFilter = selectedConfigurations.isNotEmpty;
+    final Set<String> targetConfigIds = hasConfigFilter ? selectedConfigurations : const {};
+    final Set<String> targetConfigNamesLower = {};
+    if (hasConfigFilter) {
+      if (metadata != null) {
+        for (final cfg in metadata.configurations) {
+          if (targetConfigIds.contains(cfg.id) || targetConfigIds.contains(cfg.name)) {
+            final nameClean = cfg.name.trim().toLowerCase();
+            if (nameClean.isNotEmpty) {
+              targetConfigNamesLower.add(nameClean);
+            }
+          }
+        }
+        for (final t in metadata.types) {
+          if (targetConfigIds.contains(t.id) || targetConfigIds.contains(t.name)) {
+            final nameClean = t.name.trim().toLowerCase();
+            if (nameClean.isNotEmpty) {
+              targetConfigNamesLower.add(nameClean);
+            }
+          }
+        }
+      }
+      for (final id in targetConfigIds) {
+        final idClean = id.trim().toLowerCase();
+        if (idClean.isNotEmpty) {
+          targetConfigNamesLower.add(idClean);
+        }
+      }
+    }
+
     final filtered = <PropertyListItemViewModel>[];
+    final Set<String> seenPropertyIds = {};
 
     for (int i = 0; i < items.length; i++) {
       final vm = items[i];
       final p = vm.property;
+      if (p.id.isNotEmpty && !seenPropertyIds.add(p.id)) {
+        continue;
+      }
 
       // 1. Listing tab (Rent vs Re-Sale)
       final ltName = p.listingTypeName.toLowerCase();
@@ -377,23 +414,49 @@ class PropertyFilterEngine {
       }
 
       // 4. Configuration filter
-      if (selectedConfigurations.isNotEmpty) {
+      if (hasConfigFilter) {
         bool matchesConfig = false;
-        for (final id in selectedConfigurations) {
-          if (p.configurationId == id || p.propertyTypeId == id) {
-            matchesConfig = true;
-            break;
-          }
-          final idLower = id.toLowerCase();
-          final pTypeLower = p.propertyTypeName.toLowerCase();
-          final pCfgLower = (p.configurationName ?? '').toLowerCase();
-          if (pTypeLower.isNotEmpty && (pTypeLower == idLower || pTypeLower.contains(idLower))) {
-            matchesConfig = true;
-            break;
-          }
-          if (pCfgLower.isNotEmpty && (pCfgLower == idLower || pCfgLower.contains(idLower))) {
-            matchesConfig = true;
-            break;
+        if ((p.configurationId != null && p.configurationId!.isNotEmpty && targetConfigIds.contains(p.configurationId)) ||
+            (p.propertyTypeId.isNotEmpty && targetConfigIds.contains(p.propertyTypeId))) {
+          matchesConfig = true;
+        } else if (targetConfigNamesLower.isNotEmpty) {
+          final pTypeLower = p.propertyTypeName.trim().toLowerCase();
+          final pCfgLower = (p.configurationName ?? '').trim().toLowerCase();
+          for (final targetName in targetConfigNamesLower) {
+            if (pTypeLower.isNotEmpty &&
+                (pTypeLower == targetName ||
+                    pTypeLower.contains(targetName) ||
+                    targetName.contains(pTypeLower))) {
+              matchesConfig = true;
+              break;
+            }
+            if (pCfgLower.isNotEmpty &&
+                (pCfgLower == targetName ||
+                    pCfgLower.contains(targetName) ||
+                    targetName.contains(pCfgLower))) {
+              matchesConfig = true;
+              break;
+            }
+            if (targetName.startsWith('1') && (p.bedrooms == 1 || pCfgLower.contains('1'))) {
+              matchesConfig = true;
+              break;
+            }
+            if (targetName.startsWith('2') && (p.bedrooms == 2 || pCfgLower.contains('2'))) {
+              matchesConfig = true;
+              break;
+            }
+            if (targetName.startsWith('3') && (p.bedrooms == 3 || pCfgLower.contains('3'))) {
+              matchesConfig = true;
+              break;
+            }
+            if (targetName.startsWith('4') && (p.bedrooms == 4 || pCfgLower.contains('4'))) {
+              matchesConfig = true;
+              break;
+            }
+            if (targetName.startsWith('5') && (p.bedrooms >= 5 || pCfgLower.contains('5'))) {
+              matchesConfig = true;
+              break;
+            }
           }
         }
         if (!matchesConfig) continue;
@@ -406,7 +469,29 @@ class PropertyFilterEngine {
       }
 
       // 6. My Added filter
-      if (myAddedOnly && p.createdBy != currentUserId) continue;
+      if (myAddedOnly) {
+        final uid = (currentUserId ?? '').trim().toLowerCase();
+        final uname = (currentUserName ?? '').trim().toLowerCase();
+        final uemail = (currentUserEmail ?? '').trim().toLowerCase();
+
+        final pCreatedBy = p.createdBy.trim().toLowerCase();
+        final pCreatedByName = p.createdByName.trim().toLowerCase();
+
+        bool isMine = false;
+        if (uid.isNotEmpty && pCreatedBy.isNotEmpty && pCreatedBy == uid) {
+          isMine = true;
+        } else if (uname.isNotEmpty && pCreatedByName.isNotEmpty && pCreatedByName == uname) {
+          isMine = true;
+        } else if (uemail.isNotEmpty) {
+          if (pCreatedBy.isNotEmpty && pCreatedBy == uemail) {
+            isMine = true;
+          } else if (pCreatedByName.isNotEmpty && pCreatedByName == uemail) {
+            isMine = true;
+          }
+        }
+
+        if (!isMine) continue;
+      }
 
       // 7. Archive filter
       final isArchived = archivedPropertyIds.contains(p.id);
@@ -418,7 +503,7 @@ class PropertyFilterEngine {
       }
 
       // 9. BHK filter
-      if (activeBhkFilter != null && activeBhkFilter != 'All BHK') {
+      if (activeBhkFilter != null && activeBhkFilter != 'All BHK' && activeBhkFilter != 'All') {
         bool matchesBhk = true;
         if (activeBhkFilter == '1 BHK') {
           matchesBhk = p.bedrooms == 1 || (p.configurationName?.contains('1') ?? false);

@@ -55,7 +55,9 @@ class PropertyKpiSummaryBar extends StatelessWidget {
         withPhotosCount++;
       }
 
-      if (currentUserId != null && p.createdBy == currentUserId) {
+      if (currentUserId != null &&
+          currentUserId!.trim().isNotEmpty &&
+          p.createdBy.trim().toLowerCase() == currentUserId!.trim().toLowerCase()) {
         myAddedCount++;
       }
     }

@@ -122,15 +122,21 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
         return const Color(0xFF3B82F6);
       case 'in progress':
         return const Color(0xFFF59E0B);
-      case 'waiting for user':
-        return const Color(0xFF8B5CF6);
+      case 'complete':
       case 'resolved':
-        return const Color(0xFF10B981);
       case 'closed':
-        return const Color(0xFF64748B);
+        return const Color(0xFF10B981);
       default:
         return const Color(0xFF64748B);
     }
+  }
+
+  String _normalizeStatus(String status) {
+    final lower = status.trim().toLowerCase();
+    if (lower == 'open') return 'Open';
+    if (lower == 'in progress') return 'In Progress';
+    if (lower == 'complete' || lower == 'resolved' || lower == 'closed') return 'Complete';
+    return 'Open';
   }
 
   Color _getPriorityColor(String priority) {
@@ -234,10 +240,10 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                             const Text('Status: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
                             if (isSuperAdmin)
                               DropdownButton<String>(
-                                value: _issue!.status,
+                                value: _normalizeStatus(_issue!.status),
                                 isDense: true,
                                 underline: const SizedBox.shrink(),
-                                items: const ['Open', 'In Progress', 'Waiting for User', 'Resolved', 'Closed']
+                                items: const ['Open', 'In Progress', 'Complete']
                                     .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12.5))))
                                     .toList(),
                                 onChanged: (val) {
@@ -252,7 +258,7 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  _issue!.status,
+                                  _normalizeStatus(_issue!.status),
                                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _getStatusColor(_issue!.status)),
                                 ),
                               ),

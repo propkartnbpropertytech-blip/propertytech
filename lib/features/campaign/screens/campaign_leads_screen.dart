@@ -122,7 +122,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
       _selectedSourceFilter = widget.initialSource!;
     }
-    final incomingLock = (widget.lockSource ?? widget.initialSource ?? '').toLowerCase();
+    final incomingLock = (widget.lockSource ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
     if (incomingLock.contains('meta') || incomingLock.contains('housing')) {
       _selectedDateFilter = CampaignDateFilter.allTime;
     }
@@ -137,7 +137,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.ensureLoaded();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final curLock = (widget.lockSource ?? widget.initialSource ?? '').toLowerCase();
+      final curLock = (widget.lockSource ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
       if (curLock.contains('meta') || curLock.contains('housing')) {
         _selectedDateFilter = CampaignDateFilter.allTime;
         context.read<CampaignLeadsBloc>().add(
@@ -986,7 +986,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final curSrc = (widget.lockSource ?? _selectedSourceFilter).toUpperCase().trim();
     final isMetaPage = curSrc == 'META' || curSrc == 'META ADS' || curSrc == 'FACEBOOK';
-    final isHousingPage = curSrc == 'HOUSING' || curSrc == 'HOUSING.COM';
+    final isHousingPage = (widget.portalTabId?.toLowerCase() == 'housing') || curSrc == 'HOUSING' || curSrc == 'HOUSING.COM';
     final isMetaOrHousingPage = isMetaPage || isHousingPage;
 
     return BlocListener<UsersBloc, UsersState>(

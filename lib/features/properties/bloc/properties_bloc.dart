@@ -141,6 +141,7 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
   PropertiesLoaded? _lastLoaded;
   StreamSubscription? _propertiesSubscription;
   StreamSubscription? _lookupsSubscription;
+  bool _isCreatingProperty = false;
 
   PropertiesBloc() : super(PropertiesInitial()) {
     on<LoadPropertiesEvent>(_onLoadProperties);
@@ -286,6 +287,8 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
     CreatePropertyEvent event,
     Emitter<PropertiesState> emit,
   ) async {
+    if (_isCreatingProperty) return;
+    _isCreatingProperty = true;
     try {
       final saved = await _repository.createProperty(event.propertyData);
       final propertyName = saved.title.trim().isNotEmpty
@@ -297,7 +300,12 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
       ));
       if (state is PropertiesLoaded) {
         final current = state as PropertiesLoaded;
-        final updatedList = [saved, ...current.properties.where((p) => p.id != saved.id)];
+        final updatedList = [
+          saved,
+          ...current.properties.where((p) =>
+              p.id != saved.id &&
+              (saved.propertyCode.isEmpty || p.propertyCode != saved.propertyCode))
+        ];
         emit(current.copyWith(
           properties: updatedList,
           newlyAdded: saved,
@@ -311,6 +319,8 @@ class PropertiesBloc extends Bloc<PropertiesEvent, PropertiesState> {
       emit(PropertiesError(e.toString()));
       if (_lastLoaded != null) emit(_lastLoaded!);
       add(LoadPropertiesEvent(activeTab: event.activeTab, refreshFromServer: true));
+    } finally {
+      _isCreatingProperty = false;
     }
   }
 
