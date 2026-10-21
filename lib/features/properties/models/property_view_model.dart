@@ -219,6 +219,7 @@ class PropertyFilterEngine {
     String? selectedCategory,
     String activeCategoryTab = 'All',
     Set<String> selectedConfigurations = const {},
+    Set<String> selectedAreas = const {},
     String selectedPriceSortOrRange = 'all',
     double? minPrice,
     double? maxPrice,
@@ -274,7 +275,9 @@ class PropertyFilterEngine {
         normTargetFurnishing = 'unfurnished';
       } else if (f == 'semi furnished' || f.contains('semi')) {
         normTargetFurnishing = 'semi furnished';
-      } else if (f == 'fully furnished' || f.contains('full')) {
+      } else if (f == 'fully furnished' ||
+          f.contains('full') ||
+          (f.contains('furnish') && !f.contains('un') && !f.contains('semi'))) {
         normTargetFurnishing = 'fully furnished';
       } else {
         normTargetFurnishing = f;
@@ -336,6 +339,18 @@ class PropertyFilterEngine {
           }
         }
         if (!matchesConfig) continue;
+      }
+
+      // 4b. Area filter
+      if (selectedAreas.isNotEmpty) {
+        final pAreaId = p.areaId.toLowerCase();
+        final pAreaName = p.areaName.toLowerCase();
+        final matchesArea = selectedAreas.any((a) {
+          final aLower = a.toLowerCase();
+          return (pAreaId.isNotEmpty && pAreaId == aLower) ||
+              (pAreaName.isNotEmpty && (pAreaName == aLower || pAreaName.contains(aLower)));
+        });
+        if (!matchesArea) continue;
       }
 
       // 5. Price filter

@@ -3,8 +3,9 @@ import 'package:propkart/core/security/role_guard.dart';
 
 void main() {
   group('Telecaller Role Guard Tests', () {
-    test('Telecaller is recognized as having Admin privileges but cannot manage employees', () {
-      expect(RoleGuard.isAdmin('Telecaller'), isTrue);
+    test('Telecaller is recognized as a dedicated role without Admin privileges and cannot manage employees', () {
+      expect(RoleGuard.isTelecaller('Telecaller'), isTrue);
+      expect(RoleGuard.isAdmin('Telecaller'), isFalse);
       expect(RoleGuard.canManageEmployees('Telecaller'), isFalse);
       expect(RoleGuard.canAccessCampaign('Telecaller'), isTrue);
     });

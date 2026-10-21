@@ -1,4 +1,6 @@
 import '../models/dashboard_summary.dart';
+import '../models/kpi_models.dart';
+import '../models/area_analytics_model.dart';
 import '../services/dashboard_service.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/model_mappers.dart';
@@ -697,5 +699,339 @@ class DashboardRepository {
     }).catchError((_) {}).whenComplete(() {
       _refreshInFlight = null;
     });
+  }
+
+  // ===========================================================================
+  // Step 8.5 Authoritative KPI Repository Methods
+  // Flutter strictly consumes authoritative backend calculations
+  // ===========================================================================
+
+  Future<DashboardKpisResponse> getDashboardKpis(KpiFilterParams params) {
+    return _dashboardService.getDashboardKpis(params);
+  }
+
+  Future<InventoryBreakdownData> getInventoryBreakdown(KpiFilterParams params) {
+    return _dashboardService.getInventoryBreakdown(params);
+  }
+
+  Future<InventoryPropertiesResponse> getInventoryProperties({
+    required String status,
+    required KpiFilterParams params,
+    String? areaId,
+    int page = 1,
+    int limit = 20,
+  }) {
+    return _dashboardService.getInventoryProperties(
+      status: status,
+      params: params,
+      areaId: areaId,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<LeadsBreakdownData> getLeadsBreakdown(KpiFilterParams params) {
+    return _dashboardService.getLeadsBreakdown(params);
+  }
+
+  Future<LeadsListResponse> getLeadsList({
+    String? source,
+    required KpiFilterParams params,
+    String? areaId,
+    String? stage,
+    bool? isDealWon,
+    int page = 1,
+    int limit = 25,
+  }) {
+    return _dashboardService.getLeadsList(
+      source: source,
+      params: params,
+      areaId: areaId,
+      stage: stage,
+      isDealWon: isDealWon,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<LeadsListResponse> getNotInterestedLeads({
+    required KpiFilterParams params,
+    String? sourceFilter,
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) {
+    return _dashboardService.getNotInterestedLeads(
+      params: params,
+      sourceFilter: sourceFilter,
+      search: search,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<TelecallersSummaryResponse> getTelecallersSummary([KpiFilterParams? params]) {
+    return _dashboardService.getTelecallersSummary(params);
+  }
+
+  Future<TelecallerDrilldownData?> getTelecallerDrilldown(
+    String telecallerId, {
+    String leadType = 'Both',
+    KpiFilterParams? params,
+  }) {
+    return _dashboardService.getTelecallerDrilldown(
+      telecallerId,
+      leadType: leadType,
+      params: params,
+    );
+  }
+
+  Future<LeadsListResponse> getTelecallerLeads(
+    String telecallerId, {
+    String category = 'all',
+    String leadType = 'Both',
+    String? tab,
+    String? search,
+    int page = 1,
+    int limit = 25,
+    KpiFilterParams? params,
+  }) {
+    return _dashboardService.getTelecallerLeads(
+      telecallerId,
+      category: category,
+      leadType: leadType,
+      tab: tab,
+      search: search,
+      page: page,
+      limit: limit,
+      params: params,
+    );
+  }
+
+  Future<SiteVisitsResponse> getSiteVisitsList({
+    required KpiFilterParams params,
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) {
+    return _dashboardService.getSiteVisitsList(
+      params: params,
+      search: search,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<DealWonResponse> getDealWonList({
+    required KpiFilterParams params,
+    String? search,
+    int page = 1,
+    int limit = 25,
+  }) {
+    return _dashboardService.getDealWonList(
+      params: params,
+      search: search,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<SalesUserRequirementsResponse> getSalesUserRequirements(
+    String salesUserId, {
+    required String status,
+    String? rejectionReason,
+    String? search,
+    int page = 1,
+    int limit = 25,
+    KpiFilterParams? params,
+  }) {
+    return _dashboardService.getSalesUserRequirements(
+      salesUserId,
+      status: status,
+      rejectionReason: rejectionReason,
+      search: search,
+      page: page,
+      limit: limit,
+      params: params,
+    );
+  }
+
+  Future<LeadsAllocatedResponse> getLeadsAllocatedBreakdown(KpiFilterParams params) {
+    return _dashboardService.getLeadsAllocatedBreakdown(params);
+  }
+
+  Future<AssignedToSalesResponse> getAssignedToSalesBreakdown(KpiFilterParams params) {
+    return _dashboardService.getAssignedToSalesBreakdown(params);
+  }
+
+  Future<SalesUsersSummaryResponse> getSalesUsersSummary([KpiFilterParams? params]) {
+    return _dashboardService.getSalesUsersSummary(params);
+  }
+
+  Future<SalesUserDrilldownData?> getSalesUserDrilldown(
+    String salesUserId, {
+    KpiFilterParams? params,
+  }) {
+    return _dashboardService.getSalesUserDrilldown(
+      salesUserId,
+      params: params,
+    );
+  }
+
+  Future<Map<String, dynamic>> getLifecycleBreakdown({
+    String dateFilter = 'Weekly',
+    String? startDate,
+    String? endDate,
+    String leadType = 'Both',
+    String? source,
+  }) {
+    return _dashboardService.getLifecycleBreakdown(
+      dateFilter: dateFilter,
+      startDate: startDate,
+      endDate: endDate,
+      leadType: leadType,
+      source: source,
+    );
+  }
+
+  Future<Map<String, dynamic>> getLifecycleLeads({
+    String? stage,
+    String? salesUserId,
+    String? telecallerId,
+    String leadType = 'Both',
+    String dateFilter = 'All Time',
+    String? startDate,
+    String? endDate,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return _dashboardService.getLifecycleLeads(
+      stage: stage,
+      salesUserId: salesUserId,
+      telecallerId: telecallerId,
+      leadType: leadType,
+      dateFilter: dateFilter,
+      startDate: startDate,
+      endDate: endDate,
+      page: page,
+      limit: limit,
+      search: search,
+    );
+  }
+
+  Future<List<AreaCountItem>> getInventoryByArea({String? businessType}) {
+    return _dashboardService.getInventoryByArea(businessType: businessType);
+  }
+
+  Future<List<AreaCountItem>> getLeadsByArea({required String type}) {
+    return _dashboardService.getLeadsByArea(type: type);
+  }
+
+  Future<LocalityIntelligenceData> getLocalityIntelligence({String? businessType}) {
+    return _dashboardService.getLocalityIntelligence(businessType: businessType);
+  }
+
+  Future<List<KpiConfigItem>> getKpiConfig() {
+    return _dashboardService.getKpiConfig();
+  }
+
+  Future<bool> updateKpiConfig(List<Map<String, dynamic>> configs) {
+    return _dashboardService.updateKpiConfig(configs);
+  }
+
+  Future<List<KpiRegistryItem>> getKpiRegistry({
+    String? search,
+    String? page,
+    String? role,
+    String? status,
+  }) {
+    return _dashboardService.getKpiRegistry(
+      search: search,
+      page: page,
+      role: role,
+      status: status,
+    );
+  }
+
+  Future<KpiRegistryItem?> createKpiRegistryItem(Map<String, dynamic> data) {
+    return _dashboardService.createKpiRegistryItem(data);
+  }
+
+  Future<KpiRegistryItem?> updateKpiRegistryItem(String id, Map<String, dynamic> data) {
+    return _dashboardService.updateKpiRegistryItem(id, data);
+  }
+
+  Future<bool> toggleKpiRegistryStatus(String id, bool isEnabled) {
+    return _dashboardService.toggleKpiRegistryStatus(id, isEnabled);
+  }
+
+  Future<bool> deleteKpiRegistryItem(String id) {
+    return _dashboardService.deleteKpiRegistryItem(id);
+  }
+
+  Future<Map<String, dynamic>> getKpiBuilderMetadata() {
+    return _dashboardService.getKpiBuilderMetadata();
+  }
+
+  Future<Map<String, dynamic>> getKpiDrilldownData(
+    String kpiKey, {
+    Map<String, dynamic>? filters,
+  }) {
+    return _dashboardService.getKpiDrilldownData(kpiKey, filters: filters);
+  }
+
+  Future<List<KpiAuditLogItem>> getKpiAuditLogs({String? kpiId}) {
+    return _dashboardService.getKpiAuditLogs(kpiId: kpiId);
+  }
+
+  Future<List<Map<String, dynamic>>> getDashboardNotes() {
+    return _dashboardService.getDashboardNotes();
+  }
+
+  Future<Map<String, dynamic>?> createDashboardNote(String content) {
+    return _dashboardService.createDashboardNote(content);
+  }
+
+  Future<Map<String, dynamic>?> updateDashboardNote(
+    String noteId, {
+    String? content,
+    bool? isCompleted,
+  }) {
+    return _dashboardService.updateDashboardNote(
+      noteId,
+      content: content,
+      isCompleted: isCompleted,
+    );
+  }
+
+  Future<bool> deleteDashboardNote(String noteId) {
+    return _dashboardService.deleteDashboardNote(noteId);
+  }
+
+  Future<bool> updateFollowup(
+    String followupId, {
+    required String notes,
+    required DateTime followupDate,
+  }) {
+    return _dashboardService.updateFollowup(
+      followupId,
+      notes: notes,
+      followupDate: followupDate,
+    );
+  }
+
+  Future<bool> scheduleFollowup({
+    required String clientName,
+    required String mobile,
+    required String notes,
+    required DateTime followupDate,
+  }) {
+    return _dashboardService.scheduleFollowup(
+      clientName: clientName,
+      mobile: mobile,
+      notes: notes,
+      followupDate: followupDate,
+    );
   }
 }

@@ -784,6 +784,54 @@ class DashboardService {
       return {};
     }
   }
+
+  /// Authoritative follow-up updates routed through ApiClient
+  Future<bool> updateFollowup(
+    String followupId, {
+    required String notes,
+    required DateTime followupDate,
+  }) async {
+    try {
+      final response = await _apiClient.patch(
+        '/followups/$followupId',
+        {
+          'notes': notes,
+          'followup_date': followupDate.toUtc().toIso8601String(),
+        },
+      );
+      return response.statusCode == 200 ||
+          (response.data is Map && response.data['success'] == true);
+    } catch (e) {
+      debugPrint('[DashboardService] updateFollowup error: $e');
+      rethrow;
+    }
+  }
+
+  /// Authoritative follow-up scheduling routed through ApiClient
+  Future<bool> scheduleFollowup({
+    required String clientName,
+    required String mobile,
+    required String notes,
+    required DateTime followupDate,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/followups',
+        {
+          'client_name': clientName,
+          'mobile': mobile,
+          'notes': notes,
+          'followup_date': followupDate.toUtc().toIso8601String(),
+        },
+      );
+      return response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          (response.data is Map && response.data['success'] == true);
+    } catch (e) {
+      debugPrint('[DashboardService] scheduleFollowup error: $e');
+      rethrow;
+    }
+  }
 }
 
 

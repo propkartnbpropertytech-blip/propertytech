@@ -11,10 +11,10 @@ import '../../../core/constants/kpi_rulebook.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/utils/currency.dart';
 import '../models/kpi_models.dart';
-import '../services/dashboard_service.dart';
+import '../repository/dashboard_repository.dart';
 
 class KpiDrilldownDialogs {
-  static final DashboardService _dashboardService = DashboardService();
+  static final DashboardRepository _dashboardRepository = DashboardRepository();
 
   /// 1. Available Inventory Drill-down Modal
   static Future<T?> showInventoryDrilldown<T>(
@@ -323,7 +323,7 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
 
   Future<void> _loadBreakdown() async {
     setState(() => _isLoadingBreakdown = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getInventoryBreakdown(widget.params);
+    final res = await KpiDrilldownDialogs._dashboardRepository.getInventoryBreakdown(widget.params);
     if (mounted) {
       setState(() {
         _breakdown = res;
@@ -339,7 +339,7 @@ class _InventoryDrilldownDialogState extends State<_InventoryDrilldownDialog> {
       _propPage = page;
     });
 
-    final res = await KpiDrilldownDialogs._dashboardService.getInventoryProperties(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getInventoryProperties(
       status: status,
       params: widget.params,
       areaId: widget.initialAreaId,
@@ -783,7 +783,7 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
   Future<void> _fetchBreakdown() async {
     setState(() => _isLoading = true);
     final currentParams = widget.params.copyWith(leadType: _selectedLeadType);
-    final res = await KpiDrilldownDialogs._dashboardService.getLeadsBreakdown(currentParams);
+    final res = await KpiDrilldownDialogs._dashboardRepository.getLeadsBreakdown(currentParams);
     if (mounted) {
       setState(() {
         _breakdown = res;
@@ -800,7 +800,7 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
     });
 
     final currentParams = widget.params.copyWith(leadType: _selectedLeadType);
-    final res = await KpiDrilldownDialogs._dashboardService.getLeadsList(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getLeadsList(
       source: (source == 'All' || source == 'ALL') ? null : source,
       params: currentParams,
       areaId: widget.initialAreaId,
@@ -2199,7 +2199,7 @@ class _TelecallersDrilldownDialogState extends State<_TelecallersDrilldownDialog
 
   Future<void> _loadSummary() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getTelecallersSummary(widget.params);
+    final res = await KpiDrilldownDialogs._dashboardRepository.getTelecallersSummary(widget.params);
     if (mounted) {
       setState(() {
         _summary = res;
@@ -2470,7 +2470,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
 
   Future<void> _fetch() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getTelecallerDrilldown(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getTelecallerDrilldown(
       widget.telecallerId,
       leadType: _leadType,
       params: widget.params,
@@ -2512,7 +2512,7 @@ class _TelecallerPerformanceDialogState extends State<_TelecallerPerformanceDial
     if (_selectedCategory == null) return;
     setState(() => _isLoadingCategoryLeads = true);
 
-    final res = await KpiDrilldownDialogs._dashboardService.getTelecallerLeads(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getTelecallerLeads(
       widget.telecallerId,
       category: _selectedCategory!,
       leadType: _leadType,
@@ -3749,7 +3749,7 @@ class _LeadsAllocatedDrilldownDialogState extends State<_LeadsAllocatedDrilldown
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getLeadsAllocatedBreakdown(widget.params);
+    final res = await KpiDrilldownDialogs._dashboardRepository.getLeadsAllocatedBreakdown(widget.params);
     if (mounted) {
       setState(() {
         _data = res;
@@ -3968,7 +3968,7 @@ class _AssignedToSalesDrilldownDialogState extends State<_AssignedToSalesDrilldo
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getAssignedToSalesBreakdown(widget.params);
+    final res = await KpiDrilldownDialogs._dashboardRepository.getAssignedToSalesBreakdown(widget.params);
     if (mounted) {
       setState(() {
         _data = res;
@@ -4349,7 +4349,7 @@ class _SalesUsersDrilldownDialogState extends State<_SalesUsersDrilldownDialog> 
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getSalesUsersSummary(widget.params);
+    final res = await KpiDrilldownDialogs._dashboardRepository.getSalesUsersSummary(widget.params);
     if (mounted) {
       setState(() {
         _summary = res;
@@ -4591,7 +4591,7 @@ class _SalesUserLifecycleDialogState extends State<_SalesUserLifecycleDialog> {
 
   Future<void> _fetch() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getSalesUserDrilldown(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getSalesUserDrilldown(
       widget.salesUserId,
       params: widget.params,
     );
@@ -4618,7 +4618,7 @@ class _SalesUserLifecycleDialogState extends State<_SalesUserLifecycleDialog> {
   Future<void> _loadRequirements() async {
     if (_selectedStatusKey == null) return;
     setState(() => _isReqLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getSalesUserRequirements(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getSalesUserRequirements(
       widget.salesUserId,
       status: _selectedStatusKey!,
       rejectionReason: _selectedRejectionReason,
@@ -5752,7 +5752,7 @@ class _SiteVisitsDrilldownDialogState extends State<_SiteVisitsDrilldownDialog> 
 
   Future<void> _loadVisits() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getSiteVisitsList(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getSiteVisitsList(
       params: widget.params,
       search: _searchController.text,
       page: _page,
@@ -6375,7 +6375,7 @@ class _DealWonDrilldownDialogState extends State<_DealWonDrilldownDialog> {
 
   Future<void> _loadDeals() async {
     setState(() => _isLoading = true);
-    final res = await KpiDrilldownDialogs._dashboardService.getDealWonList(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getDealWonList(
       params: widget.params,
       search: _searchController.text,
       page: _page,
@@ -7004,7 +7004,7 @@ class _NotInterestedDrilldownDialogState extends State<_NotInterestedDrilldownDi
   Future<void> _loadLeads() async {
     setState(() => _isLoading = true);
     final currentParams = widget.params.copyWith(leadType: _selectedLeadType);
-    final res = await KpiDrilldownDialogs._dashboardService.getNotInterestedLeads(
+    final res = await KpiDrilldownDialogs._dashboardRepository.getNotInterestedLeads(
       params: currentParams,
       sourceFilter: _selectedSource,
       search: _search.trim().isEmpty ? null : _search.trim(),

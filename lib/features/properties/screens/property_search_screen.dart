@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -43,6 +44,11 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   List<PropertyModel> _cachedSearchProperties = [];
   PropertyMetadataModel? _cachedSearchMetadata;
 
+  Timer? _searchDebounceTimer;
+  List<PropertyModel>? _memoizedFilteredProps;
+  String? _lastFilterCacheKey;
+  List<PropertyModel>? _lastSourceProps;
+
   String _getInitials(String name) {
     final clean = name.trim();
     if (clean.isEmpty) return 'PA';
@@ -74,6 +80,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.initialSearch ?? '');
+    _searchController.addListener(_onSearchChanged);
     _activeListingTab = (widget.initialListingType != null && widget.initialListingType!.toLowerCase() == 're-sale') ? 'Re-Sale' : 'Rent';
     _activeCategoryTab = widget.initialCategoryTab ?? 'Residential';
     if (widget.initialBhk != null && widget.initialBhk!.isNotEmpty) {
@@ -85,6 +92,15 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     }
     _loadShortlistedIds();
     context.read<PropertiesBloc>().add(LoadPropertiesEvent(activeTab: 'All'));
+  }
+
+  void _onSearchChanged() {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _loadShortlistedIds() async {
@@ -128,6 +144,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -367,216 +385,256 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
               ? (state.metadata ?? _cachedSearchMetadata)
               : _cachedSearchMetadata;
 
-          // Auto-sync search query with active BHK filter chip if explicit BHK is typed
-          final searchText = _searchController.text.trim();
-          if (searchText.isNotEmpty) {
-            final bhkMatch = RegExp(r'(\d+\+?)\s*-?\s*BHK', caseSensitive: false).firstMatch(searchText);
-            if (bhkMatch != null) {
-              final bhkVal = bhkMatch.group(1)!;
-              final extractedFilter = bhkVal == '5' ? '5+ BHK' : '$bhkVal BHK';
-              if (_activeBhkFilter != extractedFilter) {
-                _activeBhkFilter = extractedFilter;
-              }
-            }
-          }
-
-          // Filtering
-          final filteredProps = allProps.where((p) {
-            // Listing Type filter
-            final ltName = p.listingTypeName.toLowerCase();
-            final matchesListing = _activeCategoryTab == 'Shortlisted'
-                ? true
-                : (_activeListingTab == 'Rent'
-                    ? ltName.contains('rent')
-                    : (ltName.contains('sale') || ltName.contains('resale') || !ltName.contains('rent')));
-
-            // Category Tab filter
-            final cat = p.categoryName.toLowerCase();
-            bool matchesCategoryTab = false;
-            if (_activeCategoryTab == 'Shortlisted') {
-              matchesCategoryTab = _shortlistedPropertyIds.contains(p.id);
-            } else if (_activeCategoryTab == 'All') {
-              matchesCategoryTab = true;
-            } else if (_activeCategoryTab == 'Residential') {
-              matchesCategoryTab = cat.contains('resident') ||
-                  cat.contains('apartment') ||
-                  cat.contains('flat') ||
-                  cat.contains('villa') ||
-                  cat.contains('house') ||
-                  cat.contains('bhk') ||
-                  (!cat.contains('commercial') && !cat.contains('industrial') && !cat.contains('land') && !cat.contains('plot'));
-            } else if (_activeCategoryTab == 'Commercial') {
-              matchesCategoryTab = cat.contains('commercial') || cat.contains('office') || cat.contains('shop') || cat.contains('showroom') || cat.contains('retail');
-            } else if (_activeCategoryTab == 'Industrial') {
-              matchesCategoryTab = cat.contains('industrial') || cat.contains('factory') || cat.contains('warehouse') || cat.contains('shed');
-            } else if (_activeCategoryTab == 'Land & Plot') {
-              matchesCategoryTab = cat.contains('land') || cat.contains('plot');
-            } else if (_activeCategoryTab == 'No Images') {
-              matchesCategoryTab = p.images.isEmpty;
-            }
-
-            // BHK filter
-            bool matchesBhk = true;
-            if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
-              final titleLower = p.title.toLowerCase();
-              final descLower = (p.description ?? '').toLowerCase();
-              final configName = (p.configurationName ?? '').toLowerCase();
-              final pTypeName = p.propertyTypeName.toLowerCase();
-
-              if (_activeBhkFilter == '1 BHK') {
-                matchesBhk = p.bedrooms == 1 ||
-                    configName.contains('1') ||
-                    titleLower.contains('1 bhk') || titleLower.contains('1bhk') ||
-                    descLower.contains('1 bhk') || descLower.contains('1bhk') ||
-                    pTypeName.contains('1 bhk') || pTypeName.contains('1bhk');
-              } else if (_activeBhkFilter == '2 BHK') {
-                matchesBhk = p.bedrooms == 2 ||
-                    configName.contains('2') ||
-                    titleLower.contains('2 bhk') || titleLower.contains('2bhk') ||
-                    descLower.contains('2 bhk') || descLower.contains('2bhk') ||
-                    pTypeName.contains('2 bhk') || pTypeName.contains('2bhk');
-              } else if (_activeBhkFilter == '3 BHK') {
-                matchesBhk = p.bedrooms == 3 ||
-                    configName.contains('3') ||
-                    titleLower.contains('3 bhk') || titleLower.contains('3bhk') ||
-                    descLower.contains('3 bhk') || descLower.contains('3bhk') ||
-                    pTypeName.contains('3 bhk') || pTypeName.contains('3bhk');
-              } else if (_activeBhkFilter == '4 BHK') {
-                matchesBhk = p.bedrooms == 4 ||
-                    configName.contains('4') ||
-                    titleLower.contains('4 bhk') || titleLower.contains('4bhk') ||
-                    descLower.contains('4 bhk') || descLower.contains('4bhk') ||
-                    pTypeName.contains('4 bhk') || pTypeName.contains('4bhk');
-              } else if (_activeBhkFilter == '5+ BHK') {
-                matchesBhk = p.bedrooms >= 5 ||
-                    configName.contains('5') ||
-                    titleLower.contains('5 bhk') || titleLower.contains('5bhk') ||
-                    descLower.contains('5 bhk') || descLower.contains('5bhk') ||
-                    pTypeName.contains('5 bhk') || pTypeName.contains('5bhk');
-              }
-            }
-
-            // Search query filter (strips explicit BHK terms to match location/type/title/address cleanly)
-            bool matchesSearch = true;
-            bool isDirectMatch = false;
-            if (searchText.isNotEmpty) {
-              final cleanQuery = searchText.replaceAll(RegExp(r'(\d+\+?)\s*-?\s*bhk', caseSensitive: false), '').trim();
-              if (cleanQuery.isNotEmpty) {
-                final words = cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-                matchesSearch = words.every((word) {
-                  final w = word.toLowerCase();
-                  return p.propertyCode.toLowerCase().contains(w) ||
-                      p.title.toLowerCase().contains(w) ||
-                      p.areaName.toLowerCase().contains(w) ||
-                      p.cityName.toLowerCase().contains(w) ||
-                      p.address.toLowerCase().contains(w) ||
-                      (p.landmark?.toLowerCase().contains(w) ?? false) ||
-                      (p.description?.toLowerCase().contains(w) ?? false) ||
-                      p.categoryName.toLowerCase().contains(w) ||
-                      p.propertyTypeName.toLowerCase().contains(w) ||
-                      (p.configurationName?.toLowerCase().contains(w) ?? false) ||
-                      (p.furnishingTypeName?.toLowerCase().contains(w) ?? false) ||
-                      (p.remarks?.toLowerCase().contains(w) ?? false);
-                });
-                if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase().contains(w.toLowerCase()) || p.title.toLowerCase().contains(w.toLowerCase()))) {
-                  isDirectMatch = true;
-                }
-              }
-            }
-
-            if (isDirectMatch && matchesSearch) return true;
-
-            return matchesListing && matchesCategoryTab && matchesBhk && matchesSearch;
-          }).toList();
-
-          // Sorting
-          if (_selectedPriceSort == 'l2h') {
-            filteredProps.sort((a, b) => a.price.compareTo(b.price));
-          } else if (_selectedPriceSort == 'h2l') {
-            filteredProps.sort((a, b) => b.price.compareTo(a.price));
-          } else {
-            filteredProps.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          }
-
           final rawLoc = _searchController.text.trim().isNotEmpty
               ? _searchController.text.trim()
               : 'Ahmedabad';
           final cleanLoc = rawLoc.replaceAll(RegExp(r'\b\d+\s*BHK\b', caseSensitive: false), '').trim();
           final locationText = cleanLoc.isNotEmpty ? cleanLoc : rawLoc;
 
+          final filteredProps = _getFilteredProperties(allProps);
+
           return LayoutBuilder(
             builder: (context, constraints) {
               final isMobile = constraints.maxWidth < 600;
 
-              return SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 12 : CRMSpacing.l,
-                  vertical: CRMSpacing.m,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1100),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    // Small Breadcrumb Routing Text (Page-wise route in small letters)
-                    Text(
-                      'Home / Ahmedabad / $_activeCategoryTab Property for $_activeListingTab in $locationText',
-                      style: TextStyle(
-                        color: CRMColors.textMutedOf(context),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Rent / Re-Sale Tabs + Category Tabs + BHK Chips Row
-                    _buildFiltersControlBar(),
-                    const SizedBox(height: 16),
-
-                    // Context Results Sub-Header Bar (Image 3 style)
-                    _buildResultsContextBar(filteredProps.length, locationText),
-                    const SizedBox(height: 16),
-
-                    // Property Cards List
-                    if (filteredProps.isEmpty)
-                      CRMCard(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1100),
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 12 : CRMSpacing.l,
+                          vertical: CRMSpacing.m,
+                        ),
+                        sliver: SliverToBoxAdapter(
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.location_city_outlined, size: 48, color: CRMColors.primaryOf(context).withOpacity(0.4)),
+                              // Small Breadcrumb Routing Text (Page-wise route in small letters)
+                              Text(
+                                'Home / Ahmedabad / $_activeCategoryTab Property for $_activeListingTab in $locationText',
+                                style: TextStyle(
+                                  color: CRMColors.textMutedOf(context),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                               const SizedBox(height: 12),
-                              Text(
-                                'No Properties Available in $locationText',
-                                style: TextStyle(color: CRMColors.textOf(context), fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Try clearing your search terms or selecting a different bedroom configuration.',
-                                style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13),
-                              ),
+
+                              // Rent / Re-Sale Tabs + Category Tabs + BHK Chips Row
+                              _buildFiltersControlBar(),
+                              const SizedBox(height: 16),
+
+                              // Context Results Sub-Header Bar (Image 3 style)
+                              _buildResultsContextBar(filteredProps.length, locationText),
+                              const SizedBox(height: 16),
+
+                              // Property Cards List (Empty State)
+                              if (filteredProps.isEmpty)
+                                CRMCard(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(32),
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.location_city_outlined, size: 48, color: CRMColors.primaryOf(context).withOpacity(0.4)),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          'No Properties Available in $locationText',
+                                          style: TextStyle(color: CRMColors.textOf(context), fontSize: 16, fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Try clearing your search terms or selecting a different bedroom configuration.',
+                                          style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
-                      )
-                    else
-                      Column(
-                        children: filteredProps.map((p) {
-                          return _buildHousingCard(p, currentUser, metadata);
-                        }).toList(),
                       ),
-                  ],
+                      if (filteredProps.isNotEmpty)
+                        SliverPadding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isMobile ? 12 : CRMSpacing.l,
+                          ),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                return _buildHousingCard(
+                                  filteredProps[index],
+                                  currentUser,
+                                  metadata,
+                                );
+                              },
+                              childCount: filteredProps.length,
+                            ),
+                          ),
+                        ),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: 40),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
-      );
-    },
-  ),
-);
-}
+      ),
+    );
+  }
+
+  List<PropertyModel> _getFilteredProperties(List<PropertyModel> allProps) {
+    final searchText = _searchController.text.trim();
+    final cacheKey = '$_activeListingTab|$_activeCategoryTab|$_activeBhkFilter|$_selectedPriceSort|$searchText|${_shortlistedPropertyIds.length}';
+
+    if (identical(allProps, _lastSourceProps) && _lastFilterCacheKey == cacheKey && _memoizedFilteredProps != null) {
+      return _memoizedFilteredProps!;
+    }
+
+    _lastSourceProps = allProps;
+    _lastFilterCacheKey = cacheKey;
+    _memoizedFilteredProps = _computeFilteredAndSorted(allProps, searchText);
+    return _memoizedFilteredProps!;
+  }
+
+  List<PropertyModel> _computeFilteredAndSorted(List<PropertyModel> allProps, String searchText) {
+    // Auto-sync search query with active BHK filter chip if explicit BHK is typed
+    if (searchText.isNotEmpty) {
+      final bhkMatch = RegExp(r'(\d+\+?)\s*-?\s*BHK', caseSensitive: false).firstMatch(searchText);
+      if (bhkMatch != null) {
+        final bhkVal = bhkMatch.group(1)!;
+        final extractedFilter = bhkVal == '5' ? '5+ BHK' : '$bhkVal BHK';
+        if (_activeBhkFilter != extractedFilter) {
+          _activeBhkFilter = extractedFilter;
+        }
+      }
+    }
+
+    // Filtering
+    final filteredProps = allProps.where((p) {
+      // Listing Type filter
+      final ltName = p.listingTypeName.toLowerCase();
+      final matchesListing = _activeCategoryTab == 'Shortlisted'
+          ? true
+          : (_activeListingTab == 'Rent'
+              ? ltName.contains('rent')
+              : (ltName.contains('sale') || ltName.contains('resale') || !ltName.contains('rent')));
+
+      // Category Tab filter
+      final cat = p.categoryName.toLowerCase();
+      bool matchesCategoryTab = false;
+      if (_activeCategoryTab == 'Shortlisted') {
+        matchesCategoryTab = _shortlistedPropertyIds.contains(p.id);
+      } else if (_activeCategoryTab == 'All') {
+        matchesCategoryTab = true;
+      } else if (_activeCategoryTab == 'Residential') {
+        matchesCategoryTab = cat.contains('resident') ||
+            cat.contains('apartment') ||
+            cat.contains('flat') ||
+            cat.contains('villa') ||
+            cat.contains('house') ||
+            cat.contains('bhk') ||
+            (!cat.contains('commercial') && !cat.contains('industrial') && !cat.contains('land') && !cat.contains('plot'));
+      } else if (_activeCategoryTab == 'Commercial') {
+        matchesCategoryTab = cat.contains('commercial') || cat.contains('office') || cat.contains('shop') || cat.contains('showroom') || cat.contains('retail');
+      } else if (_activeCategoryTab == 'Industrial') {
+        matchesCategoryTab = cat.contains('industrial') || cat.contains('factory') || cat.contains('warehouse') || cat.contains('shed');
+      } else if (_activeCategoryTab == 'Land & Plot') {
+        matchesCategoryTab = cat.contains('land') || cat.contains('plot');
+      } else if (_activeCategoryTab == 'No Images') {
+        matchesCategoryTab = p.images.isEmpty;
+      }
+
+      // BHK filter
+      bool matchesBhk = true;
+      if (_activeBhkFilter != null && _activeBhkFilter != 'All BHK') {
+        final titleLower = p.title.toLowerCase();
+        final descLower = (p.description ?? '').toLowerCase();
+        final configName = (p.configurationName ?? '').toLowerCase();
+        final pTypeName = p.propertyTypeName.toLowerCase();
+
+        if (_activeBhkFilter == '1 BHK') {
+          matchesBhk = p.bedrooms == 1 ||
+              configName.contains('1') ||
+              titleLower.contains('1 bhk') || titleLower.contains('1bhk') ||
+              descLower.contains('1 bhk') || descLower.contains('1bhk') ||
+              pTypeName.contains('1 bhk') || pTypeName.contains('1bhk');
+        } else if (_activeBhkFilter == '2 BHK') {
+          matchesBhk = p.bedrooms == 2 ||
+              configName.contains('2') ||
+              titleLower.contains('2 bhk') || titleLower.contains('2bhk') ||
+              descLower.contains('2 bhk') || descLower.contains('2bhk') ||
+              pTypeName.contains('2 bhk') || pTypeName.contains('2bhk');
+        } else if (_activeBhkFilter == '3 BHK') {
+          matchesBhk = p.bedrooms == 3 ||
+              configName.contains('3') ||
+              titleLower.contains('3 bhk') || titleLower.contains('3bhk') ||
+              descLower.contains('3 bhk') || descLower.contains('3bhk') ||
+              pTypeName.contains('3 bhk') || pTypeName.contains('3bhk');
+        } else if (_activeBhkFilter == '4 BHK') {
+          matchesBhk = p.bedrooms == 4 ||
+              configName.contains('4') ||
+              titleLower.contains('4 bhk') || titleLower.contains('4bhk') ||
+              descLower.contains('4 bhk') || descLower.contains('4bhk') ||
+              pTypeName.contains('4 bhk') || pTypeName.contains('4bhk');
+        } else if (_activeBhkFilter == '5+ BHK') {
+          matchesBhk = p.bedrooms >= 5 ||
+              configName.contains('5') ||
+              titleLower.contains('5 bhk') || titleLower.contains('5bhk') ||
+              descLower.contains('5 bhk') || descLower.contains('5bhk') ||
+              pTypeName.contains('5 bhk') || pTypeName.contains('5bhk');
+        }
+      }
+
+      // Search query filter (strips explicit BHK terms to match location/type/title/address cleanly)
+      bool matchesSearch = true;
+      bool isDirectMatch = false;
+      if (searchText.isNotEmpty) {
+        final cleanQuery = searchText.replaceAll(RegExp(r'(\d+\+?)\s*-?\s*bhk', caseSensitive: false), '').trim();
+        if (cleanQuery.isNotEmpty) {
+          final words = cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+          matchesSearch = words.every((word) {
+            final w = word.toLowerCase();
+            return p.propertyCode.toLowerCase().contains(w) ||
+                p.title.toLowerCase().contains(w) ||
+                p.areaName.toLowerCase().contains(w) ||
+                p.cityName.toLowerCase().contains(w) ||
+                p.address.toLowerCase().contains(w) ||
+                (p.landmark?.toLowerCase().contains(w) ?? false) ||
+                (p.description?.toLowerCase().contains(w) ?? false) ||
+                p.categoryName.toLowerCase().contains(w) ||
+                p.propertyTypeName.toLowerCase().contains(w) ||
+                (p.configurationName?.toLowerCase().contains(w) ?? false) ||
+                (p.furnishingTypeName?.toLowerCase().contains(w) ?? false) ||
+                (p.remarks?.toLowerCase().contains(w) ?? false);
+          });
+          if (matchesSearch && words.any((w) => p.propertyCode.toLowerCase().contains(w.toLowerCase()) || p.title.toLowerCase().contains(w.toLowerCase()))) {
+            isDirectMatch = true;
+          }
+        }
+      }
+
+      if (isDirectMatch && matchesSearch) return true;
+
+      return matchesListing && matchesCategoryTab && matchesBhk && matchesSearch;
+    }).toList();
+
+    // Sorting
+    if (_selectedPriceSort == 'l2h') {
+      filteredProps.sort((a, b) => a.price.compareTo(b.price));
+    } else if (_selectedPriceSort == 'h2l') {
+      filteredProps.sort((a, b) => b.price.compareTo(a.price));
+    } else {
+      filteredProps.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+
+    return filteredProps;
+  }
 
   Widget _buildFiltersControlBar() {
     return Container(

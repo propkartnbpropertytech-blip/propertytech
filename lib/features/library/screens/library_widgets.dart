@@ -15,6 +15,7 @@ import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 
 /// Breadcrumb navigation item
 class LibraryBreadcrumb extends StatelessWidget {
@@ -793,12 +794,14 @@ class _AgentImageUploadZoneState extends State<AgentImageUploadZone> {
                           )
                         : (hasImage
                             ? ClipOval(
-                                child: Image.network(
-                                  _imageUrl!,
+                                child: CrmNetworkImage(
+                                  url: _imageUrl!,
                                   width: 104,
                                   height: 104,
+                                  cacheLogicalWidth: 104,
+                                  cacheLogicalHeight: 104,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  error: (context) => Container(
                                     color: CRMColors.primaryOf(context).withOpacity(0.1),
                                     child: Icon(
                                       Icons.person_rounded,

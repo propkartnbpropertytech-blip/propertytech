@@ -4526,6 +4526,41 @@ function onFormSubmit(e) {
     }
     return digits;
   }
+
+  Future<dynamic> exportLeads() async {
+    try {
+      final res = await _apiClient.get(
+        '/export/leads',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return res.data;
+    } catch (e) {
+      debugPrint('[IntegrationService] exportLeads error: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerTelecallers() async {
+    try {
+      final res = await _apiClient.get('/telecaller/partner-telecallers');
+      final list = List<dynamic>.from(res.data['data'] ?? []);
+      return list.map((u) => Map<String, dynamic>.from(u as Map)).toList();
+    } catch (e) {
+      debugPrint('[IntegrationService] getPartnerTelecallers error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSalesUsersForTransfer() async {
+    try {
+      final res = await _apiClient.get('/telecaller/sales-users');
+      final list = List<dynamic>.from(res.data['data'] ?? []);
+      return list.map((u) => Map<String, dynamic>.from(u as Map)).toList();
+    } catch (e) {
+      debugPrint('[IntegrationService] getSalesUsersForTransfer error: $e');
+      return [];
+    }
+  }
 }
 
 String _encodeCampaignLeadsJson(List<Map<String, dynamic>> leads) {

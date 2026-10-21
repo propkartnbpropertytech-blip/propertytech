@@ -20,6 +20,7 @@ import '../models/document_model.dart';
 import '../models/area_item.dart';
 import '../repository/library_repository.dart';
 import 'library_widgets.dart';
+import '../../../core/design_system/widgets/crm_network_image.dart';
 
 class ServiceAgentLibraryScreen extends StatefulWidget {
   const ServiceAgentLibraryScreen({super.key});
@@ -359,11 +360,23 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                     padding: const EdgeInsets.only(bottom: CRMSpacing.m),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(doc.agentImageUrl!, height: 80, width: 80, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(width: 80, height: 80,
-                              decoration: BoxDecoration(color: CRMColors.primaryOf(context).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8)),
-                              child: Icon(Icons.person_rounded, color: CRMColors.primaryOf(context)))),
+                      child: CrmNetworkImage(
+                        url: doc.agentImageUrl!,
+                        height: 80,
+                        width: 80,
+                        cacheLogicalWidth: 80,
+                        cacheLogicalHeight: 80,
+                        fit: BoxFit.cover,
+                        error: (context) => Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: CRMColors.primaryOf(context).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.person_rounded, color: CRMColors.primaryOf(context)),
+                        ),
+                      ),
                     ),
                   ),
                 _buildDetailRow(context, 'Agent Name:', doc.agentName),
@@ -487,32 +500,28 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: isImageOrPdf
-                          ? Image.network(
-                              previewUrl,
+                          ? CrmNetworkImage(
+                              url: previewUrl,
                               fit: BoxFit.contain,
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Center(
-                                  child: CircularProgressIndicator(
-                                    color: CRMColors.primaryOf(dialogContext),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.description_outlined, size: 64, color: CRMColors.textMutedOf(dialogContext)),
-                                      const SizedBox(height: CRMSpacing.s),
-                                      Text(
-                                        'Document Preview (${doc.fileExtension.toUpperCase()})',
-                                        style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(dialogContext)),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
+                              variant: CrmImageVariant.fullscreen,
+                              placeholder: (context) => Center(
+                                child: CircularProgressIndicator(
+                                  color: CRMColors.primaryOf(dialogContext),
+                                ),
+                              ),
+                              error: (context) => Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.description_outlined, size: 64, color: CRMColors.textMutedOf(dialogContext)),
+                                    const SizedBox(height: CRMSpacing.s),
+                                    Text(
+                                      'Document Preview (${doc.fileExtension.toUpperCase()})',
+                                      style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(dialogContext)),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             )
                           : Center(
                               child: Column(
@@ -1336,12 +1345,14 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
               ),
               child: ClipOval(
                 child: doc.agentImageUrl != null && doc.agentImageUrl!.isNotEmpty
-                    ? Image.network(
-                        doc.agentImageUrl!,
+                    ? CrmNetworkImage(
+                        url: doc.agentImageUrl!,
                         width: 52,
                         height: 52,
+                        cacheLogicalWidth: 52,
+                        cacheLogicalHeight: 52,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _agentAvatarPlaceholder(doc),
+                        error: (context) => _agentAvatarPlaceholder(doc),
                       )
                     : _agentAvatarPlaceholder(doc),
               ),
@@ -1576,7 +1587,18 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
       child: CRMCard(padding: const EdgeInsets.all(CRMSpacing.m), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           doc.agentImageUrl != null && doc.agentImageUrl!.isNotEmpty
-              ? ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(doc.agentImageUrl!, width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (_, __, ___) => FileIconHelper.getIconForExtension(doc.fileExtension, size: 24)))
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: CrmNetworkImage(
+                    url: doc.agentImageUrl!,
+                    width: 40,
+                    height: 40,
+                    cacheLogicalWidth: 40,
+                    cacheLogicalHeight: 40,
+                    fit: BoxFit.cover,
+                    error: (context) => FileIconHelper.getIconForExtension(doc.fileExtension, size: 24),
+                  ),
+                )
               : FileIconHelper.getIconForExtension(doc.fileExtension, size: 24),
           const SizedBox(width: CRMSpacing.s),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1835,12 +1857,14 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
                                                   doc.agentImageUrl != null && doc.agentImageUrl!.isNotEmpty
                                                       ? ClipRRect(
                                                     borderRadius: BorderRadius.circular(6),
-                                                    child: Image.network(
-                                                      doc.agentImageUrl!,
+                                                    child: CrmNetworkImage(
+                                                      url: doc.agentImageUrl!,
                                                       width: 36,
                                                       height: 36,
+                                                      cacheLogicalWidth: 36,
+                                                      cacheLogicalHeight: 36,
                                                       fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => _tableAvatarPlaceholder(context),
+                                                      error: (context) => _tableAvatarPlaceholder(context),
                                                     ),
                                                   )
                                                       : _tableAvatarPlaceholder(context),

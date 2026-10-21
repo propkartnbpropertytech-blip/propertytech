@@ -35,7 +35,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import '../../dashboard/repository/dashboard_repository.dart';
 import '../../dashboard/models/dashboard_summary.dart';
-import '../../../core/api/dio_client.dart';
+import '../domain/usecases/load_requirements_usecase.dart';
+import '../domain/usecases/update_requirement_status_usecase.dart';
+import '../widgets/requirement_summary_bar.dart';
+import '../widgets/requirement_filter_bar.dart';
+import '../widgets/requirement_action_dialogs.dart';
 import '../../../core/utils/budget_formatter.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
@@ -793,11 +797,52 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   List<RequirementListItemViewModel> _filteredViewModels = [];
   List<RequirementModel> _filteredRequirements = [];
   Timer? _searchDebounceTimer;
+  String? _lastComputedFilterKey;
+  List<RequirementModel>? _lastSourceList;
+
+  String _buildFilterCacheKey(UserModel? currentUser, List<RequirementModel> rawList) {
+    final query = (_activeMainTab == 'Won' || _activeMainTab == 'My Won')
+        ? _wonSearchController.text.trim().toLowerCase()
+        : _searchController.text.trim().toLowerCase();
+    final configKey = (List.of(_selectedConfigIds)..sort()).join(',');
+    final tcKey = (List.of(_selectedTelecallerFilterIds)..sort()).join(',');
+    final wonConfigKey = (List.of(_wonConfigurationIds)..sort()).join(',');
+    return '${rawList.length}|$_activeMainTab|$_activeListingTab|$_selectedCategoryId|'
+        '$configKey|$_selectedStatus|$_salesLeadGroupFilter|$_selectedSalesFilterId|'
+        '$tcKey|$_selectedReadiness|$query|${_selectedLeadDateFilter.name}|'
+        '${_customStartDate?.millisecondsSinceEpoch}|${_customEndDate?.millisecondsSinceEpoch}|'
+        '${currentUser?.id}|${currentUser?.role}|'
+        '$_wonCategoryId|$_wonPropertyTypeId|$wonConfigKey';
+  }
+
+  List<RequirementModel> _getEffectiveFilteredRequirements(UserModel? currentUser, [List<RequirementModel>? rawList]) {
+    final list = rawList ?? _cachedRequirements;
+    if (list.isEmpty) {
+      _allViewModels = [];
+      _filteredViewModels = [];
+      _filteredRequirements = [];
+      _lastComputedFilterKey = null;
+      _lastSourceList = null;
+      return const [];
+    }
+
+    final key = _buildFilterCacheKey(currentUser, list);
+    if (_lastComputedFilterKey == key && identical(_lastSourceList, list)) {
+      return _filteredRequirements;
+    }
+
+    _cachedRequirements = list;
+    _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
+    _lastComputedFilterKey = key;
+    _lastSourceList = list;
+    return _filteredRequirements;
+  }
 
   void _onSearchChangedDebounced() {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
+        _lastComputedFilterKey = null;
         _recomputeFilteredRequirements();
       }
     });
@@ -809,6 +854,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _allViewModels = [];
       _filteredViewModels = [];
       _filteredRequirements = [];
+      _lastComputedFilterKey = null;
+      _lastSourceList = null;
       if (notify && mounted) setState(() {});
       return;
     }
@@ -822,21 +869,40 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       }
     })();
 
-    if (_allViewModels.length != rawLoadedList.length) {
+    if (user == null) {
+      _allViewModels = [];
+      _filteredViewModels = [];
+      _filteredRequirements = [];
+      _lastComputedFilterKey = null;
+      _lastSourceList = null;
+      if (notify && mounted) setState(() {});
+      return;
+    }
+
+    if (_allViewModels.length != rawLoadedList.length || !identical(_lastSourceList, rawLoadedList)) {
       _allViewModels = rawLoadedList
           .map((r) => RequirementListItemViewModel.fromRequirement(r, currentUser: user))
           .toList(growable: false);
+      _lastSourceList = rawLoadedList;
     }
 
     final allKnownUsers = _getAllKnownUsers();
+
+    final effectiveCategoryId = (_activeMainTab == 'Won' || _activeMainTab == 'My Won') && _wonCategoryId != null
+        ? _wonCategoryId
+        : _selectedCategoryId;
+
+    final effectiveConfigIds = ((_activeMainTab == 'Won' || _activeMainTab == 'My Won') && _wonConfigurationIds.isNotEmpty
+        ? _wonConfigurationIds
+        : _selectedConfigIds).toSet();
 
     _filteredViewModels = RequirementFilterEngine.filterAndSort(
       items: _allViewModels,
       currentUser: user,
       activeMainTab: _activeMainTab,
       activeListingTab: _activeListingTab,
-      selectedCategoryId: _selectedCategoryId,
-      selectedConfigIds: _selectedConfigIds.toSet(),
+      selectedCategoryId: effectiveCategoryId,
+      selectedConfigIds: effectiveConfigIds,
       selectedStatus: _selectedStatus,
       salesLeadGroupFilter: _salesLeadGroupFilter,
       selectedSalesFilterId: _selectedSalesFilterId,
@@ -852,6 +918,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     _filteredRequirements = _filteredViewModels.map((vm) => vm.requirement).toList();
+    _lastComputedFilterKey = _buildFilterCacheKey(user, rawLoadedList);
 
     if (notify && mounted) {
       setState(() {});
@@ -1488,6 +1555,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _activeListingTab = "Rent";
       _currentPage = 1;
     });
+    _lastComputedFilterKey = null;
+    _recomputeFilteredRequirements(notify: false);
     _triggerFetch();
   }
 
@@ -2193,7 +2262,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (salesFilterActive) {
       final selectedSales = allKnownUsers.firstWhereOrNull((u) => u.id == _selectedSalesFilterId);
       if (selectedSales == null) return false;
-      final matchesSales = currentUser != null && currentUser.role == 'Telecaller'
+      final matchesSales = currentUser != null && RoleGuard.isTelecaller(currentUser.role)
           ? TeamUserVisibility.telecallerLeadSentToSalesperson(r, selectedSales, currentUser)
           : TeamUserVisibility.requirementBelongsToUser(r, selectedSales);
       if (!matchesSales) return false;
@@ -2221,11 +2290,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   List<RequirementModel> _getMobileFilteredRequirements(UserModel? currentUser) {
-    if (_cachedRequirements.isEmpty) return const [];
-    if (_allViewModels.length != _cachedRequirements.length || _filteredRequirements.isEmpty) {
-      _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
-    }
-    return _filteredRequirements;
+    return _getEffectiveFilteredRequirements(currentUser);
   }
 
 
@@ -2573,6 +2638,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               _selectedStatus = 'All';
             }
           });
+          _lastComputedFilterKey = null;
+          _recomputeFilteredRequirements(notify: false);
         }
       },
     );
@@ -3233,7 +3300,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               setState(() {
                                 _selectedCategoryId = val;
                                 _selectedConfigIds.clear();
+                                _currentPage = 1;
                               });
+                              _lastComputedFilterKey = null;
+                              _recomputeFilteredRequirements(notify: false);
                               _triggerFetch();
                             },
                           ),
@@ -3245,7 +3315,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             selectedIds: _selectedConfigIds,
                             items: specLookupItems,
                             onChanged: (vals) {
-                              setState(() {});
+                              setState(() {
+                                _currentPage = 1;
+                              });
+                              _lastComputedFilterKey = null;
+                              _recomputeFilteredRequirements(notify: false);
                               _triggerFetch();
                             },
                           ),
@@ -3263,7 +3337,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               items: statusItems,
                               isMobile: isMobile,
                               onChanged: (val) {
-                                setState(() => _selectedStatus = val ?? "All");
+                                setState(() {
+                                  _selectedStatus = val ?? "All";
+                                  _currentPage = 1;
+                                });
+                                _lastComputedFilterKey = null;
+                                _recomputeFilteredRequirements(notify: false);
                                 _triggerFetch();
                               },
                             ),
@@ -3302,7 +3381,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         setState(() {
                           _selectedCategoryId = val;
                           _selectedConfigIds.clear();
+                          _currentPage = 1;
                         });
+                        _lastComputedFilterKey = null;
+                        _recomputeFilteredRequirements(notify: false);
                         _triggerFetch();
                       },
                     ),
@@ -3313,7 +3395,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         selectedIds: _selectedConfigIds,
                         items: specLookupItems,
                         onChanged: (vals) {
-                          setState(() {});
+                          setState(() {
+                            _currentPage = 1;
+                          });
+                          _lastComputedFilterKey = null;
+                          _recomputeFilteredRequirements(notify: false);
                           _triggerFetch();
                         },
                       ),
@@ -3325,7 +3411,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         items: statusItems,
                         isMobile: isMobile,
                         onChanged: (val) {
-                          setState(() => _selectedStatus = val ?? "All");
+                          setState(() {
+                            _selectedStatus = val ?? "All";
+                            _currentPage = 1;
+                          });
+                          _lastComputedFilterKey = null;
+                          _recomputeFilteredRequirements(notify: false);
                           _triggerFetch();
                         },
                       ),
@@ -3505,6 +3596,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _selectedLeadDateFilter = LeadDateFilterPreset.customRange;
         _currentPage = 1;
       });
+      _lastComputedFilterKey = null;
+      _recomputeFilteredRequirements(notify: false);
     }
   }
 
@@ -3585,6 +3678,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         _selectedLeadDateFilter = filter;
                         _currentPage = 1;
                       });
+                      _lastComputedFilterKey = null;
+                      _recomputeFilteredRequirements(notify: false);
                     }
                   },
                   child: AnimatedContainer(
@@ -3666,6 +3761,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _activeListingTab = label;
           _currentPage = 1;
         });
+        _lastComputedFilterKey = null;
+        _recomputeFilteredRequirements(notify: false);
         _triggerFetch();
       },
       child: AnimatedContainer(
@@ -3733,6 +3830,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               _selectedSalesFilterId = val ?? 'All';
               _currentPage = 1;
             });
+            _lastComputedFilterKey = null;
+            _recomputeFilteredRequirements(notify: false);
             _triggerFetch();
           },
         );
@@ -3777,6 +3876,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 _selectedTelecallerFilterIds = vals;
                 _currentPage = 1;
               });
+              _lastComputedFilterKey = null;
+              _recomputeFilteredRequirements(notify: false);
               _triggerFetch();
             },
           ),
@@ -5134,6 +5235,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           _salesLeadGroupFilter = value;
           _currentPage = 1;
         });
+        _lastComputedFilterKey = null;
+        _recomputeFilteredRequirements(notify: false);
       },
       borderRadius: BorderRadius.circular(CRMBorderRadius.s),
       child: AnimatedContainer(
@@ -7044,15 +7147,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           state is RequirementsLoaded ? state.requirements : _cachedRequirements,
         );
         final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
-        List<RequirementModel> requirements = [];
-
-        if (rawLoadedList.isNotEmpty) {
-          if (_allViewModels.length != rawLoadedList.length || _filteredRequirements.isEmpty) {
-            _cachedRequirements = rawLoadedList;
-            _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
-          }
-          requirements = _filteredRequirements;
-        }
+        final requirements = _getEffectiveFilteredRequirements(currentUser, rawLoadedList);
 
     final totalCount = requirements.length;
     final totalPages = (totalCount / _requirementsPerPage).ceil();
@@ -7648,16 +7743,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           state is RequirementsLoaded ? state.requirements : _cachedRequirements,
         );
         final isLoading = (state is RequirementsLoading || state is RequirementsInitial) && rawLoadedList.isEmpty;
-
-        List<RequirementModel> requirements = [];
-
-        if (rawLoadedList.isNotEmpty) {
-          if (_allViewModels.length != rawLoadedList.length || _filteredRequirements.isEmpty) {
-            _cachedRequirements = rawLoadedList;
-            _recomputeFilteredRequirements(notify: false, currentUser: currentUser);
-          }
-          requirements = _filteredRequirements;
-        }
+        final requirements = _getEffectiveFilteredRequirements(currentUser, rawLoadedList);
 
         final totalCount = requirements.length;
         final totalPages = (totalCount / _requirementsPerPage).ceil();
@@ -9056,13 +9142,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
 
     try {
-      final response = await DioClient.dio.get<List<int>>(
-        '/export/requirements',
-        options: Options(responseType: ResponseType.bytes),
-      );
-      if (response.data != null && response.data!.isNotEmpty) {
+      final responseData = await RequirementsRepository().exportRequirements({});
+      if (responseData != null && responseData is List<int> && responseData.isNotEmpty) {
         final filename = 'Requirements_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
-        await FileDownloader.download(response.data!, filename);
+        await FileDownloader.download(responseData, filename);
         if (mounted) {
           AppStatusSnackBar.show(
             context,
@@ -9184,6 +9267,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             _selectedStatus = 'All';
           }
         });
+        _lastComputedFilterKey = null;
+        _recomputeFilteredRequirements(notify: false);
         // Won / My Won needs an unfiltered status fetch so Won rows are present.
         if (label == 'My Won' ||
             label == 'Won' ||
@@ -9479,9 +9564,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             // Try remote patch if valid server ID (non-local)
                             if (!followup.id.startsWith('local_') && !followup.id.startsWith('sv_') && followup.id.isNotEmpty) {
                               try {
-                                await DioClient.dio.patch(
-                                  '/followups/${followup.id}',
-                                  data: {
+                                await RequirementsRepository().patchFollowup(
+                                  followup.id,
+                                  {
                                     'followup_date': isoUtcString,
                                     'notes': newNotes,
                                   },
@@ -9929,7 +10014,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       final reqId = reqModel?.id ?? f.requirementId;
       final endpoint = isSiteVisit ? '/site-visits/delete-client' : '/followups/delete-client';
       
-      await DioClient.dio.post(endpoint, data: {
+      await RequirementsRepository().deleteFollowup(endpoint, {
         'id': f.id,
         'requirement_id': reqId,
         'mobile': f.mobile,
@@ -10014,7 +10099,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final reqId = reqModel?.id ?? f.requirementId;
         final endpoint = isSiteVisit ? '/site-visits/delete-client' : '/followups/delete-client';
 
-        await DioClient.dio.post(endpoint, data: {
+        await RequirementsRepository().deleteFollowup(endpoint, {
           'id': f.id,
           'requirement_id': reqId,
           'mobile': f.mobile,
@@ -10041,6 +10126,55 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       });
       context.read<RequirementsBloc>().add(FetchRequirementsEvent(refreshFromServer: true));
     }
+  }
+
+  Widget _buildFollowupListingToggle() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: CRMColors.backgroundOf(context),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildFollowupListingChip('Rent'),
+          _buildFollowupListingChip('Re-Sale'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFollowupListingChip(String type) {
+    final isSelected = _activeListingTab == type;
+    final accent = type == 'Rent' ? CRMColors.rentAccent : CRMColors.resaleAccent;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _activeListingTab = type;
+        });
+        _refreshFollowupsFuture();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          type,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? CRMColors.onAtmosphereAccent(type == 'Rent')
+                : CRMColors.textSecondaryOf(context),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFollowupsView() {
@@ -10085,7 +10219,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             },
             tooltip: 'Filter by Date',
           ),
-
+          if (_reqFollowupDateFilter != null)
+            IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              icon: Icon(Icons.close_rounded, color: CRMColors.primary, size: 14),
+              onPressed: () {
+                setState(() {
+                  _reqFollowupDateFilter = null;
+                  _refreshFollowupsFuture();
+                });
+              },
+              tooltip: 'Clear Date Filter',
+            ),
         ],
       ),
     );
@@ -10095,14 +10241,26 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           ? 'Site Visit Management'
           : 'Follow-ups Management',
       subtitle: 'Scheduled client communications and appointments',
-      headerAction: isMobile ? null : dateFilterWidget,
+      headerAction: isMobile
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildFollowupListingToggle(),
+                const SizedBox(width: CRMSpacing.m),
+                dateFilterWidget,
+              ],
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (isMobile) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: dateFilterWidget,
+            Row(
+              children: [
+                Expanded(child: _buildFollowupListingToggle()),
+                const SizedBox(width: 8),
+                dateFilterWidget,
+              ],
             ),
             const SizedBox(height: CRMSpacing.m),
           ],
@@ -10244,8 +10402,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 isSiteVisitSection: _selectedMainFollowupSection == 'Site Visit Scheduled',
                 targetListingType: _activeListingTab,
                 currentUser: currentUser,
-                users: _assignUsers,
-                customDateFilter: (_selectedFollowupSubTab == 'Future') ? _reqFollowupDateFilter : null,
+                users: _getAllKnownUsers(),
+                customDateFilter: (_selectedFollowupSubTab == 'Future' || _selectedFollowupSubTab == 'AllClients')
+                    ? _reqFollowupDateFilter
+                    : null,
                 selectedSalesperson: _selectedSalespersonFilter,
               );
 
@@ -10317,7 +10477,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       _currentFollowupPage = 1;
                       if (tabKey == 'Today') {
                         _reqFollowupDateFilter = DateTime.now();
-                      } else {
+                      } else if (tabKey == 'Due') {
                         _reqFollowupDateFilter = null;
                       }
                     });
@@ -11151,16 +11311,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             Future<void> shareViaWhatsAppDirect() async {
               setDialogState(() => isGeneratingLink = true);
               try {
-                final response = await DioClient.dio.post(
-                  '/share-sessions',
-                  data: {
-                    'requirement_id': req.id,
-                    'property_ids': selectedPropIds.toList(),
-                    'expiry_days': 7
-                  },
-                );
-                if (response.data != null && response.data['success'] == true) {
-                  final sessionId = response.data['data']['session']['id'];
+                final resData = await RequirementsRepository().createShareSession({
+                  'requirement_id': req.id,
+                  'property_ids': selectedPropIds.toList(),
+                  'expiry_days': 7
+                });
+                if (resData != null && resData['success'] == true) {
+                  final sessionId = resData['data']['session']['id'];
                   final authState = context.read<AuthBloc>().state;
                   String? currentAgentName;
                   String? currentAgentMobile;
@@ -11792,16 +11949,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                                 : () async {
                                     setDialogState(() => isGeneratingLink = true);
                                     try {
-                                      final response = await DioClient.dio.post(
-                                        '/share-sessions',
-                                        data: {
-                                          'requirement_id': req.id,
-                                          'property_ids': selectedPropIds.toList(),
-                                          'expiry_days': 7
-                                        },
-                                      );
-                                      if (response.data != null && response.data['success'] == true) {
-                                        final sessionId = response.data['data']['session']['id'];
+                                      final resData = await RequirementsRepository().createShareSession({
+                                        'requirement_id': req.id,
+                                        'property_ids': selectedPropIds.toList(),
+                                        'expiry_days': 7
+                                      });
+                                      if (resData != null && resData['success'] == true) {
+                                        final sessionId = resData['data']['session']['id'];
                                         final authState = context.read<AuthBloc>().state;
                                         String? currentAgentName;
                                         String? currentAgentMobile;
@@ -11968,10 +12122,11 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         _followupTime.minute,
       );
       final isoDateStr = scheduledDateTime.toUtc().toIso8601String();
+      final RequirementsRepository requirementsRepository = RequirementsRepository();
 
       if (widget.isSiteVisit) {
         try {
-          await DioClient.dio.post('/site-visits', data: {
+          await requirementsRepository.postSiteVisit({
             'requirement_id': widget.requirement.id,
             'visit_date': isoDateStr,
             'remarks': remarks,
@@ -11981,7 +12136,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         }
 
         try {
-          await DioClient.dio.post('/followups', data: {
+          await requirementsRepository.postFollowup({
             'client_name': widget.requirement.clientName,
             'mobile': widget.requirement.clientMobile,
             'notes': remarks,
@@ -12025,7 +12180,6 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
         }
 
-        final RequirementsRepository requirementsRepository = RequirementsRepository();
         final updatedReq = widget.requirement.copyWith(
           status: 'Site Visit',
           nextFollowupDate: isoDateStr,
@@ -12049,7 +12203,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         RepositoryCoordinator().refreshDashboard();
         RepositoryCoordinator().refreshRequirements();
       } else {
-        await DioClient.dio.post('/followups', data: {
+        await requirementsRepository.postFollowup({
           'client_name': widget.requirement.clientName,
           'mobile': widget.requirement.clientMobile,
           'notes': remarks,
@@ -12100,7 +12254,6 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
           nextCustomFields['sales_handled_at'] = DateTime.now().toIso8601String();
         }
 
-        final RequirementsRepository requirementsRepository = RequirementsRepository();
         final bool hasPreviousFollowup = widget.requirement.status == 'Follow-up' ||
             widget.requirement.status == 'Re-Followup' ||
             widget.requirement.nextFollowupDate != null;
@@ -12168,12 +12321,12 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
     if (widget.isSiteVisit) {
       // 1. Fetch site visits API
       try {
-        final response = await DioClient.dio.get('/site-visits', queryParameters: {
+        final data = await RequirementsRepository().getSiteVisits({
           'requirement_id': widget.requirement.id,
         });
 
-        if (response.statusCode == 200 && response.data != null) {
-          final svList = response.data['data']?['site_visits'] as List? ?? response.data['data'] as List?;
+        if (data != null) {
+          final svList = data['data']?['site_visits'] as List? ?? data['data'] as List?;
           if (svList != null) {
             for (final item in svList) {
               final mapItem = Map<String, dynamic>.from(item as Map);
@@ -12190,13 +12343,13 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
 
       // 2. Fetch followups API filtered to Site Visit status
       try {
-        final response = await DioClient.dio.get('/followups', queryParameters: {
+        final data = await RequirementsRepository().getFollowups({
           'requirement_id': widget.requirement.id,
           'mobile': widget.requirement.clientMobile,
         });
 
-        if (response.statusCode == 200 && response.data != null) {
-          final followupsData = response.data['data']?['followups'] as List?;
+        if (data != null) {
+          final followupsData = data['data']?['followups'] as List?;
           if (followupsData != null) {
             for (final item in followupsData) {
               final mapItem = Map<String, dynamic>.from(item as Map);
@@ -12232,13 +12385,13 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
     } else {
       // Regular Follow-ups mode
       try {
-        final response = await DioClient.dio.get('/followups', queryParameters: {
+        final data = await RequirementsRepository().getFollowups({
           'requirement_id': widget.requirement.id,
           'mobile': widget.requirement.clientMobile,
         });
 
-        if (response.statusCode == 200 && response.data != null) {
-          final followupsData = response.data['data']?['followups'] as List?;
+        if (data != null) {
+          final followupsData = data['data']?['followups'] as List?;
           if (followupsData != null) {
             for (final item in followupsData) {
               final mapItem = Map<String, dynamic>.from(item as Map);
@@ -12433,7 +12586,7 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                   });
                                   try {
                                     if (itemId.isNotEmpty && !itemId.startsWith('local_') && !itemId.startsWith('fallback_')) {
-                                      await DioClient.dio.put('/followups/$itemId', data: {'status': 'Completed'});
+                                      await RequirementsRepository().updateFollowup(itemId, {'status': 'Completed'});
                                     }
                                   } catch (e) {
                                     debugPrint('Error completing followup: $e');
@@ -13003,7 +13156,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
           final imgUrl = p.images![i];
           final ext = imgUrl.split('.').last.split('?').first;
           final filePath = '${directory.path}/share_${p.propertyCode}_$i.$ext';
-          await DioClient.dio.download(imgUrl, filePath);
+          await RequirementsRepository().downloadFile(imgUrl, filePath);
           xFiles.add(XFile(filePath));
         }
         
@@ -13042,7 +13195,7 @@ class _CRMPropertyMatchesDrawerState extends State<_CRMPropertyMatchesDrawer> {
 
   Future<void> _logShareAction(PropertyModel p, bool isPhotoIncluded) async {
     try {
-      await DioClient.dio.post('/audit/share', data: {
+      await RequirementsRepository().logShareAction({
         'recordId': p.id,
         'clientMobile': widget.requirement.clientMobile,
         'requirementId': widget.requirement.id,
@@ -13815,9 +13968,9 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
 
   Future<void> _loadHistory() async {
     try {
-      final response = await DioClient.dio.get('/share-sessions/requirement/${widget.requirement.id}');
-      if (response.data != null && response.data['success'] == true) {
-        final list = response.data['data']['history'] ?? [];
+      final resData = await RequirementsRepository().getShareSessions(widget.requirement.id);
+      if (resData != null && resData['success'] == true) {
+        final list = resData['data']['history'] ?? [];
         
         int totalProps = 0;
         int views = 0;
@@ -13871,15 +14024,13 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
 
   Future<void> _revokeSession(String sessionId) async {
     try {
-      final response = await DioClient.dio.post('/share-sessions/$sessionId/revoke');
-      if (response.data != null && response.data['success'] == true) {
-        AppStatusSnackBar.show(
-          context,
-          message: "Share link revoked successfully.",
-          isSuccess: true,
-        );
-        _loadHistory();
-      }
+      await RequirementsRepository().revokeShareSession(sessionId);
+      AppStatusSnackBar.show(
+        context,
+        message: "Share link revoked successfully.",
+        isSuccess: true,
+      );
+      _loadHistory();
     } catch (e) {
       AppStatusSnackBar.show(
         context,

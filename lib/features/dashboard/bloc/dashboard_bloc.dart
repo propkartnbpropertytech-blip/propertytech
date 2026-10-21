@@ -138,28 +138,41 @@ class DashboardError extends DashboardState {
 
 class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   final DashboardRepository _dashboardRepository;
-  final DashboardService _dashboardService = DashboardService();
+  final DashboardService _dashboardService;
   StreamSubscription? _dashboardSubscription;
   StreamSubscription? _requirementsSubscription;
   StreamSubscription? _propertiesSubscription;
+  Timer? _streamDebounceTimer;
 
-  DashboardBloc({required DashboardRepository dashboardRepository})
-      : _dashboardRepository = dashboardRepository,
+  DashboardBloc({
+    required DashboardRepository dashboardRepository,
+    DashboardService? dashboardService,
+  })  : _dashboardRepository = dashboardRepository,
+        _dashboardService = dashboardService ?? DashboardService(),
         super(DashboardInitial()) {
     on<LoadDashboard>(_onLoadDashboard, transformer: _sequential());
-    on<RefreshDashboard>(_onRefreshDashboard, transformer: _sequential());
+    on<RefreshDashboard>(_onRefreshDashboard, transformer: _droppable());
     on<LoadDashboardKpis>(_onLoadDashboardKpis, transformer: _sequential());
     on<UpdateKpiFilter>(_onUpdateKpiFilter, transformer: _sequential());
     on<ToggleKpiConfig>(_onToggleKpiConfig, transformer: _sequential());
 
     _dashboardSubscription = RepositoryCoordinator().dashboardStream.listen((_) {
-      add(RefreshDashboard());
+      _debouncedStreamRefresh();
     });
     _requirementsSubscription = RepositoryCoordinator().requirementsStream.listen((_) {
-      add(RefreshDashboard());
+      _debouncedStreamRefresh();
     });
     _propertiesSubscription = RepositoryCoordinator().propertiesStream.listen((_) {
-      add(RefreshDashboard());
+      _debouncedStreamRefresh();
+    });
+  }
+
+  void _debouncedStreamRefresh() {
+    _streamDebounceTimer?.cancel();
+    _streamDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!isClosed) {
+        add(RefreshDashboard());
+      }
     });
   }
 
@@ -167,8 +180,42 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     return (events, mapper) => events.asyncExpand(mapper);
   }
 
+  EventTransformer<E> _droppable<E>() {
+    return (events, mapper) {
+      final controller = StreamController<dynamic>.broadcast(sync: true);
+      bool isBusy = false;
+      StreamSubscription<E>? sub;
+
+      controller.onListen = () {
+        sub = events.listen(
+          (event) {
+            if (!isBusy) {
+              isBusy = true;
+              mapper(event).listen(
+                controller.add,
+                onError: controller.addError,
+                onDone: () {
+                  isBusy = false;
+                },
+              );
+            }
+          },
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+      };
+
+      controller.onCancel = () {
+        sub?.cancel();
+      };
+
+      return controller.stream.cast();
+    };
+  }
+
   @override
   Future<void> close() {
+    _streamDebounceTimer?.cancel();
     _dashboardSubscription?.cancel();
     _requirementsSubscription?.cancel();
     _propertiesSubscription?.cancel();
@@ -197,7 +244,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     try {
       final futures = await Future.wait([
         _dashboardRepository.getDashboardData(),
-        _dashboardService.getDashboardKpis(currentFilters),
+        _dashboardRepository.getDashboardKpis(currentFilters),
       ]);
 
       final data = futures[0] as DashboardData;
@@ -230,6 +277,9 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     Emitter<DashboardState> emit,
   ) async {
     final currentState = state;
+    if (currentState is DashboardRefreshing) {
+      return;
+    }
     KpiFilterParams currentFilters = const KpiFilterParams();
     DashboardKpisResponse? existingKpis;
 
@@ -248,7 +298,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     try {
       final futures = await Future.wait([
         _dashboardRepository.getDashboardData(forceRefresh: true),
-        _dashboardService.getDashboardKpis(currentFilters),
+        _dashboardRepository.getDashboardKpis(currentFilters),
       ]);
 
       final data = futures[0] as DashboardData;
@@ -287,7 +337,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       ));
 
       try {
-        final kpis = await _dashboardService.getDashboardKpis(event.filters);
+        final kpis = await _dashboardRepository.getDashboardKpis(event.filters);
         emit(currentState.copyWith(
           kpis: kpis,
           kpiFilters: event.filters,
@@ -304,7 +354,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         isKpiLoading: true,
       ));
       try {
-        final kpis = await _dashboardService.getDashboardKpis(event.filters);
+        final kpis = await _dashboardRepository.getDashboardKpis(event.filters);
         emit(DashboardLoadedState(
           data: currentState.data,
           kpis: kpis,
@@ -372,7 +422,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
 
     // Persist to backend
     final payload = updatedConfig.map((c) => c.toJson()).toList();
-    final ok = await _dashboardService.updateKpiConfig(payload);
+    final ok = await _dashboardRepository.updateKpiConfig(payload);
     if (!ok) {
       // Revert if failed
       emit(currentState.copyWith(kpis: existingKpis));

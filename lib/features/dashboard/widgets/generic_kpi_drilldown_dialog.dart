@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/theme_manager.dart';
-import '../services/dashboard_service.dart';
+import '../repository/dashboard_repository.dart';
 
 class GenericKpiDrilldownDialog extends StatefulWidget {
   final String kpiKey;
@@ -39,7 +39,7 @@ class GenericKpiDrilldownDialog extends StatefulWidget {
 }
 
 class _GenericKpiDrilldownDialogState extends State<GenericKpiDrilldownDialog> {
-  final DashboardService _service = DashboardService();
+  final DashboardRepository _service = DashboardRepository();
   bool _isLoading = true;
   String _errorMessage = '';
   Map<String, dynamic> _drilldownData = {};
