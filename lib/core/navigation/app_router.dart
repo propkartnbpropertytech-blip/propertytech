@@ -367,7 +367,10 @@ class AppRouter {
             path: '/campaign/housing',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const CampaignLeadsScreen(portalTabId: 'housing'),
+              child: const CampaignLeadsScreen(
+                portalTabId: 'housing',
+                lockSource: 'Housing.com',
+              ),
             ),
           ),
           GoRoute(

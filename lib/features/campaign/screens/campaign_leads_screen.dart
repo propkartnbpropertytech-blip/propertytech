@@ -110,6 +110,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   Timer? _uiDebounce;
   StreamSubscription<Map<String, dynamic>>? _leadEventsSub;
 
+  String? get _effectiveLockSource {
+    final explicitLock = widget.lockSource;
+    if (explicitLock != null && explicitLock.isNotEmpty) {
+      return explicitLock;
+    }
+    if (widget.portalTabId?.toLowerCase() == 'housing') {
+      return 'Housing.com';
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -119,12 +130,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         unawaited(_loadFollowups());
       }
     }
-    if (widget.lockSource != null && widget.lockSource!.isNotEmpty) {
-      _selectedSourceFilter = widget.lockSource!;
+    if (_effectiveLockSource != null) {
+      _selectedSourceFilter = _effectiveLockSource!;
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
       _selectedSourceFilter = widget.initialSource!;
     }
-    final incomingLock = (widget.lockSource ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
+    final incomingLock = (_effectiveLockSource ?? widget.initialSource ?? '').toLowerCase();
     if (incomingLock.contains('meta') || incomingLock.contains('housing')) {
       _selectedDateFilter = CampaignDateFilter.allTime;
     }
@@ -139,7 +150,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.ensureLoaded();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final curLock = (widget.lockSource ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
+      final curLock = (_effectiveLockSource ?? widget.initialSource ?? '').toLowerCase();
       if (curLock.contains('meta') || curLock.contains('housing')) {
         _selectedDateFilter = CampaignDateFilter.allTime;
         context.read<CampaignLeadsBloc>().add(
@@ -229,10 +240,14 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   @override
   void didUpdateWidget(CampaignLeadsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.lockSource != oldWidget.lockSource && widget.lockSource != null) {
-      final updatedLock = widget.lockSource!.toLowerCase();
+    final currentLock = _effectiveLockSource;
+    final oldEffectiveLock = (oldWidget.lockSource != null && oldWidget.lockSource!.isNotEmpty)
+        ? oldWidget.lockSource
+        : (oldWidget.portalTabId?.toLowerCase() == 'housing' ? 'Housing.com' : null);
+    if (currentLock != oldEffectiveLock && currentLock != null) {
+      final updatedLock = currentLock.toLowerCase();
       setState(() {
-        _selectedSourceFilter = widget.lockSource!;
+        _selectedSourceFilter = _effectiveLockSource!;
         if (updatedLock.contains('meta') || updatedLock.contains('housing')) {
           _selectedDateFilter = CampaignDateFilter.allTime;
         }
@@ -261,7 +276,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   Future<void> _bootstrapLockedSource() async {
-    final locked = widget.lockSource ?? '';
+    final locked = _effectiveLockSource ?? '';
     await _service.fetchServerLeads(
       silent: true,
       resetWithServer: true,
@@ -511,8 +526,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       if (requirement == 0 && listing == 0) return;
       _selectedSection = requirement >= listing ? 'Requirement' : 'Property Listing';
       _persistedSection = _selectedSection;
-    } else if (widget.lockSource != null && widget.lockSource!.isNotEmpty) {
-      final curSource = widget.lockSource!;
+    } else if (_effectiveLockSource != null) {
+      final curSource = _effectiveLockSource!;
       final scoped = _service.leads
           .where((l) => IntegrationService.matchesCampaignSource(l.source, curSource))
           .toList();
@@ -580,7 +595,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       }
     }
 
-    final sourceFilter = widget.lockSource ?? _selectedSourceFilter;
+    final sourceFilter = _effectiveLockSource ?? _selectedSourceFilter;
     final scopedLeads = currentLeads
         .where((l) => IntegrationService.matchesCampaignSource(l.source, sourceFilter))
         .toList();
@@ -938,7 +953,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   List<IntegrationLeadModel> get _scopedLeads {
-    final filter = widget.lockSource ?? _selectedSourceFilter;
+    final filter = _effectiveLockSource ?? _selectedSourceFilter;
     return _service.leads.where((l) => IntegrationService.matchesCampaignSource(l.source, filter)).toList();
   }
 
@@ -986,7 +1001,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final endIndex = (startIndex + _pageSize).clamp(0, leads.length);
     final pageLeads = leads.isEmpty ? const <IntegrationLeadModel>[] : leads.sublist(startIndex, endIndex);
 
-    final curSrc = (widget.lockSource ?? _selectedSourceFilter).toUpperCase().trim();
+    final curSrc = (_effectiveLockSource ?? _selectedSourceFilter).toUpperCase().trim();
     final isMetaPage = curSrc == 'META' || curSrc == 'META ADS' || curSrc == 'FACEBOOK';
     final isHousingPage = (widget.portalTabId?.toLowerCase() == 'housing') || curSrc == 'HOUSING' || curSrc == 'HOUSING.COM';
     final isMetaOrHousingPage = isMetaPage || isHousingPage;
@@ -1076,11 +1091,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 // Page Header
                 CampaignSubshellHeader(
                   activeTab: widget.portalTabId ??
-                      ((widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'HOUSING.COM' ||
-                              (widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'HOUSING'
+                      ((_effectiveLockSource ?? _selectedSourceFilter).toUpperCase() == 'HOUSING.COM' ||
+                              (_effectiveLockSource ?? _selectedSourceFilter).toUpperCase() == 'HOUSING'
                           ? 'housing'
-                          : ((widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'META ADS' ||
-                                  (widget.lockSource ?? _selectedSourceFilter).toUpperCase() == 'META'
+                          : ((_effectiveLockSource ?? _selectedSourceFilter).toUpperCase() == 'META ADS' ||
+                                  (_effectiveLockSource ?? _selectedSourceFilter).toUpperCase() == 'META'
                               ? 'meta'
                               : 'connections')),
                   trailing: _buildHeaderActions(context),
@@ -1128,7 +1143,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   const SizedBox(height: CRMSpacing.m),
                 ],
 
-                if (widget.lockSource == null) ...[
+                if (_effectiveLockSource == null) ...[
                   _buildKpiMetricsRow(context, totalLeads, uniqueLeads, dupLeads, importedCount),
                   const SizedBox(height: CRMSpacing.m),
                 ],
@@ -1170,7 +1185,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ? null
           : () async {
               if (!isTelecaller) {
-                final locked = widget.lockSource ?? '';
+                final locked = _effectiveLockSource ?? '';
                 if (locked.toUpperCase().contains('HOUSING')) {
                   await _service.syncHousingLeads();
                 } else {
@@ -1353,7 +1368,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
     );
 
-    if (widget.lockSource != null) {
+    if (_effectiveLockSource != null) {
       if (isMobile) {
         return Wrap(
           spacing: 8,
@@ -7289,7 +7304,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ? 'Meta'
         : (isHousing
             ? 'Housing'
-            : (widget.lockSource ?? (_selectedSourceFilter == 'All' ? 'All Campaigns' : _selectedSourceFilter)));
+            : (_effectiveLockSource ?? (_selectedSourceFilter == 'All' ? 'All Campaigns' : _selectedSourceFilter)));
     final allSourceLeads = _scopedLeads;
 
     // Resolve human-readable date filter label
@@ -9768,7 +9783,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               const SizedBox(height: CRMSpacing.s),
               searchInput,
               const SizedBox(height: CRMSpacing.s),
-              if (widget.lockSource == null) sourceDropdown,
+              if (_effectiveLockSource == null) sourceDropdown,
               if (TeamUserVisibility.canUseFilter(currentRole)) ...[
                 const SizedBox(height: CRMSpacing.s),
                 userDropdown,
@@ -9779,7 +9794,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               Row(
                 children: [
                   Expanded(flex: 3, child: searchInput),
-                  if (widget.lockSource == null) ...[
+                  if (_effectiveLockSource == null) ...[
                     const SizedBox(width: CRMSpacing.m),
                     Flexible(child: sourceDropdown),
                   ],
