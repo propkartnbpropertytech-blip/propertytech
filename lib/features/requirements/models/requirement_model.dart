@@ -51,6 +51,7 @@ class RequirementModel {
   final Map<String, dynamic>? metaCustomFields;
   final String? leadQuality;
   final String? assignedTelecallerId;
+  String? get telecallerId => assignedTelecallerId;
   final DateTime? salesAssignedAt;
   final String? rejectionRemark;
 

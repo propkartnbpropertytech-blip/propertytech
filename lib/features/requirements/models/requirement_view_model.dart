@@ -236,23 +236,69 @@ class RequirementListItemViewModel {
 
   static bool _checkUserAssignee(RequirementModel r, dynamic user) {
     if (user == null) return false;
-    final uid = user is UserModel ? user.id : (user is users_model.UserModel ? user.id : '');
+    final uid = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString())).trim();
     if (uid.isNotEmpty) {
-      if (r.assignedTo != null && r.assignedTo == uid) return true;
+      if (r.assignedTo != null && r.assignedTo!.isNotEmpty) {
+        return r.assignedTo == uid;
+      }
       final metaAssigned = r.metaCustomFields?['assigned_to']?.toString().trim();
-      if (metaAssigned != null && metaAssigned.isNotEmpty && metaAssigned == uid) return true;
-      final transfer = r.metaCustomFields?['_transfer'];
-      if (transfer is Map && transfer['assigned_to']?.toString().trim() == uid) return true;
+      if (metaAssigned != null && metaAssigned.isNotEmpty) return metaAssigned == uid;
     }
     final uName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
     if (uName.isNotEmpty) {
-      if (r.assignedTo != null && r.assignedTo!.trim().toLowerCase() == uName) return true;
-      if (r.assigneeName != null && r.assigneeName!.trim().toLowerCase() == uName) return true;
-      final metaAssignedName = r.metaCustomFields?['assigned_to_name']?.toString().trim().toLowerCase();
-      if (metaAssignedName != null && metaAssignedName.isNotEmpty && metaAssignedName == uName) return true;
-      final transfer = r.metaCustomFields?['_transfer'];
-      if (transfer is Map && transfer['assigned_to_name']?.toString().trim().toLowerCase() == uName) return true;
+      if (r.assignedTo != null && r.assignedTo!.trim().isNotEmpty) {
+        return r.assignedTo!.trim().toLowerCase() == uName;
+      }
+      if (r.assigneeName != null && r.assigneeName!.trim().isNotEmpty) {
+        return r.assigneeName!.trim().toLowerCase() == uName;
+      }
     }
+    return false;
+  }
+
+  /// Returns true ONLY if this lead was directly allocated to the Salesperson
+  /// through the Admin's Salesperson lead allocation configuration (when Salesperson toggle was ON).
+  /// Excludes leads assigned through the Telecaller workflow, leads manually added by the Salesperson,
+  /// or leads belonging to other staff.
+  static bool isDirectSalesCampaignLead(RequirementModel r, dynamic user) {
+    if (user == null) return false;
+    final uid = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString())).trim();
+    if (uid.isEmpty) return false;
+
+    // 1. Must be currently assigned to this user
+    if (!_checkUserAssignee(r, user)) return false;
+
+    // 2. Must not be manually created by this user
+    if (_checkUserCreator(r, user)) return false;
+
+    // 3. Must be a campaign lead or tagged with direct sales allocation
+    final isCamp = r.isCampaignLead ||
+        (r.metaCustomFields != null &&
+            (r.metaCustomFields!['direct_sales_allocated'] == true ||
+             r.metaCustomFields!['direct_sales_allocated'] == 'true'));
+    if (!isCamp) return false;
+
+    // 4. Must NOT be from the Telecaller workflow
+    if (_isTelecallerWorkflowLead(r)) return false;
+
+    return true;
+  }
+
+  static bool _isTelecallerWorkflowLead(RequirementModel r) {
+    if (r.assignedTelecallerId != null && r.assignedTelecallerId!.trim().isNotEmpty) return true;
+
+    final meta = r.metaCustomFields;
+    if (meta != null) {
+      if (meta['_transfer'] != null) return true;
+      if (meta['telecaller_id'] != null && meta['telecaller_id'].toString().trim().isNotEmpty) return true;
+      if (meta['assigned_telecaller_id'] != null && meta['assigned_telecaller_id'].toString().trim().isNotEmpty) return true;
+      if (meta['telecaller_by'] != null && meta['telecaller_by'].toString().trim().isNotEmpty) return true;
+      if (meta['telecaller_by_id'] != null && meta['telecaller_by_id'].toString().trim().isNotEmpty) return true;
+      if (meta['telecaller_name'] != null && meta['telecaller_name'].toString().trim().isNotEmpty) return true;
+      if (meta['interacted_by'] != null && meta['interacted_by'].toString().trim().isNotEmpty) return true;
+      if (meta['telecaller_status'] != null && meta['telecaller_status'].toString().trim().isNotEmpty) return true;
+    }
+
     return false;
   }
 
@@ -506,11 +552,10 @@ class RequirementFilterEngine {
             if (salesLeadGroupFilter == 'assigned') {
               final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
               final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
-              if (!isAssigned || isCreator || r.isCampaignLead) continue;
+              final isDirectCamp = RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser);
+              if (!isAssigned || isCreator || isDirectCamp) continue;
             } else if (salesLeadGroupFilter == 'campaign') {
-              final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
-              final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
-              if (!isAssigned || isCreator || !r.isCampaignLead) continue;
+              if (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) continue;
             } else if (salesLeadGroupFilter == 'added') {
               if (!RequirementListItemViewModel._checkUserCreator(r, currentUser)) continue;
             }
@@ -618,16 +663,16 @@ class RequirementFilterEngine {
                 final isAssigned = selectedSales != null
                     ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
                         !RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
-                        !r.isCampaignLead)
-                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId && !r.isCampaignLead);
+                        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales))
+                    : (RequirementListItemViewModel._checkUserAssignee(r, selectedSalesFilterId) &&
+                        r.createdBy != selectedSalesFilterId &&
+                        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId));
                 if (!isAssigned) continue;
               } else if (salesLeadGroupFilter == 'campaign') {
-                final isCampaign = selectedSales != null
-                    ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
-                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
-                        r.isCampaignLead)
-                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId && r.isCampaignLead);
-                if (!isCampaign) continue;
+                final isDirectCamp = selectedSales != null
+                    ? RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales)
+                    : RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId);
+                if (!isDirectCamp) continue;
               } else if (salesLeadGroupFilter == 'added') {
                 final isCreator = selectedSales != null
                     ? RequirementListItemViewModel._checkUserCreator(r, selectedSales)

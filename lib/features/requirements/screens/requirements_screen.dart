@@ -2312,9 +2312,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       if (!matchesSales) return false;
       if (_activeMainTab == 'Leads' && _salesLeadGroupFilter != 'all' && selectedSales.roleName.toLowerCase().contains('sales')) {
         if (_salesLeadGroupFilter == 'assigned') {
-          if (!(_isUserAssignee(r, selectedSales) && !_isUserCreator(r, selectedSales) && !r.isCampaignLead)) return false;
+          if (!(_isUserAssignee(r, selectedSales) &&
+              !_isUserCreator(r, selectedSales) &&
+              !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales))) return false;
         } else if (_salesLeadGroupFilter == 'campaign') {
-          if (!(_isUserAssignee(r, selectedSales) && !_isUserCreator(r, selectedSales) && r.isCampaignLead)) return false;
+          if (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales)) return false;
         } else if (_salesLeadGroupFilter == 'added') {
           if (!_isUserCreator(r, selectedSales)) return false;
         }
@@ -5070,22 +5072,22 @@ _recomputeFilteredRequirements();
 
   bool _isUserAssignee(RequirementModel r, dynamic user) {
     if (user == null) return false;
-    final userId = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString()));
-    final userName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
+    final userId = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString())).trim();
     if (userId.isNotEmpty) {
-      if (r.assignedTo != null && r.assignedTo!.isNotEmpty && r.assignedTo == userId) return true;
+      if (r.assignedTo != null && r.assignedTo!.isNotEmpty) {
+        return r.assignedTo == userId;
+      }
       final metaAssigned = r.metaCustomFields?['assigned_to']?.toString().trim();
-      if (metaAssigned != null && metaAssigned.isNotEmpty && metaAssigned == userId) return true;
-      final transfer = r.metaCustomFields?['_transfer'];
-      if (transfer is Map && transfer['assigned_to']?.toString().trim() == userId) return true;
+      if (metaAssigned != null && metaAssigned.isNotEmpty) return metaAssigned == userId;
     }
+    final userName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
     if (userName.isNotEmpty) {
-      if (r.assignedTo != null && r.assignedTo!.trim().toLowerCase() == userName) return true;
-      if (r.assigneeName != null && r.assigneeName!.trim().toLowerCase() == userName) return true;
-      final metaAssignedName = r.metaCustomFields?['assigned_to_name']?.toString().trim().toLowerCase();
-      if (metaAssignedName != null && metaAssignedName.isNotEmpty && metaAssignedName == userName) return true;
-      final transfer = r.metaCustomFields?['_transfer'];
-      if (transfer is Map && transfer['assigned_to_name']?.toString().trim().toLowerCase() == userName) return true;
+      if (r.assignedTo != null && r.assignedTo!.trim().isNotEmpty) {
+        return r.assignedTo!.trim().toLowerCase() == userName;
+      }
+      if (r.assigneeName != null && r.assigneeName!.trim().isNotEmpty) {
+        return r.assigneeName!.trim().toLowerCase() == userName;
+      }
     }
     return false;
   }
@@ -5551,7 +5553,7 @@ _recomputeFilteredRequirements();
         _isUserAssignee(r, targetSalesUser) &&
         !_isUserCreator(r, targetSalesUser) &&
         !_isLeadTransferredAway(r, targetSalesUser) &&
-        !r.isCampaignLead &&
+        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, targetSalesUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
@@ -5564,10 +5566,7 @@ _recomputeFilteredRequirements();
 
     final campaignCount = activeTabReqs.where((r) =>
         (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
-        _isUserAssignee(r, targetSalesUser) &&
-        !_isUserCreator(r, targetSalesUser) &&
-        !_isLeadTransferredAway(r, targetSalesUser) &&
-        r.isCampaignLead &&
+        RequirementListItemViewModel.isDirectSalesCampaignLead(r, targetSalesUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
