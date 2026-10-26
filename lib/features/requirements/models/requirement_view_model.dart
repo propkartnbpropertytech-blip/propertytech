@@ -506,7 +506,11 @@ class RequirementFilterEngine {
             if (salesLeadGroupFilter == 'assigned') {
               final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
               final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
-              if (!isAssigned || isCreator) continue;
+              if (!isAssigned || isCreator || r.isCampaignLead) continue;
+            } else if (salesLeadGroupFilter == 'campaign') {
+              final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
+              final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
+              if (!isAssigned || isCreator || !r.isCampaignLead) continue;
             } else if (salesLeadGroupFilter == 'added') {
               if (!RequirementListItemViewModel._checkUserCreator(r, currentUser)) continue;
             }
@@ -613,9 +617,17 @@ class RequirementFilterEngine {
               if (salesLeadGroupFilter == 'assigned') {
                 final isAssigned = selectedSales != null
                     ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
-                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales))
-                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId);
+                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
+                        !r.isCampaignLead)
+                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId && !r.isCampaignLead);
                 if (!isAssigned) continue;
+              } else if (salesLeadGroupFilter == 'campaign') {
+                final isCampaign = selectedSales != null
+                    ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
+                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
+                        r.isCampaignLead)
+                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId && r.isCampaignLead);
+                if (!isCampaign) continue;
               } else if (salesLeadGroupFilter == 'added') {
                 final isCreator = selectedSales != null
                     ? RequirementListItemViewModel._checkUserCreator(r, selectedSales)

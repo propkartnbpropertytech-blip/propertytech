@@ -234,21 +234,31 @@ class RequirementModel {
   }
 
   String? get leadSourceDisplay {
+    final cName = (metaCampaignName != null && metaCampaignName!.trim().isNotEmpty)
+        ? metaCampaignName!.trim()
+        : null;
+
     if (isMetaLead) {
-      if (metaCampaignName != null && metaCampaignName!.isNotEmpty) {
-        return 'Meta Ads ($metaCampaignName)';
+      if (cName != null) {
+        return 'Meta Ads ($cName)';
       }
       return 'Meta Ads';
     }
     final src = (leadSource != null && leadSource!.trim().isNotEmpty)
         ? leadSource!.trim()
         : null;
-    if (src == null) return null;
+    if (src == null) {
+      if (cName != null) return cName;
+      return null;
+    }
     if (src.toLowerCase() == 'referral' || src.toLowerCase() == 'referrel') {
       if (referralName != null && referralName!.trim().isNotEmpty) {
         return 'Referral (${referralName!.trim()})';
       }
       return 'Referral';
+    }
+    if (cName != null && !src.toLowerCase().contains(cName.toLowerCase())) {
+      return '$src ($cName)';
     }
     return src;
   }
@@ -718,7 +728,15 @@ class RequirementModel {
       metaPageId: (json['meta_page_id'] ?? json['metaPageId'])?.toString(),
       metaFormId: (json['meta_form_id'] ?? json['metaFormId'])?.toString(),
       metaCampaignId: (json['meta_campaign_id'] ?? json['metaCampaignId'])?.toString(),
-      metaCampaignName: (json['meta_campaign_name'] ?? json['metaCampaignName'])?.toString(),
+      metaCampaignName: (json['meta_campaign_name'] ??
+          json['metaCampaignName'] ??
+          json['campaign_name'] ??
+          json['campaignName'] ??
+          (json['meta_custom_fields'] is Map
+              ? (json['meta_custom_fields']['campaign_name'] ??
+                  json['meta_custom_fields']['campaign'] ??
+                  json['meta_custom_fields']['project_name'])
+              : null))?.toString(),
       metaAdsetId: (json['meta_adset_id'] ?? json['metaAdsetId'])?.toString(),
       metaAdsetName: (json['meta_adset_name'] ?? json['metaAdsetName'])?.toString(),
       metaAdId: (json['meta_ad_id'] ?? json['metaAdId'])?.toString(),

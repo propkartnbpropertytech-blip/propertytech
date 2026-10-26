@@ -1,3 +1,4 @@
+import '../../../core/security/role_guard.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -211,10 +212,14 @@ class TelecallerShiftManager {
       _resetInactivityTimer();
     }
 
+    _shiftCheckTimer?.cancel();
     if (!isSales) {
-      _shiftCheckTimer?.cancel();
       _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
         _checkShiftLockout();
+        _checkAvailabilityStatus();
+      });
+    } else {
+      _shiftCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _checkAvailabilityStatus();
       });
     }
@@ -320,6 +325,10 @@ class TelecallerShiftManager {
   }
 
   Future<bool> toggleAvailability(bool shouldBeActive) async {
+    if (RoleGuard.isSales(RoleGuard.currentUser?.role)) {
+      debugPrint('[TelecallerShiftManager] Salesperson cannot change lead allocation availability.');
+      return false;
+    }
     if (shouldBeActive && isShiftLockedOutNotifier.value) {
       debugPrint('[TelecallerShiftManager] Cannot activate: 9-hour daily shift limit reached.');
       return false;

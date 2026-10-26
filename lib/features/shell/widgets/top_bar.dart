@@ -840,7 +840,11 @@ class _ModernTopBarState extends State<ModernTopBar> {
             children: [
               // Telecaller 2-State Availability Switch (ACTIVE / INACTIVE)
               if (RoleGuard.isTelecaller(widget.userRole) || RoleGuard.isSales(widget.userRole)) ...[
-                TelecallerAvailabilityToggle(compact: isMobile),
+                TelecallerAvailabilityToggle(
+                  compact: isMobile,
+                  isReadOnly: RoleGuard.isSales(widget.userRole),
+                  showTimer: !RoleGuard.isSales(widget.userRole),
+                ),
                 const SizedBox(width: 8),
               ],
               if (!isMobile) ...[

@@ -1095,7 +1095,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
     if (widget.initialGroup != null && widget.initialGroup!.isNotEmpty) {
       final g = widget.initialGroup!.toLowerCase();
-      _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : widget.initialGroup!;
+      _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads')
+          ? 'all'
+          : (g == 'campaign' || g == 'campaign_leads' || g == 'campaign-leads')
+              ? 'campaign'
+              : widget.initialGroup!;
     }
     if (widget.initialStatus != null && widget.initialStatus!.isNotEmpty) {
       _selectedStatus = widget.initialStatus!.toLowerCase() == 'all' ? 'All' : widget.initialStatus!;
@@ -1184,7 +1188,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         final groupParam = uri.queryParameters['group'];
         if (groupParam != null && groupParam.isNotEmpty) {
           final g = groupParam.toLowerCase();
-          final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : groupParam;
+          final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads')
+              ? 'all'
+              : (g == 'campaign' || g == 'campaign_leads' || g == 'campaign-leads')
+                  ? 'campaign'
+                  : groupParam;
           if (_salesLeadGroupFilter != targetGroup) {
             setState(() {
               _salesLeadGroupFilter = targetGroup;
@@ -1318,7 +1326,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         widget.initialGroup!.isNotEmpty) {
       final g = widget.initialGroup!.toLowerCase();
       setState(() {
-        _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : widget.initialGroup!;
+        _salesLeadGroupFilter = (g == 'all' || g == 'active' || g == 'my_active_leads')
+            ? 'all'
+            : (g == 'campaign' || g == 'campaign_leads' || g == 'campaign-leads')
+                ? 'campaign'
+                : widget.initialGroup!;
       });
     }
     if (widget.initialStatus != oldWidget.initialStatus &&
@@ -1391,7 +1403,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       final groupParam = uri.queryParameters['group'];
       if (groupParam != null && groupParam.isNotEmpty) {
         final g = groupParam.toLowerCase();
-        final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads') ? 'all' : groupParam;
+        final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads')
+            ? 'all'
+            : (g == 'campaign' || g == 'campaign_leads' || g == 'campaign-leads')
+                ? 'campaign'
+                : groupParam;
         if (_salesLeadGroupFilter != targetGroup) {
           setState(() {
             _salesLeadGroupFilter = targetGroup;
@@ -2296,7 +2312,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       if (!matchesSales) return false;
       if (_activeMainTab == 'Leads' && _salesLeadGroupFilter != 'all' && selectedSales.roleName.toLowerCase().contains('sales')) {
         if (_salesLeadGroupFilter == 'assigned') {
-          if (!(_isUserAssignee(r, selectedSales) && !_isUserCreator(r, selectedSales))) return false;
+          if (!(_isUserAssignee(r, selectedSales) && !_isUserCreator(r, selectedSales) && !r.isCampaignLead)) return false;
+        } else if (_salesLeadGroupFilter == 'campaign') {
+          if (!(_isUserAssignee(r, selectedSales) && !_isUserCreator(r, selectedSales) && r.isCampaignLead)) return false;
         } else if (_salesLeadGroupFilter == 'added') {
           if (!_isUserCreator(r, selectedSales)) return false;
         }
@@ -3187,9 +3205,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     if (req.leadSourceDisplay != null && req.leadSourceDisplay!.isNotEmpty) ...[
                       const SizedBox(width: 6),
                       Icon(
-                        req.isMetaLead ? Icons.campaign_rounded : Icons.hub_outlined,
+                        req.isCampaignLead ? Icons.campaign_rounded : Icons.hub_outlined,
                         size: 13,
-                        color: req.isMetaLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade600,
+                        color: req.isCampaignLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade600,
                       ),
                       const SizedBox(width: 3),
                       Text(
@@ -3197,7 +3215,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: req.isMetaLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade700,
+                          color: req.isCampaignLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade700,
                         ),
                       ),
                     ],
@@ -5533,6 +5551,7 @@ _recomputeFilteredRequirements();
         _isUserAssignee(r, targetSalesUser) &&
         !_isUserCreator(r, targetSalesUser) &&
         !_isLeadTransferredAway(r, targetSalesUser) &&
+        !r.isCampaignLead &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
@@ -5540,6 +5559,15 @@ _recomputeFilteredRequirements();
         (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
         _isUserCreator(r, targetSalesUser) &&
         !_isLeadTransferredAway(r, targetSalesUser) &&
+        r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
+    ).length;
+
+    final campaignCount = activeTabReqs.where((r) =>
+        (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
+        _isUserAssignee(r, targetSalesUser) &&
+        !_isUserCreator(r, targetSalesUser) &&
+        !_isLeadTransferredAway(r, targetSalesUser) &&
+        r.isCampaignLead &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
@@ -5581,6 +5609,13 @@ _recomputeFilteredRequirements();
               icon: Icons.person_add_alt_1_rounded,
               value: 'added',
               count: addedCount,
+            ),
+            const SizedBox(width: 6),
+            _buildSalesGroupFilterButton(
+              label: isForOtherUser ? 'Campaign Leads ($firstName)' : 'Campaign Leads',
+              icon: Icons.campaign_rounded,
+              value: 'campaign',
+              count: campaignCount,
             ),
           ],
         ),
@@ -9121,15 +9156,15 @@ _recomputeFilteredRequirements();
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              req.isMetaLead ? Icons.campaign_rounded : Icons.hub_outlined,
+                              req.isCampaignLead ? Icons.campaign_rounded : Icons.hub_outlined,
                               size: 13,
-                              color: req.isMetaLead ? const Color(0xFF1877F2) : CRMColors.textMutedOf(context),
+                              color: req.isCampaignLead ? const Color(0xFF1877F2) : CRMColors.textMutedOf(context),
                             ),
                             const SizedBox(width: 4),
                             Text(
                               'Source: ${req.leadSourceDisplay}',
                               style: TextStyle(
-                                color: req.isMetaLead ? const Color(0xFF1877F2) : CRMColors.textSecondaryOf(context),
+                                color: req.isCampaignLead ? const Color(0xFF1877F2) : CRMColors.textSecondaryOf(context),
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
                               ),
