@@ -86,10 +86,12 @@ class RequirementListItemViewModel {
     // 2. Effective status & mapped status
     final now = relativeNow ?? DateTime.now();
     String effStatus = r.status;
-    if (effStatus == 'New' || effStatus.isEmpty) {
-      if (now.difference(r.createdAt) >= const Duration(hours: 24)) {
+    if ((effStatus == 'New' || effStatus.isEmpty) && r.isManuallyAdded) {
+      final bool alreadyTransitioned = r.metaCustomFields?['auto_transitioned_to_not_started'] == true ||
+          r.metaCustomFields?['auto_transitioned_to_not_started'] == 'true';
+      if (!alreadyTransitioned && now.difference(r.createdAt) >= const Duration(hours: 24)) {
         effStatus = 'Not Started';
-      } else {
+      } else if (!alreadyTransitioned) {
         effStatus = 'New';
       }
     }
@@ -142,8 +144,9 @@ class RequirementListItemViewModel {
         ? '₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}'
         : 'Budget on Request';
 
-    // Date text
-    final String dateStr = DateFormat("dd MMM ''yy, h:mm a").format(r.createdAt.toLocal());
+    // Date text (use transfer date for transferred leads)
+    final effectiveLeadDate = (r.salesAssignedAt ?? r.createdAt).toLocal();
+    final String dateStr = DateFormat("dd MMM ''yy, h:mm a").format(effectiveLeadDate);
 
     // Specs text
     final String specs = '${r.propertyTypeName} (${(r.configurationName != null && r.configurationName!.isNotEmpty) ? r.configurationName : "Any Config"})';
@@ -166,7 +169,7 @@ class RequirementListItemViewModel {
       }
     }
 
-    final localCreated = r.createdAt.toLocal();
+    final localCreated = (r.salesAssignedAt ?? r.createdAt).toLocal();
     final dtForFilter = rejDate ?? localCreated;
     final int sortMillis = (rejDate ?? r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
     final int normSortMillis = (r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
@@ -234,11 +237,21 @@ class RequirementListItemViewModel {
   static bool _checkUserAssignee(RequirementModel r, dynamic user) {
     if (user == null) return false;
     final uid = user is UserModel ? user.id : (user is users_model.UserModel ? user.id : '');
-    if (r.assignedTo != null && r.assignedTo == uid) return true;
+    if (uid.isNotEmpty) {
+      if (r.assignedTo != null && r.assignedTo == uid) return true;
+      final metaAssigned = r.metaCustomFields?['assigned_to']?.toString().trim();
+      if (metaAssigned != null && metaAssigned.isNotEmpty && metaAssigned == uid) return true;
+      final transfer = r.metaCustomFields?['_transfer'];
+      if (transfer is Map && transfer['assigned_to']?.toString().trim() == uid) return true;
+    }
     final uName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
     if (uName.isNotEmpty) {
       if (r.assignedTo != null && r.assignedTo!.trim().toLowerCase() == uName) return true;
       if (r.assigneeName != null && r.assigneeName!.trim().toLowerCase() == uName) return true;
+      final metaAssignedName = r.metaCustomFields?['assigned_to_name']?.toString().trim().toLowerCase();
+      if (metaAssignedName != null && metaAssignedName.isNotEmpty && metaAssignedName == uName) return true;
+      final transfer = r.metaCustomFields?['_transfer'];
+      if (transfer is Map && transfer['assigned_to_name']?.toString().trim().toLowerCase() == uName) return true;
     }
     return false;
   }
@@ -462,6 +475,15 @@ class RequirementFilterEngine {
         continue;
       }
 
+      // 0. Campaign leads (Housing, Meta, Webhook, Portal, etc.) MUST NOT appear on the Leads page until assigned to a Salesperson.
+      if (r.isCampaignLead) {
+        final assigned = r.assignedTo?.trim();
+        final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+        if (!hasAssignedSalesperson) {
+          continue;
+        }
+      }
+
       // 1. Leads Added by Me check
       if (isLeadsAddedByMe) {
         if (currentUser == null || !RequirementListItemViewModel._checkUserCreator(r, currentUser)) {
@@ -654,7 +676,7 @@ class RequirementFilterEngine {
       }
 
       // 12. Date filter
-      final dt = isRejectedTab ? vm.filterDate : vm.requirement.createdAt.toLocal();
+      final dt = isRejectedTab ? vm.filterDate : (vm.requirement.salesAssignedAt != null ? vm.requirement.salesAssignedAt!.toLocal() : vm.requirement.createdAt.toLocal());
       bool matchesDate = true;
       switch (datePreset) {
         case LeadDateFilterPreset.today:

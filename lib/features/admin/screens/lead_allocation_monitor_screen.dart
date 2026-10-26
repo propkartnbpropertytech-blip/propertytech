@@ -1,3 +1,4 @@
+import 'package:go_router/go_router.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -126,6 +127,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
         final queue = Map<String, dynamic>.from(state.data['queue'] ?? {});
         final telecallers = List<dynamic>.from(state.data['telecallers'] ?? []);
         final history = List<dynamic>.from(state.data['recentAssignments'] ?? []);
+        final bool isSalesMode = (state.data['targetRole'] ?? 'Telecaller').toString().toLowerCase() == 'sales';
 
         if (CRMBreakpoints.isPhone(context)) {
           return MobileScreenScaffold(
@@ -133,7 +135,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
             onRefresh: () async {
               context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
             },
-            body: _buildMobileLayout(context, state, queue, telecallers, history),
+            body: _buildMobileLayout(context, state, queue, telecallers, history, isSalesMode: isSalesMode),
           );
         }
 
@@ -155,6 +157,21 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   ),
                   Row(
                     children: [
+                      OutlinedButton.icon(
+                        onPressed: () => context.push('/admin/lead-allocation/configure'),
+                        icon: const Icon(Icons.tune_rounded, size: 16),
+                        label: const Text(
+                          'Configure',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6366F1),
+                          side: const BorderSide(color: Color(0xFF6366F1), width: 1.2),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       Builder(
                         builder: (ctx) {
                           final bool isEngineOn = state.data['engineEnabled'] ?? true;
@@ -387,7 +404,15 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                 },
               ),
               const SizedBox(height: 24),
-              const Text('Telecallers Workload & Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              Builder(
+                builder: (context) {
+                  final bool isSalesMode = (state.data['targetRole'] ?? 'Telecaller').toString().toLowerCase() == 'sales';
+                  return Text(
+                    isSalesMode ? 'Sales Team Workload & Status' : 'Telecallers Workload & Status',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  );
+                },
+              ),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 12,
@@ -706,7 +731,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                 ],
               ),
               const SizedBox(height: 28),
-              const Text('Recent Assignments & Reassignments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              Text(isSalesMode ? 'Recent Sales Assignments & Reassignments (${history.length})' : 'Recent Telecaller Assignments & Reassignments (${history.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 8),
               if (history.isEmpty)
                 const Padding(
@@ -746,7 +771,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         dense: true,
-                        onTap: () => _showLeadDetailsDialog(context, h),
+                        onTap: () => _showLeadDetailsDialog(context, h, isSalesMode: isSalesMode),
                         leading: CircleAvatar(
                           radius: 18,
                           backgroundColor: (isPeer
@@ -792,8 +817,8 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
                                 ),
-                                child: const Text(
-                                  'Telecaller transfer',
+                                child: Text(
+                                  isSalesMode ? 'Sales transfer' : 'Telecaller transfer',
                                   style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold),
                                 ),
                               ),
@@ -827,7 +852,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             OutlinedButton.icon(
-                              onPressed: () => _showLeadDetailsDialog(context, h),
+                              onPressed: () => _showLeadDetailsDialog(context, h, isSalesMode: isSalesMode),
                               icon: const Icon(Icons.info_outline, size: 14),
                               label: const Text('Details'),
                               style: OutlinedButton.styleFrom(
@@ -861,8 +886,9 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     LeadAllocationMonitorState state,
     Map<String, dynamic> queue,
     List<dynamic> telecallers,
-    List<dynamic> history,
-  ) {
+    List<dynamic> history, {
+    bool isSalesMode = false,
+  }) {
     final bool isEngineOn = state.data['engineEnabled'] ?? true;
     final int expirationHours = int.tryParse(state.data['tokenExpirationHours']?.toString() ?? '') ?? 8;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -898,6 +924,22 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                           color: isDark ? Colors.white : const Color(0xFF0F172A),
                         ),
                       ),
+                      OutlinedButton.icon(
+                        onPressed: () => context.push('/admin/lead-allocation/configure'),
+                        icon: const Icon(Icons.tune_rounded, size: 14),
+                        label: const Text(
+                          'Configure',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6366F1),
+                          side: const BorderSide(color: Color(0xFF6366F1), width: 1.1),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         decoration: BoxDecoration(
@@ -1183,15 +1225,27 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
           ),
           const SizedBox(height: 18),
 
-          // 5. Telecaller Workload Section
-          Text(
-            'Telecallers Workload & Status (${telecallers.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Telecallers are sorted by lowest workload first. Round-robin assigns to the least busy active telecaller.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          // 5. Workload Section (Telecaller / Sales)
+          Builder(
+            builder: (context) {
+              final bool isSalesMode = (state.data['targetRole'] ?? 'Telecaller').toString().toLowerCase() == 'sales';
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${isSalesMode ? "Sales Team" : "Telecallers"} Workload & Status (${telecallers.length})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isSalesMode
+                        ? 'Salespersons are sorted by lowest workload first. Round-robin assigns to the least busy active salesperson.'
+                        : 'Telecallers are sorted by lowest workload first. Round-robin assigns to the least busy active telecaller.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 10),
           for (final raw in telecallers)
@@ -1200,7 +1254,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
 
           // 6. Recent Assignments Section
           Text(
-            'Recent Assignments & Reassignments (${history.length})',
+            isSalesMode ? 'Recent Sales Assignments & Reassignments (${history.length})' : 'Recent Telecaller Assignments & Reassignments (${history.length})',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 2),
@@ -1216,7 +1270,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
             )
           else
             for (final raw in history)
-              _buildMobileHistoryCard(context, raw as Map, telecallers, isDark),
+              _buildMobileHistoryCard(context, raw as Map, telecallers, isDark, isSalesMode: isSalesMode),
         ],
       ),
     );
@@ -1542,8 +1596,9 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     BuildContext context,
     Map raw,
     List<dynamic> telecallers,
-    bool isDark,
-  ) {
+    bool isDark, {
+    bool isSalesMode = false,
+  }) {
     final h = Map<String, dynamic>.from(raw);
     final leadId = h['lead_id']?.toString() ?? '';
     final type = h['assignment_type']?.toString() ?? 'ASSIGNMENT';
@@ -1631,8 +1686,8 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
                                 ),
-                                child: const Text(
-                                  'Telecaller transfer',
+                                child: Text(
+                                  isSalesMode ? 'Sales transfer' : 'Telecaller transfer',
                                   style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold),
                                 ),
                               ),
@@ -1890,7 +1945,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     }
   }
 
-  static void _showLeadDetailsDialog(BuildContext context, Map<String, dynamic> h) {
+  static void _showLeadDetailsDialog(BuildContext context, Map<String, dynamic> h, {bool isSalesMode = false}) {
     final leadId = h['lead_id']?.toString() ?? '';
     final lead = (h['lead'] is Map) ? Map<String, dynamic>.from(h['lead'] as Map) : <String, dynamic>{};
     dynamic rawData = lead['raw_json'];
@@ -1985,7 +2040,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
 
                 const SizedBox(height: 16),
                 _sectionHeader('Assignment Details'),
-                _detailRow('Assigned Telecaller', telecallerName),
+                _detailRow(isSalesMode ? 'Assigned Salesperson' : 'Assigned Telecaller', telecallerName),
                 _detailRow('Assignment Type', assignmentType),
                 _detailRow('Assigned At', assignedAt),
                 if (h['reason'] != null) _detailRow('Reason', h['reason'].toString()),

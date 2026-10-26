@@ -161,6 +161,9 @@ extension PropertyModelExtensions on PropertyModel {
 }
 
 extension RequirementLocalExtensions on RequirementLocal {
+  String get mobile => clientMobile;
+  String get customerName => clientName;
+
   RequirementModel toModel() {
     List<String> safeAreaIds = const [];
     try {
@@ -236,6 +239,22 @@ extension RequirementLocalExtensions on RequirementLocal {
            RequirementLocalRepository.metaCustomFieldsById[id]?['assigned_telecaller_id']?.toString() ??
            RequirementLocalRepository.metaCustomFieldsById[id]?['_transfer']?['telecaller_id']?.toString() ??
            RequirementLocalRepository.metaCustomFieldsById[id]?['_transfer']?['interacted_by']?.toString()),
+      salesAssignedAt: RequirementLocalRepository.getSalesAssignedAt(id) ??
+          (() {
+            final meta = RequirementLocalRepository.metaCustomFieldsById[id];
+            if (meta == null) return null;
+            final raw = meta['sales_assigned_at'] ??
+                meta['transferred_at'] ??
+                (meta['_transfer'] is Map
+                    ? meta['_transfer']['interacted_at'] ??
+                        meta['_transfer']['transferred_at']
+                    : null) ??
+                meta['assigned_at'];
+            if (raw != null && raw.toString().trim().isNotEmpty) {
+              return DateTime.tryParse(raw.toString().trim());
+            }
+            return null;
+          })(),
       leadSource: leadSource,
       referralName: referralName,
       nextFollowupDate: nextFollowupDate,
@@ -251,6 +270,9 @@ extension RequirementModelExtensions on RequirementModel {
     }
     if (rejectionRemark != null && rejectionRemark!.trim().isNotEmpty) {
       RequirementLocalRepository.rememberRejectionRemark(id, rejectionRemark);
+    }
+    if (salesAssignedAt != null) {
+      RequirementLocalRepository.rememberSalesAssignedAt(id, salesAssignedAt);
     }
     return RequirementLocal()
       ..id = id

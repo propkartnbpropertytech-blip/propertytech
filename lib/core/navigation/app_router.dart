@@ -9,6 +9,7 @@ import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/telecaller/screens/telecaller_callbacks_screen.dart';
 import '../../features/admin/screens/lead_allocation_monitor_screen.dart';
+import '../../features/admin/screens/lead_allocation_config_screen.dart';
 import '../../features/properties/screens/properties_screen.dart';
 import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
@@ -266,6 +267,20 @@ class AppRouter {
             ),
           ),
           GoRoute(
+            path: '/admin/lead-allocation/configure',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isAdmin(role) && !RoleGuard.isSuperAdmin(role)) {
+                return '/telecaller/leads';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const LeadAllocationConfigScreen(),
+            ),
+          ),
+          GoRoute(
             path: '/properties',
             pageBuilder: (context, state) {
               final openId = state.uri.queryParameters['openId'] ?? (state.extra as String?);
@@ -470,7 +485,9 @@ class AppRouter {
             path: '/messages',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const TeamMessagesScreen(),
+              child: TeamMessagesScreen(
+                initialUserId: state.uri.queryParameters['userId'],
+              ),
             ),
           ),
           GoRoute(

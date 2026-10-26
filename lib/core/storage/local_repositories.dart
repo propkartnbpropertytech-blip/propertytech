@@ -299,6 +299,44 @@ class RequirementLocalRepository {
   static final Map<String, Map<String, dynamic>> metaCustomFieldsById = {};
   static final Map<String, String> rejectionRemarksById = {};
   static final Map<String, String> assignedTelecallerIdById = {};
+  static final Map<String, DateTime> salesAssignedAtById = {};
+  static final Map<String, String> assignedToById = {};
+  static final Map<String, String> assigneeNameById = {};
+
+  static void rememberAssignedTo(String id, String? assignedTo) {
+    if (id.trim().isEmpty) return;
+    if (assignedTo == null || assignedTo.trim().isEmpty) {
+      assignedToById.remove(id);
+    } else {
+      assignedToById[id] = assignedTo.trim();
+    }
+  }
+
+  static String? getAssignedTo(String id) {
+    return assignedToById[id];
+  }
+
+  static void rememberAssigneeName(String id, String? name) {
+    if (id.trim().isEmpty) return;
+    if (name == null || name.trim().isEmpty) {
+      assigneeNameById.remove(id);
+    } else {
+      assigneeNameById[id] = name.trim();
+    }
+  }
+
+  static String? getAssigneeName(String id) {
+    return assigneeNameById[id];
+  }
+
+  static void rememberSalesAssignedAt(String id, DateTime? dt) {
+    if (id.trim().isEmpty || dt == null) return;
+    salesAssignedAtById[id] = dt;
+  }
+
+  static DateTime? getSalesAssignedAt(String id) {
+    return salesAssignedAtById[id];
+  }
 
   static void rememberAssignedTelecallerId(String id, String? telecallerId) {
     if (id.trim().isEmpty || telecallerId == null || telecallerId.trim().isEmpty) return;

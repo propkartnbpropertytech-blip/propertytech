@@ -207,13 +207,13 @@ class _PropertyPdfContentSelectionDialogState extends State<PropertyPdfContentSe
         child: Column(
           children: [
             // Header Bar
-            _buildDialogHeader(context, isAllSelected),
+            _buildDialogHeader(context, isAllSelected, isDesktop),
             Divider(height: 1, color: CRMColors.borderOf(context).withOpacity(0.6)),
 
             // Content Body (Scrollable Sections & Fields)
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(isDesktop ? 20 : 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -234,60 +234,162 @@ class _PropertyPdfContentSelectionDialogState extends State<PropertyPdfContentSe
             Divider(height: 1, color: CRMColors.borderOf(context).withOpacity(0.6)),
 
             // Footer Actions
-            _buildDialogFooter(context, hasAnySelection),
+            _buildDialogFooter(context, hasAnySelection, isDesktop),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDialogHeader(BuildContext context, bool isAllSelected) {
+  Widget _buildDialogHeader(BuildContext context, bool isAllSelected, bool isDesktop) {
+    if (!isDesktop) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primaryOf(context).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: CRMColors.primaryOf(context),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Custom PDF Content Selection',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.title.copyWith(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.properties.length == 1
+                            ? '${widget.properties.first.title} (${widget.properties.first.propertyCode})'
+                            : '${widget.properties.length} Properties Selected',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Close',
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _toggleAll(!isAllSelected),
+                  icon: Icon(
+                    isAllSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
+                    size: 16,
+                    color: CRMColors.primaryOf(context),
+                  ),
+                  label: Text(
+                    isAllSelected ? 'Deselect All' : 'Select All',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: CRMColors.primaryOf(context),
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: CRMColors.primaryOf(context).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.tune_rounded,
-                  color: CRMColors.primaryOf(context),
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Custom PDF Content Selection',
-                    style: CRMTypography.title.copyWith(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      color: CRMColors.textOf(context),
-                    ),
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primaryOf(context).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    widget.properties.length == 1
-                        ? '${widget.properties.first.title} (${widget.properties.first.propertyCode})'
-                        : '${widget.properties.length} Properties Selected',
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
-                      fontSize: 11,
-                    ),
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: CRMColors.primaryOf(context),
+                    size: 22,
                   ),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Custom PDF Content Selection',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.title.copyWith(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: CRMColors.textOf(context),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.properties.length == 1
+                            ? '${widget.properties.first.title} (${widget.properties.first.propertyCode})'
+                            : '${widget.properties.length} Properties Selected',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 12),
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               TextButton.icon(
                 onPressed: () => _toggleAll(!isAllSelected),
@@ -664,8 +766,75 @@ class _PropertyPdfContentSelectionDialogState extends State<PropertyPdfContentSe
     );
   }
 
-  Widget _buildDialogFooter(BuildContext context, bool hasAnySelection) {
+  Widget _buildDialogFooter(BuildContext context, bool hasAnySelection, bool isDesktop) {
     final selectedCount = _selectedFields.length;
+
+    if (!isDesktop) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    '$selectedCount fields selected (${_selectedSections.length} sections)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CRMTypography.caption.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => _toggleAll(true),
+                  child: Text(
+                    'Reset',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CRMColors.primaryOf(context),
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: hasAnySelection ? _proceedToPdfDesign : null,
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                    label: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Next: Choose PDF Design'),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: CRMColors.primaryOf(context),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(

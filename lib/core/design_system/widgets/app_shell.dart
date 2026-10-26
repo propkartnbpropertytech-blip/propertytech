@@ -143,7 +143,7 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   void _startNotificationsTimer() {
     _notificationsTimer?.cancel();
-    final interval = _notificationsPanelOpen ? const Duration(seconds: 25) : const Duration(seconds: 60);
+    final interval = const Duration(seconds: 8);
     _notificationsTimer = Timer.periodic(interval, (_) async {
       if (mounted) {
         await _fetchNotifications(silent: true);
@@ -629,9 +629,28 @@ class _CRMAppShellState extends State<CRMAppShell>
     _knownNotificationIds.addAll(seenIds);
     _isFirstNotifFetch = false;
 
-    int unreadMsgCount = 0;
+        int unreadMsgCount = 0;
     try {
       unreadMsgCount = await TeamMessagesService().getUnreadCount();
+      if (!_isFirstNotifFetch && unreadMsgCount > _unreadTeamMessagesCount) {
+        try {
+          final teamUsers = await TeamMessagesService().getTeamUsers();
+          for (final u in teamUsers) {
+            if (u.unreadCount > 0 && u.lastMessage != null && u.lastMessage!.trim().isNotEmpty) {
+              PlatformNotifier.showNotification(
+                title: u.name,
+                body: u.lastMessage!.trim(),
+                data: {
+                  'route': '/messages?userId=' + u.id,
+                  'type': 'team_message',
+                  'senderId': u.id,
+                  'senderName': u.name,
+                },
+              );
+            }
+          }
+        } catch (_) {}
+      }
     } catch (_) {}
 
     if (mounted) {
@@ -1599,8 +1618,8 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (userState.user.role.isNotEmpty) {
         currentUserRole = userState.user.role;
       }
-      if (RoleGuard.isTelecaller(currentUserRole)) {
-        TelecallerShiftManager.instance.init(userState.user.id);
+      if (RoleGuard.isTelecaller(currentUserRole) || RoleGuard.isSales(currentUserRole)) {
+        TelecallerShiftManager.instance.init(userState.user.id, role: currentUserRole);
       } else {
         TelecallerShiftManager.instance.dispose();
       }
@@ -1739,9 +1758,11 @@ class _CRMAppShellState extends State<CRMAppShell>
             ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           _buildSyncOverlay(),
-          FloatingActionMenu(
-            role: currentUserRole,
-            isMobile: false,
+          Positioned.fill(
+            child: FloatingActionMenu(
+              role: currentUserRole,
+              isMobile: false,
+            ),
           ),
         ],
       ),
@@ -1808,7 +1829,7 @@ class _CRMAppShellState extends State<CRMAppShell>
               onMessages: () => context.go('/messages'),
               unreadNotifications: _unreadNotificationsCount,
               unreadMessages: _unreadTeamMessagesCount,
-              roleControl: isTelecaller
+              roleControl: (isTelecaller || RoleGuard.isSales(role))
                   ? const TelecallerAvailabilityToggle(compact: true)
                   : null,
               searchBar: searchOpen
@@ -1834,9 +1855,11 @@ class _CRMAppShellState extends State<CRMAppShell>
           ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           _buildSyncOverlay(),
-          FloatingActionMenu(
-            role: role,
-            isMobile: true,
+          Positioned.fill(
+            child: FloatingActionMenu(
+              role: role,
+              isMobile: true,
+            ),
           ),
         ],
       ),
@@ -3003,6 +3026,8 @@ class _CRMAppShellState extends State<CRMAppShell>
           context.go('/properties?action=add');
         } else if (value == 'requirement') {
           context.go('/requirements?action=add');
+        } else if (value == 'toggle_bar') {
+          FloatingActionMenu.toggleBarVisibility();
         }
       },
       itemBuilder: (BuildContext context) => [
@@ -3034,6 +3059,29 @@ class _CRMAppShellState extends State<CRMAppShell>
                 style: TextStyle(color: CRMColors.textOf(context)),
               ),
             ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem(
+          value: 'toggle_bar',
+          child: ValueListenableBuilder<bool>(
+            valueListenable: FloatingActionMenu.barVisibilityNotifier,
+            builder: (context, visible, _) {
+              return Row(
+                children: [
+                  Icon(
+                    visible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: CRMColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: CRMSpacing.s),
+                  Text(
+                    visible ? 'Hide Quick Action Bar' : 'Show Quick Action Bar',
+                    style: TextStyle(color: CRMColors.textOf(context)),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],

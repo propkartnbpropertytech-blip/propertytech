@@ -180,19 +180,25 @@ class TelecallerShiftManager {
     unawaited(_persistLocalState());
   }
 
-  Future<void> init(String userId) async {
+  Future<void> init(String userId, {String? role}) async {
     _userId = userId;
+    final isSales = role != null && (role.toLowerCase() == 'sales' || role.toLowerCase() == 'salesperson');
 
     // Immediately restore cached state in 0ms before network request to prevent flicker on refresh
     await _restoreLocalState();
 
-    await _checkShiftLockout();
+    if (!isSales) {
+      await _checkShiftLockout();
+    } else {
+      isShiftLockedOutNotifier.value = false;
+      isOnInactivityBreakNotifier.value = false;
+    }
 
     try {
-      final data = await _repository.dashboard();
+      final data = isSales ? await _repository.getAvailability() : await _repository.dashboard();
       _updateFromApiResponse(data);
     } catch (e) {
-      debugPrint('[TelecallerShiftManager] Dashboard fetch error: $e');
+      debugPrint('[TelecallerShiftManager] Availability fetch error: $e');
     }
 
     if (isActive) {
@@ -201,15 +207,17 @@ class TelecallerShiftManager {
       _stopHeartbeat();
     }
 
-    if (!isShiftLockedOutNotifier.value && !isOnInactivityBreakNotifier.value) {
+    if (!isSales && !isShiftLockedOutNotifier.value && !isOnInactivityBreakNotifier.value) {
       _resetInactivityTimer();
     }
 
-    _shiftCheckTimer?.cancel();
-    _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      _checkShiftLockout();
-      _checkAvailabilityStatus();
-    });
+    if (!isSales) {
+      _shiftCheckTimer?.cancel();
+      _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        _checkShiftLockout();
+        _checkAvailabilityStatus();
+      });
+    }
 
     isInitializedNotifier.value = true;
   }

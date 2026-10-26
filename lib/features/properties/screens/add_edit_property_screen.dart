@@ -1231,7 +1231,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         'floor_no': isBungalow ? null : int.tryParse(_floorNoController.text),
         'total_floor': isBungalow ? null : int.tryParse(_totalFloorController.text),
         'age_of_property': int.tryParse(_ageController.text),
-        'owner_name': _ownerNameController.text.trim(),
+        'owner_name': _ownerNameController.text.trim().isEmpty ? null : _ownerNameController.text.trim(),
         'owner_mobile': _ownerMobileController.text.trim().isEmpty ? null : _ownerMobileController.text.trim(),
         'broker_name': _brokerNameController.text.trim().isEmpty ? null : _brokerNameController.text.trim(),
         'remarks': _remarksController.text.trim().isEmpty ? null : _remarksController.text.trim(),

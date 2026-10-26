@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:html' as html;
-import 'dart:indexed_db' as idb;
+
 import 'package:flutter/foundation.dart';
 import 'web_storage_service.dart';
 
@@ -11,7 +11,7 @@ class WebStorageWeb implements WebStorageAdapter {
   static const String _dbName = 'propkart_web_db';
   static const int _dbVersion = 1;
 
-  idb.Database? _db;
+  dynamic _db;
   bool _fallbackMode = false;
   final Map<String, Map<String, String>> _fallbackStores = {};
 
@@ -27,7 +27,7 @@ class WebStorageWeb implements WebStorageAdapter {
     }
   }
 
-  Future<idb.Database?> _getDb() async {
+  Future<dynamic> _getDb() async {
     if (_fallbackMode) return null;
     if (_db != null) return _db!;
 
@@ -43,10 +43,10 @@ class WebStorageWeb implements WebStorageAdapter {
         version: _dbVersion,
         onUpgradeNeeded: _onUpgradeNeeded,
       );
-      _db!.onClose.listen((_) {
+      try { _db?.onClose?.listen((_) {
         debugPrint('WebStorageWeb: Database connection closed.');
         _db = null;
-      });
+      }); } catch (_) {}
       return _db!;
     } catch (e) {
       debugPrint('WebStorageWeb: Failed to open IndexedDB: $e. Falling back to memory.');
@@ -55,9 +55,9 @@ class WebStorageWeb implements WebStorageAdapter {
     }
   }
 
-  void _onUpgradeNeeded(idb.VersionChangeEvent e) {
+  void _onUpgradeNeeded(dynamic e) {
     try {
-      final db = (e.target as idb.OpenDBRequest).result as idb.Database;
+      final db = (e.target as dynamic).result;
       for (final store in WebStorageStores.all) {
         if (!db.objectStoreNames!.contains(store)) {
           db.createObjectStore(store);

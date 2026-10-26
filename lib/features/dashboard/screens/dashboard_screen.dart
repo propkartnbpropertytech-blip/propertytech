@@ -35,7 +35,6 @@ import '../models/kpi_models.dart';
 import '../repository/dashboard_repository.dart';
 import '../widgets/kpi_drilldown_dialogs.dart';
 import '../widgets/generic_kpi_drilldown_dialog.dart';
-import '../../../core/api/dio_client.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../widgets/welcome_header.dart';
@@ -45,7 +44,6 @@ import '../widgets/todays_schedule_card.dart';
 import '../widgets/followups_card.dart';
 import '../widgets/inventory_demand_analytics_section.dart';
 import '../../requirements/screens/requirements_screen.dart';
-import '../services/dashboard_service.dart';
 import '../widgets/pipeline_funnel_bar.dart';
 import '../widgets/pipeline_stage_drilldown_dialog.dart';
 import '../widgets/floating_mascot_chatbot_button.dart';
@@ -432,17 +430,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   return Stack(
-    fit: StackFit.expand,
-    children: [
-      dashboardView,
-      const Positioned(
-        bottom: 24,
-        right: 24,
-        child: FloatingMascotChatbotButton(),
-      ),
-    ],
-  );
-}
+      fit: StackFit.expand,
+      children: [
+        dashboardView,
+        const Positioned(
+          bottom: 16,
+          right: 12,
+          child: FloatingMascotChatbotButton(),
+        ),
+      ],
+    );
+  }
 
   List<_DisplayProperty> _getAllDisplayProperties(DashboardData data) {
     return data.recentProperties.map((p) {
@@ -1212,7 +1210,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           } else if (availableWidth >= 700) {
             cols = math.min(maxCols, 3);
           } else {
-            cols = availableWidth >= 360 ? 2 : 1;
+            cols = availableWidth >= 260 ? math.min(maxCols, 2) : 1;
           }
         } else {
           if (availableWidth >= 1050) {
@@ -1220,7 +1218,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           } else if (availableWidth >= 700) {
             cols = 3;
           } else {
-            cols = availableWidth >= 360 ? 2 : 1; // 2 columns on mobile screen
+            cols = availableWidth >= 260 ? 2 : 1; // 2 columns on mobile screen
           }
         }
 

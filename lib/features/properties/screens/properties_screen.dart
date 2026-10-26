@@ -603,6 +603,129 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             final bhk = p.configurationName ?? "${p.bedrooms} BHK";
             final price = '₹${BudgetFormatter.format(p.price)}';
             final titleText = "$bhk in ${p.areaName} – $price (${p.propertyCode})";
+            final isMobile = MediaQuery.sizeOf(context).width < 500;
+
+            Widget buildCancelButton() => TextButton(
+                  onPressed: (isGeneratingLink || isSharingPdf)
+                      ? null
+                      : () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                );
+
+            Widget buildSharePdfButton({bool expand = false}) {
+              final btn = OutlinedButton(
+                onPressed: (isGeneratingLink || isSharingPdf)
+                    ? null
+                    : () async {
+                        await PropertyPdfContentSelectionDialog.show(
+                          context,
+                          properties: [p],
+                          recipientPhone: p.ownerMobile,
+                        );
+                      },
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text("Share PDF"),
+                ),
+              );
+              return expand ? Expanded(child: btn) : btn;
+            }
+
+            Widget buildGenerateLinkButton({bool expand = false}) {
+              final btn = ElevatedButton(
+                onPressed: (isGeneratingLink || isSharingPdf)
+                    ? null
+                    : () async {
+                        setDialogState(() => isGeneratingLink = true);
+                        try {
+                          final response = await DioClient.dio.post(
+                            '/share-sessions',
+                            data: {
+                              'property_ids': [p.id],
+                              'expiry_days': 7
+                            },
+                          );
+                          if (response.data != null &&
+                              response.data['success'] == true) {
+                            final sessionId =
+                                response.data['data']['session']['id'];
+                            final authState =
+                                context.read<AuthBloc>().state;
+                            String? currentAgentName;
+                            String? currentAgentMobile;
+                            if (authState is Authenticated) {
+                              currentAgentName =
+                                  authState.user.fullName;
+                              currentAgentMobile =
+                                  authState.user.mobile;
+                            }
+
+                            setDialogState(() {
+                              var link =
+                                  "${AppConfig.publicShareBaseUrl}/$sessionId";
+                              final queryParams = <String>[];
+                              if (currentAgentName != null &&
+                                  currentAgentName.isNotEmpty) {
+                                queryParams.add(
+                                    "agentName=${Uri.encodeComponent(currentAgentName)}");
+                              }
+                              if (currentAgentMobile != null &&
+                                  currentAgentMobile.isNotEmpty) {
+                                queryParams.add(
+                                    "agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                              }
+                              if (queryParams.isNotEmpty) {
+                                link += "?${queryParams.join('&')}";
+                              }
+                              generatedLink = link;
+                              isGeneratingLink = false;
+                            });
+                          } else {
+                            setDialogState(() {
+                              error = "Failed to generate link.";
+                              isGeneratingLink = false;
+                            });
+                          }
+                        } catch (e) {
+                          final authState =
+                              context.read<AuthBloc>().state;
+                          String? currentAgentName;
+                          String? currentAgentMobile;
+                          if (authState is Authenticated) {
+                            currentAgentName =
+                                authState.user.fullName;
+                            currentAgentMobile =
+                                authState.user.mobile;
+                          }
+                          setDialogState(() {
+                            var link =
+                                "${AppConfig.publicShareBaseUrl}/${p.id}";
+                            final queryParams = <String>[];
+                            if (currentAgentName != null &&
+                                currentAgentName.isNotEmpty) {
+                              queryParams.add(
+                                  "agentName=${Uri.encodeComponent(currentAgentName)}");
+                            }
+                            if (currentAgentMobile != null &&
+                                currentAgentMobile.isNotEmpty) {
+                              queryParams.add(
+                                  "agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                            }
+                            if (queryParams.isNotEmpty) {
+                              link += "?${queryParams.join('&')}";
+                            }
+                            generatedLink = link;
+                            isGeneratingLink = false;
+                          });
+                        }
+                      },
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text("Generate Link"),
+                ),
+              );
+              return expand ? Expanded(child: btn) : btn;
+            }
 
             return Stack(
               children: [
@@ -610,6 +733,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   backgroundColor: CRMColors.cardBgOf(context),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+                  insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
                   title: Text("Share Matching Properties",
                       style: CRMTypography.sectionTitle
                           .copyWith(color: CRMColors.textOf(context))),
@@ -652,122 +776,39 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       ],
                     ),
                   ),
-                  actionsAlignment: MainAxisAlignment.spaceBetween,
-                  actions: [
-                    TextButton(
-                      onPressed: (isGeneratingLink || isSharingPdf)
-                          ? null
-                          : () => Navigator.pop(context),
-                      child: const Text("Cancel"),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OutlinedButton(
-                          onPressed: (isGeneratingLink || isSharingPdf)
-                              ? null
-                              : () async {
-                                  await PropertyPdfContentSelectionDialog.show(
-                                    context,
-                                    properties: [p],
-                                    recipientPhone: p.ownerMobile,
-                                  );
-                                },
-                          child: const Text("Share PDF"),
-                        ),
-                        const SizedBox(width: CRMSpacing.s),
-                        ElevatedButton(
-                          onPressed: (isGeneratingLink || isSharingPdf)
-                              ? null
-                              : () async {
-                                  setDialogState(() => isGeneratingLink = true);
-                                  try {
-                                    final response = await DioClient.dio.post(
-                                      '/share-sessions',
-                                      data: {
-                                        'property_ids': [p.id],
-                                        'expiry_days': 7
-                                      },
-                                    );
-                                    if (response.data != null &&
-                                        response.data['success'] == true) {
-                                      final sessionId =
-                                          response.data['data']['session']['id'];
-                                      final authState =
-                                          context.read<AuthBloc>().state;
-                                      String? currentAgentName;
-                                      String? currentAgentMobile;
-                                      if (authState is Authenticated) {
-                                        currentAgentName =
-                                            authState.user.fullName;
-                                        currentAgentMobile =
-                                            authState.user.mobile;
-                                      }
-
-                                      setDialogState(() {
-                                        var link =
-                                            "${AppConfig.publicShareBaseUrl}/$sessionId";
-                                        final queryParams = <String>[];
-                                        if (currentAgentName != null &&
-                                            currentAgentName.isNotEmpty) {
-                                          queryParams.add(
-                                              "agentName=${Uri.encodeComponent(currentAgentName)}");
-                                        }
-                                        if (currentAgentMobile != null &&
-                                            currentAgentMobile.isNotEmpty) {
-                                          queryParams.add(
-                                              "agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
-                                        }
-                                        if (queryParams.isNotEmpty) {
-                                          link += "?${queryParams.join('&')}";
-                                        }
-                                        generatedLink = link;
-                                        isGeneratingLink = false;
-                                      });
-                                    } else {
-                                      setDialogState(() {
-                                        error = "Failed to generate link.";
-                                        isGeneratingLink = false;
-                                      });
-                                    }
-                                  } catch (e) {
-                                    final authState =
-                                        context.read<AuthBloc>().state;
-                                    String? currentAgentName;
-                                    String? currentAgentMobile;
-                                    if (authState is Authenticated) {
-                                      currentAgentName =
-                                          authState.user.fullName;
-                                      currentAgentMobile =
-                                          authState.user.mobile;
-                                    }
-                                    setDialogState(() {
-                                      var link =
-                                          "${AppConfig.publicShareBaseUrl}/${p.id}";
-                                      final queryParams = <String>[];
-                                      if (currentAgentName != null &&
-                                          currentAgentName.isNotEmpty) {
-                                        queryParams.add(
-                                            "agentName=${Uri.encodeComponent(currentAgentName)}");
-                                      }
-                                      if (currentAgentMobile != null &&
-                                          currentAgentMobile.isNotEmpty) {
-                                        queryParams.add(
-                                            "agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
-                                      }
-                                      if (queryParams.isNotEmpty) {
-                                        link += "?${queryParams.join('&')}";
-                                      }
-                                      generatedLink = link;
-                                      isGeneratingLink = false;
-                                    });
-                                  }
-                                },
-                          child: const Text("Generate Link"),
-                        ),
-                      ],
-                    ),
-                  ],
+                  actionsAlignment: isMobile ? MainAxisAlignment.center : MainAxisAlignment.spaceBetween,
+                  actions: isMobile
+                      ? [
+                          SizedBox(
+                            width: double.infinity,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    buildSharePdfButton(expand: true),
+                                    const SizedBox(width: CRMSpacing.s),
+                                    buildGenerateLinkButton(expand: true),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                buildCancelButton(),
+                              ],
+                            ),
+                          ),
+                        ]
+                      : [
+                          buildCancelButton(),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              buildSharePdfButton(),
+                              const SizedBox(width: CRMSpacing.s),
+                              buildGenerateLinkButton(),
+                            ],
+                          ),
+                        ],
                 ),
                 if (isGeneratingLink || isSharingPdf)
                   const Positioned.fill(
@@ -990,12 +1031,116 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               );
             }
 
+            final isMobile = MediaQuery.sizeOf(context).width < 500;
+
+            Widget buildCancelButton() => TextButton(
+                  onPressed: (isGeneratingLink || isSharingPdf)
+                      ? null
+                      : () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                );
+
+            Widget buildSharePdfButton({bool expand = false}) {
+              final btn = OutlinedButton(
+                onPressed: currentlySelected.isEmpty ||
+                        isGeneratingLink ||
+                        isSharingPdf
+                    ? null
+                    : () async {
+                        await PropertyPdfContentSelectionDialog.show(
+                          context,
+                          properties: currentlySelected,
+                        );
+                      },
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text("Share PDF"),
+                ),
+              );
+              return expand ? Expanded(child: btn) : btn;
+            }
+
+            Widget buildGenerateLinkButton({bool expand = false}) {
+              final btn = ElevatedButton(
+                onPressed: currentlySelected.isEmpty ||
+                        isGeneratingLink ||
+                        isSharingPdf
+                    ? null
+                    : () async {
+                        setDialogState(() => isGeneratingLink = true);
+                        try {
+                          final response = await DioClient.dio.post(
+                            '/share-sessions',
+                            data: {
+                              'property_ids': currentlySelected
+                                  .map((p) => p.id)
+                                  .toList(),
+                              'expiry_days': 7
+                            },
+                          );
+                          if (response.data != null &&
+                              response.data['success'] == true) {
+                            final sessionId =
+                                response.data['data']['session']['id'];
+                            final authState =
+                                context.read<AuthBloc>().state;
+                            String? currentAgentName;
+                            String? currentAgentMobile;
+                            if (authState is Authenticated) {
+                              currentAgentName =
+                                  authState.user.fullName;
+                              currentAgentMobile =
+                                  authState.user.mobile;
+                            }
+
+                            setDialogState(() {
+                              var link =
+                                  "${AppConfig.publicShareBaseUrl}/$sessionId";
+                              final queryParams = <String>[];
+                              if (currentAgentName != null &&
+                                  currentAgentName.isNotEmpty) {
+                                queryParams.add(
+                                    "agentName=${Uri.encodeComponent(currentAgentName)}");
+                              }
+                              if (currentAgentMobile != null &&
+                                  currentAgentMobile.isNotEmpty) {
+                                queryParams.add(
+                                    "agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                              }
+                              if (queryParams.isNotEmpty) {
+                                link += "?${queryParams.join('&')}";
+                              }
+                              generatedLink = link;
+                              isGeneratingLink = false;
+                            });
+                          } else {
+                            setDialogState(() {
+                              error = "Failed to generate link.";
+                              isGeneratingLink = false;
+                            });
+                          }
+                        } catch (e) {
+                          setDialogState(() {
+                            error = "Failed to generate link.";
+                            isGeneratingLink = false;
+                          });
+                        }
+                      },
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text("Generate Link"),
+                ),
+              );
+              return expand ? Expanded(child: btn) : btn;
+            }
+
             return Stack(
               children: [
                 AlertDialog(
                   backgroundColor: CRMColors.cardBgOf(context),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+                  insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
                   title: Text("Share Matching Properties",
                       style: CRMTypography.sectionTitle
                           .copyWith(color: CRMColors.textOf(context))),
@@ -1056,101 +1201,39 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       ],
                     ),
                   ),
-                  actionsAlignment: MainAxisAlignment.spaceBetween,
-                  actions: [
-                    TextButton(
-                      onPressed: (isGeneratingLink || isSharingPdf)
-                          ? null
-                          : () => Navigator.pop(context),
-                      child: const Text("Cancel"),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OutlinedButton(
-                          onPressed: currentlySelected.isEmpty ||
-                                  isGeneratingLink ||
-                                  isSharingPdf
-                              ? null
-                              : () async {
-                                  await PropertyPdfContentSelectionDialog.show(
-                                    context,
-                                    properties: currentlySelected,
-                                  );
-                                },
-                          child: const Text("Share PDF"),
-                        ),
-                        const SizedBox(width: CRMSpacing.s),
-                        ElevatedButton(
-                          onPressed: currentlySelected.isEmpty ||
-                                  isGeneratingLink ||
-                                  isSharingPdf
-                              ? null
-                              : () async {
-                                  setDialogState(() => isGeneratingLink = true);
-                                  try {
-                                    final response = await DioClient.dio.post(
-                                      '/share-sessions',
-                                      data: {
-                                        'property_ids': currentlySelected
-                                            .map((p) => p.id)
-                                            .toList(),
-                                        'expiry_days': 7
-                                      },
-                                    );
-                                    if (response.data != null &&
-                                        response.data['success'] == true) {
-                                      final sessionId =
-                                          response.data['data']['session']['id'];
-                                      final authState =
-                                          context.read<AuthBloc>().state;
-                                      String? currentAgentName;
-                                      String? currentAgentMobile;
-                                      if (authState is Authenticated) {
-                                        currentAgentName =
-                                            authState.user.fullName;
-                                        currentAgentMobile =
-                                            authState.user.mobile;
-                                      }
-
-                                      setDialogState(() {
-                                        var link =
-                                            "${AppConfig.publicShareBaseUrl}/$sessionId";
-                                        final queryParams = <String>[];
-                                        if (currentAgentName != null &&
-                                            currentAgentName.isNotEmpty) {
-                                          queryParams.add(
-                                              "agentName=${Uri.encodeComponent(currentAgentName)}");
-                                        }
-                                        if (currentAgentMobile != null &&
-                                            currentAgentMobile.isNotEmpty) {
-                                          queryParams.add(
-                                              "agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
-                                        }
-                                        if (queryParams.isNotEmpty) {
-                                          link += "?${queryParams.join('&')}";
-                                        }
-                                        generatedLink = link;
-                                        isGeneratingLink = false;
-                                      });
-                                    } else {
-                                      setDialogState(() {
-                                        error = "Failed to generate link.";
-                                        isGeneratingLink = false;
-                                      });
-                                    }
-                                  } catch (e) {
-                                    setDialogState(() {
-                                      error = "Failed to generate link.";
-                                      isGeneratingLink = false;
-                                    });
-                                  }
-                                },
-                          child: const Text("Generate Link"),
-                        ),
-                      ],
-                    ),
-                  ],
+                  actionsAlignment: isMobile ? MainAxisAlignment.center : MainAxisAlignment.spaceBetween,
+                  actions: isMobile
+                      ? [
+                          SizedBox(
+                            width: double.infinity,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    buildSharePdfButton(expand: true),
+                                    const SizedBox(width: CRMSpacing.s),
+                                    buildGenerateLinkButton(expand: true),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                buildCancelButton(),
+                              ],
+                            ),
+                          ),
+                        ]
+                      : [
+                          buildCancelButton(),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              buildSharePdfButton(),
+                              const SizedBox(width: CRMSpacing.s),
+                              buildGenerateLinkButton(),
+                            ],
+                          ),
+                        ],
                 ),
                 if (isGeneratingLink || isSharingPdf)
                   const Positioned.fill(

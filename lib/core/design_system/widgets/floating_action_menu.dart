@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  FAB Action item model
@@ -28,6 +29,32 @@ class FloatingActionMenu extends StatefulWidget {
   final String role;
   final bool isMobile;
 
+  static const String prefKey = 'quick_action_bar_visible';
+  static bool isBarVisible = true;
+  static final ValueNotifier<bool> barVisibilityNotifier = ValueNotifier<bool>(true);
+
+  static Future<void> initVisibility() async {
+    isBarVisible = true;
+    barVisibilityNotifier.value = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(prefKey);
+    } catch (_) {}
+  }
+
+  static Future<void> setBarVisibility(bool visible) async {
+    isBarVisible = visible;
+    barVisibilityNotifier.value = visible;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(prefKey, visible);
+    } catch (_) {}
+  }
+
+  static Future<void> toggleBarVisibility() async {
+    await setBarVisibility(!isBarVisible);
+  }
+
   const FloatingActionMenu({
     super.key,
     required this.role,
@@ -42,7 +69,7 @@ class _FloatingActionMenuState extends State<FloatingActionMenu>
     with SingleTickerProviderStateMixin {
   bool _isOpen = false;
 
-  // Vertical position fraction on mobile (0.0 = top safe margin, 1.0 = bottom safe margin)
+  // Vertical position fraction (0.0 = top safe margin, 1.0 = bottom safe margin)
   double _verticalFraction = 0.5;
 
   late final AnimationController _controller;
@@ -53,6 +80,9 @@ class _FloatingActionMenuState extends State<FloatingActionMenu>
   @override
   void initState() {
     super.initState();
+    FloatingActionMenu.initVisibility();
+    FloatingActionMenu.barVisibilityNotifier.addListener(_onVisibilityChanged);
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
@@ -81,8 +111,19 @@ class _FloatingActionMenuState extends State<FloatingActionMenu>
 
   @override
   void dispose() {
+    FloatingActionMenu.barVisibilityNotifier.removeListener(_onVisibilityChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onVisibilityChanged() {
+    if (mounted) {
+      if (!FloatingActionMenu.barVisibilityNotifier.value && _isOpen) {
+        _isOpen = false;
+        _controller.reverse();
+      }
+      setState(() {});
+    }
   }
 
   void _toggleMenu() {
@@ -281,242 +322,234 @@ class _FloatingActionMenuState extends State<FloatingActionMenu>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isMobile = widget.isMobile;
-    final actions = _getActionsForRole();
+    return ValueListenableBuilder<bool>(
+      valueListenable: FloatingActionMenu.barVisibilityNotifier,
+      builder: (context, isVisible, _) {
+        final size = MediaQuery.of(context).size;
+        final isMobile = widget.isMobile;
+        final actions = _getActionsForRole();
 
-    // Dimensions
-    final double toggleWidth = _isOpen ? 44.0 : 26.0;
-    final double toggleHeight = _isOpen ? 44.0 : 54.0;
-    final double actionSize = isMobile ? 46.0 : 48.0;
-    final double fanRadius = isMobile ? 95.0 : 110.0;
+        // Dimensions
+        final double toggleWidth = _isOpen ? 44.0 : 26.0;
+        final double toggleHeight = _isOpen ? 44.0 : 54.0;
+        final double actionSize = isMobile ? 46.0 : 48.0;
+        final double fanRadius = isMobile ? 95.0 : 110.0;
 
-    // Vertical positioning
-    final double minY = isMobile ? 70.0 : 100.0;
-    final double maxY = size.height - (isMobile ? 120.0 : 80.0) - toggleHeight;
-    final double rangeY = (maxY - minY).clamp(1.0, double.infinity);
-    final double toggleY = (minY + (_verticalFraction * rangeY)).clamp(minY, maxY);
+        // Vertical positioning
+        final double minY = isMobile ? 70.0 : 100.0;
+        final double maxY = size.height - (isMobile ? 120.0 : 80.0) - toggleHeight;
+        final double rangeY = (maxY - minY).clamp(1.0, double.infinity);
+        final double toggleY = (minY + (_verticalFraction * rangeY)).clamp(minY, maxY);
 
-    // Anchor center coordinates
-    final double anchorX = isMobile
-        ? (_isOpen ? 36.0 : 13.0)
-        : size.width - (_isOpen ? 36.0 : 13.0);
-    final double anchorY = toggleY + toggleHeight / 2;
+        // Both mobile and laptop: right edge of screen
+        final double anchorX = size.width - (_isOpen ? 36.0 : 13.0);
+        final double anchorY = toggleY + toggleHeight / 2;
 
-    // Angle calculation for the curved/fan arrangement
-    // Mobile: fan radiates to the right (centered around 0 rad, from -60 deg to +60 deg)
-    // Desktop: fan radiates to the left (centered around pi rad, from 120 deg to 240 deg)
-    final double baseAngle = isMobile ? 0.0 : math.pi;
-    final double totalArc = (actions.length <= 1)
-        ? 0.0
-        : (actions.length <= 4 ? (math.pi * 0.65) : (math.pi * 0.78));
+        // Base angle pi: fan radiates leftward into the screen on both mobile and laptop
+        const double baseAngle = math.pi;
+        final double totalArc = (actions.length <= 1)
+            ? 0.0
+            : (actions.length <= 4 ? (math.pi * 0.65) : (math.pi * 0.78));
 
-    return Stack(
-      children: [
-        // ── 1. Dimmed Background Overlay ─────────────────────────
-        if (_isOpen || _controller.value > 0)
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _fadeAnimation,
-              builder: (context, child) {
-                final opacity = (_fadeAnimation.value * 0.5).clamp(0.0, 0.5);
-                return IgnorePointer(
-                  ignoring: !_isOpen && _controller.value == 0,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _closeMenu,
-                    child: Container(
-                      color: Colors.black.withValues(alpha: opacity),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // ── 1. Dimmed Background Overlay ─────────────────────────
+            if (_isOpen || _controller.value > 0)
+              Positioned.fill(
+                child: AnimatedBuilder(
+                  animation: _fadeAnimation,
+                  builder: (context, child) {
+                    final opacity = (_fadeAnimation.value * 0.5).clamp(0.0, 0.5);
+                    return IgnorePointer(
+                      ignoring: !_isOpen && _controller.value == 0,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _closeMenu,
+                        child: Container(
+                          color: Colors.black.withValues(alpha: opacity),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
 
-        // ── 2. Fan Action Buttons ────────────────────────────────
-        if (_isOpen || _controller.value > 0)
-          ...List.generate(actions.length, (index) {
-            final action = actions[index];
-            final double angleOffset = actions.length <= 1
-                ? 0.0
-                : -totalArc / 2 + (totalArc / (actions.length - 1)) * index;
-            final double angle = baseAngle + angleOffset;
+            // ── 2. Fan Action Buttons ────────────────────────────────
+            if (_isOpen || _controller.value > 0)
+              ...List.generate(actions.length, (index) {
+                final action = actions[index];
+                final double angleOffset = actions.length <= 1
+                    ? 0.0
+                    : -totalArc / 2 + (totalArc / (actions.length - 1)) * index;
+                final double angle = baseAngle + angleOffset;
 
-            final double targetDx = math.cos(angle) * fanRadius;
-            final double targetDy = math.sin(angle) * fanRadius;
+                final double targetDx = math.cos(angle) * fanRadius;
+                final double targetDy = math.sin(angle) * fanRadius;
 
-            return AnimatedBuilder(
-              animation: _expandAnimation,
-              builder: (context, child) {
-                final t = _expandAnimation.value;
-                if (t <= 0.001) return const SizedBox.shrink();
+                return AnimatedBuilder(
+                  animation: _expandAnimation,
+                  builder: (context, child) {
+                    final t = _expandAnimation.value;
+                    if (t <= 0.001) return const SizedBox.shrink();
 
-                final currentX = anchorX + (targetDx * t);
-                final currentY = anchorY + (targetDy * t);
+                    final currentX = anchorX + (targetDx * t);
+                    final currentY = anchorY + (targetDy * t);
 
-                final scale = t.clamp(0.0, 1.0);
-                final opacity = (_fadeAnimation.value).clamp(0.0, 1.0);
+                    final scale = t.clamp(0.0, 1.0);
+                    final opacity = (_fadeAnimation.value).clamp(0.0, 1.0);
 
-                return Positioned(
-                  left: currentX - actionSize / 2,
-                  top: currentY - actionSize / 2,
-                  child: Opacity(
-                    opacity: opacity,
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Tooltip(
-                        message: action.label,
-                        preferBelow: false,
-                        verticalOffset: 28,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F172A),
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
+                    return Positioned(
+                      left: currentX - actionSize / 2,
+                      top: currentY - actionSize / 2,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Tooltip(
+                            message: action.label,
+                            preferBelow: false,
+                            verticalOffset: 28,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        textStyle: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: action.onTap,
-                            borderRadius: BorderRadius.circular(actionSize / 2),
-                            child: Container(
-                              width: actionSize,
-                              height: actionSize,
-                              decoration: BoxDecoration(
-                                color: action.color,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: action.color.withValues(alpha: 0.42),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
+                            textStyle: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: action.onTap,
+                                borderRadius: BorderRadius.circular(actionSize / 2),
+                                child: Container(
+                                  width: actionSize,
+                                  height: actionSize,
+                                  decoration: BoxDecoration(
+                                    color: action.color,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: action.color.withValues(alpha: 0.42),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.18),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
                                   ),
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.18),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
+                                  child: Center(
+                                    child: Icon(
+                                      action.icon,
+                                      color: Colors.white,
+                                      size: isMobile ? 21 : 23,
+                                    ),
                                   ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  action.icon,
-                                  color: Colors.white,
-                                  size: isMobile ? 21 : 23,
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
-              },
-            );
-          }),
+              }),
 
-        // ── 3. Arrow Toggle / Close Button on Edge ───────────────
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final double currentLeft = isMobile
-                ? (_isOpen ? 14.0 : 0.0)
-                : (size.width - (_isOpen ? 14.0 + toggleWidth : toggleWidth));
-
-            Widget toggleContent = Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: _toggleMenu,
-                borderRadius: _isOpen
-                    ? BorderRadius.circular(22)
-                    : (isMobile
-                        ? const BorderRadius.horizontal(right: Radius.circular(16))
-                        : const BorderRadius.horizontal(left: Radius.circular(16))),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  width: toggleWidth,
-                  height: toggleHeight,
-                  decoration: BoxDecoration(
-                    color: _isOpen
-                        ? const Color(0xFFEF4444) // Crisp red close button when open
-                        : const Color(0xFF0F172A), // Sleek obsidian slate tab
-                    borderRadius: _isOpen
-                        ? BorderRadius.circular(22)
-                        : (isMobile
-                            ? const BorderRadius.horizontal(right: Radius.circular(16))
-                            : const BorderRadius.horizontal(left: Radius.circular(16))),
-                    border: Border.all(
-                      color: _isOpen
-                          ? Colors.white.withValues(alpha: 0.3)
-                          : const Color(0xFF334155),
-                      width: 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _isOpen
-                            ? const Color(0xFFEF4444).withValues(alpha: 0.4)
-                            : Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: RotationTransition(
-                      turns: _rotationAnimation,
-                      child: _isOpen
-                          ? const Icon(
-                              Icons.close_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            )
-                          : Icon(
-                              isMobile
-                                  ? Icons.arrow_forward_ios_rounded
-                                  : Icons.arrow_back_ios_rounded,
-                              color: const Color(0xFFE2E8F0),
-                              size: 13,
-                            ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-
-            // If mobile, wrap in vertical drag gesture detector so user can move it anywhere along borders
-            if (isMobile && !_isOpen) {
-              toggleContent = GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onVerticalDragUpdate: (details) {
-                  setState(() {
-                    final delta = details.delta.dy / rangeY;
-                    _verticalFraction = (_verticalFraction + delta).clamp(0.0, 1.0);
-                  });
-                },
-                child: toggleContent,
-              );
-            }
-
-            return Positioned(
-              left: currentLeft,
+            // ── 3. Arrow Toggle / Close Button on Edge ───────────────
+            Positioned(
+              right: _isOpen ? 14.0 : 0.0,
               top: toggleY,
-              child: toggleContent,
-            );
-          },
-        ),
-      ],
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  Widget toggleContent = Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _toggleMenu,
+                      borderRadius: _isOpen
+                          ? BorderRadius.circular(22)
+                          : const BorderRadius.horizontal(left: Radius.circular(16)),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: toggleWidth,
+                        height: toggleHeight,
+                        decoration: BoxDecoration(
+                          color: _isOpen
+                              ? const Color(0xFFEF4444) // Crisp red close button when open
+                              : const Color(0xFF0F172A), // Sleek obsidian slate tab
+                          borderRadius: _isOpen
+                              ? BorderRadius.circular(22)
+                              : const BorderRadius.horizontal(left: Radius.circular(16)),
+                          border: Border.all(
+                            color: _isOpen
+                                ? Colors.white.withValues(alpha: 0.3)
+                                : const Color(0xFF334155),
+                            width: 1.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _isOpen
+                                  ? const Color(0xFFEF4444).withValues(alpha: 0.4)
+                                  : Colors.black.withValues(alpha: 0.28),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: RotationTransition(
+                            turns: _rotationAnimation,
+                            child: _isOpen
+                                ? const Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  )
+                                : const Icon(
+                                    Icons.arrow_back_ios_rounded,
+                                    color: Color(0xFFE2E8F0),
+                                    size: 13,
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+
+                  // If mobile, wrap in vertical drag gesture detector so user can move it anywhere along borders
+                  if (isMobile && !_isOpen) {
+                    toggleContent = GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) {
+                        setState(() {
+                          final delta = details.delta.dy / rangeY;
+                          _verticalFraction = (_verticalFraction + delta).clamp(0.0, 1.0);
+                        });
+                      },
+                      child: toggleContent,
+                    );
+                  }
+
+                  return toggleContent;
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

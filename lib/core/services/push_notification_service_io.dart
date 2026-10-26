@@ -79,7 +79,8 @@ class PushNotificationService {
           route: message.data['route']?.toString(),
           data: message.data,
         );
-        showOsNotification(title: title, body: body, payload: message.data['route']?.toString());
+        final msgType = message.data['type']?.toString() ?? 'general';
+        showOsNotification(title: title, body: body, payload: message.data['route']?.toString(), type: msgType);
       });
       FirebaseMessaging.onMessageOpenedApp.listen((message) {
         AppNotifierService.handleNotificationTap({
@@ -109,7 +110,7 @@ class PushNotificationService {
         DioClient.dio.post('/notifications/device-token', data: {
           'token': newToken,
           'platform': Platform.isIOS ? 'ios' : 'android',
-        }).catchError((_) => null);
+        }).catchError((_) => Response(requestOptions: RequestOptions(path: '/')));
       });
     } catch (e) {
       debugPrint('[PushNotificationService] Token register skipped: $e');
@@ -120,8 +121,21 @@ class PushNotificationService {
     required String title,
     required String body,
     String? payload,
+    String? type,
   }) async {
     try {
+      final isMessage = type == 'team_message' || type == 'message' || (payload != null && payload.startsWith('/messages'));
+      final actions = <AndroidNotificationAction>[];
+      if (isMessage) {
+        actions.add(
+          const AndroidNotificationAction(
+            'view_message',
+            'View Message',
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
+        );
+      }
       await _plugin.show(
         DateTime.now().millisecondsSinceEpoch ~/ 1000,
         title,
@@ -134,6 +148,7 @@ class PushNotificationService {
             importance: Importance.high,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
+            actions: actions.isNotEmpty ? actions : null,
           ),
           iOS: const DarwinNotificationDetails(),
         ),

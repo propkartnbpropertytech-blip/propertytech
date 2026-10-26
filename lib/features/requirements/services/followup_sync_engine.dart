@@ -490,7 +490,8 @@ class FollowupSyncEngine {
         final reqStatusLower = req.status.trim().toLowerCase();
         final isWon = reqStatusLower == 'won' || reqStatusLower == 'closed' || reqStatusLower == 'deal won';
         final isRejected = reqStatusLower.startsWith('rejected') || reqStatusLower == 'dead' || reqStatusLower == 'bin' || reqStatusLower == 'suspended';
-        if (isWon || isRejected) continue;
+        final isInterested = reqStatusLower == 'interested' || reqStatusLower == 'active' || reqStatusLower == 'live';
+        if (isWon || isRejected || isInterested) continue;
 
         // Prevent duplicate follow-up records for the same client
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');
@@ -542,9 +543,9 @@ class FollowupSyncEngine {
           followupDate: (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty)
               ? req.nextFollowupDate!
               : f.followupDate,
-          status: f.status.isNotEmpty
-              ? f.status
-              : (req.status.isNotEmpty ? req.status : 'Pending'),
+          status: req.status.isNotEmpty
+              ? req.status
+              : (f.status.isNotEmpty ? f.status : 'Pending'),
         );
 
         followupToReqMap[itemWithSalesman.id] = req;
@@ -571,7 +572,7 @@ class FollowupSyncEngine {
         if (!hasFollowup) continue;
         if (isSiteVisitStatus(reqStatus)) continue;
         final rStatusLower = reqStatus.trim().toLowerCase();
-        if (rStatusLower.startsWith('rejected') || rStatusLower == 'won' || rStatusLower == 'closed') continue;
+        if (rStatusLower.startsWith('rejected') || rStatusLower == 'won' || rStatusLower == 'closed' || rStatusLower == 'interested' || rStatusLower == 'active' || rStatusLower == 'live') continue;
         if (!_matchesListingType(req, targetListingType)) continue;
 
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');

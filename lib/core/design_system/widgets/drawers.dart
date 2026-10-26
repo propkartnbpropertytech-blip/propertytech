@@ -28,6 +28,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import '../../utils/file_downloader.dart';
 import '../../../../core/api/dio_client.dart';
+import 'dart:io' show Platform;
+import 'package:archive/archive.dart';
+import '../../services/media/gallery_media_saver.dart';
+import '../../services/platform_notifier/platform_notifier.dart';
+import '../../services/notification_center.dart';
+import '../../navigation/app_router.dart';
 
 Future<void> showCRMPropertyDrawer(BuildContext context, PropertyModel property) async {
   await showGeneralDialog(
@@ -93,6 +99,7 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
   bool _isMobileRevealed = false;
   String? _salesPersonMobile;
   bool _isLoadingSalesPersonMobile = true;
+  bool _isDownloadingImages = false;
 
   @override
   void initState() {
@@ -151,9 +158,9 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
   Widget _buildDownloadImagesHeaderButton(BuildContext context) {
     final imagesCount = widget.property.images.length;
     return Tooltip(
-      message: imagesCount > 0 ? 'Download all $imagesCount property images' : 'No images available to download',
+      message: imagesCount > 0 ? 'Download all ${imagesCount} property images' : 'No images available to download',
       child: InkWell(
-        onTap: () => _downloadAllPropertyImages(context),
+        onTap: _isDownloadingImages ? null : () => _downloadAllPropertyImages(context),
         borderRadius: BorderRadius.circular(20),
         child: Container(
           height: 38,
@@ -168,14 +175,24 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.download_rounded,
-                size: 18,
-                color: CRMColors.primaryOf(context),
-              ),
+              if (_isDownloadingImages)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: CRMColors.primaryOf(context),
+                  ),
+                )
+              else
+                Icon(
+                  Icons.download_rounded,
+                  size: 18,
+                  color: CRMColors.primaryOf(context),
+                ),
               const SizedBox(width: 6),
               Text(
-                'Images Download',
+                _isDownloadingImages ? 'Downloading...' : 'Images Download',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -190,77 +207,211 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
   }
 
   Future<void> _downloadAllPropertyImages(BuildContext context) async {
-    final images = widget.property.images;
+    if (_isDownloadingImages) return;
+
+    final images = widget.property.images.where((s) => s.trim().isNotEmpty).toList();
     if (images.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No images available for this property.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No images available for this property.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await PlatformNotifier.requestPermission();
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isDownloadingImages = true;
+    });
+
+    scaffoldMessenger?.hideCurrentSnackBar();
+    scaffoldMessenger?.showSnackBar(
       SnackBar(
-        content: Text('Downloading ${images.length} image(s) to Downloads folder...'),
-        duration: const Duration(seconds: 3),
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Downloading ${images.length} image${images.length == 1 ? '' : 's'}...',
+                style: const TextStyle(fontSize: 13, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(minutes: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
 
-    int successCount = 0;
     final code = widget.property.propertyCode.isNotEmpty ? widget.property.propertyCode : 'property';
+    final List<Map<String, dynamic>> downloadedImages = [];
+    final archive = Archive();
 
-    for (int i = 0; i < images.length; i++) {
-      final imgUrl = images[i].trim();
-      if (imgUrl.isEmpty) continue;
-      final ext = imgUrl.split('.').last.split('?').first.toLowerCase();
-      final validExt = (ext.length > 4 || ext.isEmpty || !['jpg', 'jpeg', 'png', 'webp'].contains(ext))
-          ? 'jpg'
-          : ext;
-      final filename = '${code}_image_${i + 1}.$validExt';
+    try {
+      for (int i = 0; i < images.length; i++) {
+        final imgUrl = images[i].trim();
+        if (imgUrl.isEmpty) continue;
+        final ext = imgUrl.split('.').last.split('?').first.toLowerCase();
+        final validExt = (ext.length > 4 || ext.isEmpty || !['jpg', 'jpeg', 'png', 'webp'].contains(ext))
+            ? 'jpg'
+            : ext;
+        final filename = '${code}_image_${i + 1}.${validExt}';
 
-      try {
-        if (kIsWeb) {
-          await FileDownloader.downloadUrl(imgUrl, filename);
-          successCount++;
-          await Future.delayed(const Duration(milliseconds: 350));
-        } else {
+        try {
           final response = await DioClient.dio.get<List<int>>(
             imgUrl,
             options: Options(responseType: ResponseType.bytes),
           );
           if (response.data != null && response.data!.isNotEmpty) {
-            await FileDownloader.download(response.data!, filename);
-            successCount++;
+            final bytes = Uint8List.fromList(response.data!);
+            downloadedImages.add({
+              'bytes': bytes,
+              'fileName': filename,
+            });
+            archive.addFile(ArchiveFile(filename, bytes.length, bytes));
           }
+        } catch (e) {
+          debugPrint('Failed downloading image $i: $e');
         }
-      } catch (e) {
-        try {
-          final uri = Uri.parse(imgUrl);
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          successCount++;
-        } catch (_) {}
       }
-    }
 
-    if (mounted) {
-      if (successCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$successCount image(s) downloaded to your PC Downloads folder!'),
-            backgroundColor: CRMColors.success,
-            duration: const Duration(seconds: 3),
-          ),
+      scaffoldMessenger?.hideCurrentSnackBar();
+
+      if (downloadedImages.isEmpty) {
+        final activeContext = mounted ? context : AppRouter.rootNavigatorKey.currentContext;
+        if (activeContext != null) {
+          ScaffoldMessenger.maybeOf(activeContext)?.showSnackBar(
+            const SnackBar(
+              content: Text('Failed to download property images.'),
+              backgroundColor: CRMColors.danger,
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      final zipEncoder = ZipEncoder();
+      final zipEncoded = zipEncoder.encode(archive);
+      final zipBytes = zipEncoded != null ? Uint8List.fromList(zipEncoded) : null;
+      final zipFilename = '${code}_images.zip';
+
+      int totalCount = downloadedImages.length;
+
+      if (kIsWeb) {
+        if (zipBytes != null) {
+          await FileDownloader.download(zipBytes, zipFilename);
+        }
+      } else if (Platform.isAndroid) {
+        if (zipBytes != null) {
+          await GalleryMediaSaver.saveZipToDownloads(
+            bytes: zipBytes,
+            fileName: zipFilename,
+          );
+        }
+
+        final albumName = 'PropKart - ${code}';
+        final galleryCount = await GalleryMediaSaver.saveImagesToGallery(
+          images: downloadedImages,
+          albumName: albumName,
         );
+        if (galleryCount > 0) {
+          totalCount = galleryCount;
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to download property images.'),
-            backgroundColor: CRMColors.danger,
-            duration: Duration(seconds: 2),
+        if (zipBytes != null) {
+          await GalleryMediaSaver.saveZipToDownloads(
+            bytes: zipBytes,
+            fileName: zipFilename,
+          );
+        }
+        final savedCount = await GalleryMediaSaver.saveImagesToGallery(
+          images: downloadedImages,
+          albumName: code,
+        );
+        if (savedCount > 0) {
+          totalCount = savedCount;
+        }
+      }
+
+      final notificationTitle = 'Images Downloaded';
+      final successNotificationText = '$totalCount ${totalCount == 1 ? 'image' : 'images'} downloaded successfully! All images downloaded successfully.';
+
+      // 1. Android System Notification (Notification bar / shade)
+      if (!kIsWeb && Platform.isAndroid) {
+        try {
+          PlatformNotifier.showNotification(
+            title: notificationTitle,
+            body: '$totalCount ${totalCount == 1 ? 'image' : 'images'} downloaded successfully!',
+            data: {'type': 'images_downloaded'},
+          );
+        } catch (e) {
+          debugPrint('Error showing Android platform notification: $e');
+        }
+      }
+
+      // 2. In-App Notification Center
+      try {
+        NotificationCenter.addNotification(
+          id: 'images_downloaded_${DateTime.now().millisecondsSinceEpoch}',
+          title: notificationTitle,
+          message: successNotificationText,
+          type: 'general',
+          route: '/properties',
+          notifyToast: false,
+        );
+      } catch (_) {}
+
+      // 3. In-App Floating SnackBar
+      final activeContext = mounted ? context : AppRouter.rootNavigatorKey.currentContext;
+      if (activeContext != null) {
+        final messenger = ScaffoldMessenger.maybeOf(activeContext);
+        messenger?.hideCurrentSnackBar();
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    successNotificationText,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: CRMColors.success,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloadingImages = false;
+        });
+      } else {
+        _isDownloadingImages = false;
       }
     }
   }

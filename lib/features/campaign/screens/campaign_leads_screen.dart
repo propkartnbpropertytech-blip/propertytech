@@ -112,10 +112,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   String? get _effectiveLockSource {
     final explicitLock = widget.lockSource;
-    if (explicitLock != null && explicitLock.isNotEmpty) {
+    if (explicitLock != null && explicitLock.trim().isNotEmpty) {
       return explicitLock;
     }
-    if (widget.portalTabId?.toLowerCase() == 'housing') {
+    if (widget.portalTabId?.trim().toLowerCase() == 'housing') {
       return 'Housing.com';
     }
     return null;
@@ -130,12 +130,13 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         unawaited(_loadFollowups());
       }
     }
-    if (_effectiveLockSource != null) {
-      _selectedSourceFilter = _effectiveLockSource!;
+    final effectiveLock = _effectiveLockSource;
+    if (effectiveLock != null && effectiveLock.isNotEmpty) {
+      _selectedSourceFilter = effectiveLock;
     } else if (widget.initialSource != null && widget.initialSource!.isNotEmpty) {
       _selectedSourceFilter = widget.initialSource!;
     }
-    final incomingLock = (_effectiveLockSource ?? widget.initialSource ?? '').toLowerCase();
+    final incomingLock = (effectiveLock ?? widget.initialSource ?? widget.portalTabId ?? '').toLowerCase();
     if (incomingLock.contains('meta') || incomingLock.contains('housing')) {
       _selectedDateFilter = CampaignDateFilter.allTime;
     }
@@ -247,7 +248,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (currentLock != oldEffectiveLock && currentLock != null) {
       final updatedLock = currentLock.toLowerCase();
       setState(() {
-        _selectedSourceFilter = _effectiveLockSource!;
+        _selectedSourceFilter = currentLock;
         if (updatedLock.contains('meta') || updatedLock.contains('housing')) {
           _selectedDateFilter = CampaignDateFilter.allTime;
         }
@@ -526,7 +527,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       if (requirement == 0 && listing == 0) return;
       _selectedSection = requirement >= listing ? 'Requirement' : 'Property Listing';
       _persistedSection = _selectedSection;
-    } else if (_effectiveLockSource != null) {
+    } else if (_effectiveLockSource != null && _effectiveLockSource!.isNotEmpty) {
       final curSource = _effectiveLockSource!;
       final scoped = _service.leads
           .where((l) => IntegrationService.matchesCampaignSource(l.source, curSource))
@@ -1192,7 +1193,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                   await _service.syncMetaLeads();
                 }
               }
-              final count = await _service.fetchServerLeads();
+              final lockedSource = _effectiveLockSource;
+              final count = await _service.fetchServerLeads(
+                source: (lockedSource != null && lockedSource.isNotEmpty) ? lockedSource : null,
+              );
               if (mounted) {
                 context.read<CampaignLeadsBloc>().add(const FetchCampaignLeadsEvent(silent: true));
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -5414,6 +5418,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   List<CampaignFollowupModel> _getScopedFollowupItems() {
     final allItems = _getAllFollowupItems();
+    final activeSourceFilter = _effectiveLockSource ?? (_selectedSourceFilter == 'All' ? null : _selectedSourceFilter);
+    final sourceFilteredItems = activeSourceFilter != null
+        ? allItems.where((f) => IntegrationService.matchesCampaignSource(f.lead?.source ?? '', activeSourceFilter)).toList()
+        : allItems;
     final role = (RoleGuard.currentUser?.role ?? '').toLowerCase().trim();
     String currentRoleStr = '';
     if (mounted) {
@@ -5427,7 +5435,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final currentUserId = RoleGuard.currentUser?.id;
 
     if (isAdminOnly && _selectedFollowupTelecaller != 'All' && _selectedFollowupTelecaller.isNotEmpty) {
-      return allItems.where((f) {
+      return sourceFilteredItems.where((f) {
         final tcName = (f.telecallerName ??
                 f.lead?.assignedTelecallerName ??
                 f.lead?.rawJson['assigned_telecaller_name'] ??
@@ -5438,7 +5446,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         return tcName == _selectedFollowupTelecaller.toLowerCase();
       }).toList();
     } else if (isTelecaller && currentUserId != null && currentUserId.isNotEmpty) {
-      return allItems.where((f) {
+      return sourceFilteredItems.where((f) {
         final creatorId = (f.createdBy ?? f.telecallerId ?? f.lead?.assignedTelecallerId ?? '').toString().trim();
         if (creatorId.isNotEmpty && creatorId != currentUserId) return false;
         if (f.lead?.assignedTo != null && f.lead!.assignedTo!.isNotEmpty && f.lead!.assignedTo != currentUserId) {

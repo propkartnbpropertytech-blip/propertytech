@@ -1796,14 +1796,15 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
           },
         ));
 
-        if (targetLead?.leadType == 'Property Listing') {
-          unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: true));
-        } else if (requirementId.isNotEmpty && requirementId != 'null') {
+        if (requirementId.isNotEmpty && requirementId != 'null') {
           unawaited(_requirementsRepository.refreshFromServerNow());
+          unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
+        } else if (targetLead?.leadType == 'Property Listing') {
+          unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: true));
         } else {
           unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: true));
+          unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
         }
-        unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
       }
 
       final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};

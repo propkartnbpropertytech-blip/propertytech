@@ -204,7 +204,14 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog>
   }
 
   List<TeamChatUserModel> get _filteredUsers {
+    final authState = context.read<AuthBloc>().state;
+    final currentUserRole = authState is Authenticated ? authState.user.role.toLowerCase() : '';
+    final isSuperAdmin = currentUserRole == 'super admin';
+
     return _users.where((user) {
+      if (!isSuperAdmin && user.role.toLowerCase().contains('admin')) {
+        return false;
+      }
       final matchesSearch = _searchQuery.isEmpty ||
           user.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           user.role.toLowerCase().contains(_searchQuery.toLowerCase());
@@ -381,7 +388,10 @@ class _TeamMessengerDialogState extends State<TeamMessengerDialog>
   }
 
   Widget _buildUserSidebar(bool isDark, Color primaryColor) {
-    final roles = ['All', 'Admins', 'Telecallers', 'Sales'];
+    final authState = context.read<AuthBloc>().state;
+    final currentUserRole = authState is Authenticated ? authState.user.role.toLowerCase() : '';
+    final isSuperAdmin = currentUserRole == 'super admin';
+    final roles = isSuperAdmin ? ['All', 'Admins', 'Telecallers', 'Sales'] : ['All', 'Telecallers', 'Sales'];
 
     return Column(
       children: [
