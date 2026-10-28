@@ -9,6 +9,7 @@ import '../../security/role_guard.dart';
 import '../../../features/integration/services/integration_service.dart';
 import '../../../features/campaign/services/portal_integrations_service.dart';
 import '../../security/permission_matrix_service.dart';
+import '../../security/crm_control_guard.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
@@ -17,7 +18,6 @@ import '../tokens/app_typography.dart';
 import '../tokens/app_motion.dart';
 import '../tokens/app_shadows.dart';
 import 'crm_brand_lockup.dart';
-import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
@@ -143,7 +143,7 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   void _startNotificationsTimer() {
     _notificationsTimer?.cancel();
-    final interval = _notificationsPanelOpen ? const Duration(seconds: 25) : const Duration(seconds: 60);
+    final interval = const Duration(seconds: 8);
     _notificationsTimer = Timer.periodic(interval, (_) async {
       if (mounted) {
         await _fetchNotifications(silent: true);
@@ -629,9 +629,28 @@ class _CRMAppShellState extends State<CRMAppShell>
     _knownNotificationIds.addAll(seenIds);
     _isFirstNotifFetch = false;
 
-    int unreadMsgCount = 0;
+        int unreadMsgCount = 0;
     try {
       unreadMsgCount = await TeamMessagesService().getUnreadCount();
+      if (!_isFirstNotifFetch && unreadMsgCount > _unreadTeamMessagesCount) {
+        try {
+          final teamUsers = await TeamMessagesService().getTeamUsers();
+          for (final u in teamUsers) {
+            if (u.unreadCount > 0 && u.lastMessage != null && u.lastMessage!.trim().isNotEmpty) {
+              PlatformNotifier.showNotification(
+                title: u.name,
+                body: u.lastMessage!.trim(),
+                data: {
+                  'route': '/messages?userId=' + u.id,
+                  'type': 'team_message',
+                  'senderId': u.id,
+                  'senderName': u.name,
+                },
+              );
+            }
+          }
+        } catch (_) {}
+      }
     } catch (_) {}
 
     if (mounted) {
@@ -818,17 +837,17 @@ class _CRMAppShellState extends State<CRMAppShell>
       final lakhs = val / 100000;
       final lakhsStr = lakhs.toStringAsFixed(lakhs.truncateToDouble() == lakhs ? 0 : 1);
       list.add('${lakhsStr}l');
-      list.add('${lakhsStr} l');
+      list.add('$lakhsStr l');
       list.add('${lakhsStr}lakh');
-      list.add('${lakhsStr} lakh');
-      list.add('${lakhsStr} lakhs');
+      list.add('$lakhsStr lakh');
+      list.add('$lakhsStr lakhs');
     } else if (val >= 1000) {
       final k = val / 1000;
       final kStr = k.toStringAsFixed(k.truncateToDouble() == k ? 0 : 1);
       list.add('${kStr}k');
-      list.add('${kStr} k');
+      list.add('$kStr k');
       list.add('${kStr}thousand');
-      list.add('${kStr} thousand');
+      list.add('$kStr thousand');
     }
   }
 
@@ -1599,8 +1618,8 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (userState.user.role.isNotEmpty) {
         currentUserRole = userState.user.role;
       }
-      if (RoleGuard.isTelecaller(currentUserRole)) {
-        TelecallerShiftManager.instance.init(userState.user.id);
+      if (RoleGuard.isTelecaller(currentUserRole) || RoleGuard.isSales(currentUserRole)) {
+        TelecallerShiftManager.instance.init(userState.user.id, role: currentUserRole);
       } else {
         TelecallerShiftManager.instance.dispose();
       }
@@ -1739,9 +1758,11 @@ class _CRMAppShellState extends State<CRMAppShell>
             ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           _buildSyncOverlay(),
-          FloatingActionMenu(
-            role: currentUserRole,
-            isMobile: false,
+          Positioned.fill(
+            child: FloatingActionMenu(
+              role: currentUserRole,
+              isMobile: false,
+            ),
           ),
         ],
       ),
@@ -1808,8 +1829,12 @@ class _CRMAppShellState extends State<CRMAppShell>
               onMessages: () => context.go('/messages'),
               unreadNotifications: _unreadNotificationsCount,
               unreadMessages: _unreadTeamMessagesCount,
-              roleControl: isTelecaller
-                  ? const TelecallerAvailabilityToggle(compact: true)
+              roleControl: (isTelecaller || RoleGuard.isSales(role))
+                  ? TelecallerAvailabilityToggle(
+                      compact: true,
+                      isReadOnly: RoleGuard.isSales(role),
+                      showTimer: !RoleGuard.isSales(role),
+                    )
                   : null,
               searchBar: searchOpen
                   ? MobileSearchBar(
@@ -1834,9 +1859,11 @@ class _CRMAppShellState extends State<CRMAppShell>
           ),
           if (_notificationsPanelOpen) _buildNotificationsPanel(context),
           _buildSyncOverlay(),
-          FloatingActionMenu(
-            role: role,
-            isMobile: true,
+          Positioned.fill(
+            child: FloatingActionMenu(
+              role: role,
+              isMobile: true,
+            ),
           ),
         ],
       ),
@@ -3003,6 +3030,8 @@ class _CRMAppShellState extends State<CRMAppShell>
           context.go('/properties?action=add');
         } else if (value == 'requirement') {
           context.go('/requirements?action=add');
+        } else if (value == 'toggle_bar') {
+          FloatingActionMenu.toggleBarVisibility();
         }
       },
       itemBuilder: (BuildContext context) => [
@@ -3034,6 +3063,29 @@ class _CRMAppShellState extends State<CRMAppShell>
                 style: TextStyle(color: CRMColors.textOf(context)),
               ),
             ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem(
+          value: 'toggle_bar',
+          child: ValueListenableBuilder<bool>(
+            valueListenable: FloatingActionMenu.barVisibilityNotifier,
+            builder: (context, visible, _) {
+              return Row(
+                children: [
+                  Icon(
+                    visible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: CRMColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: CRMSpacing.s),
+                  Text(
+                    visible ? 'Hide Quick Action Bar' : 'Show Quick Action Bar',
+                    style: TextStyle(color: CRMColors.textOf(context)),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -3124,32 +3176,42 @@ class _CRMAppShellState extends State<CRMAppShell>
                 horizontal: isExpanded ? CRMSpacing.s : CRMSpacing.xxs,
               ),
               children: [
-                _buildSidebarItem(
-                  Icons.dashboard_rounded,
-                  'Dashboard',
-                  '/dashboard',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.dashboard',
+                  child: _buildSidebarItem(
+                    Icons.dashboard_rounded,
+                    'Dashboard',
+                    '/dashboard',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                _buildSidebarItem(
-                  Icons.home_work_rounded,
-                  'Properties',
-                  '/properties',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.properties',
+                  child: _buildSidebarItem(
+                    Icons.home_work_rounded,
+                    'Properties',
+                    '/properties',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                _buildSidebarItem(
-                  Icons.assignment_rounded,
-                  'Leads',
-                  '/requirements',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.leads',
+                  child: _buildSidebarItem(
+                    Icons.assignment_rounded,
+                    'Leads',
+                    '/requirements',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                if (userRole == 'Admin' || userRole == 'Super Admin') ...[
-                  _buildSidebarItem(
+                CrmControlGuard(
+                  controlKey: 'page.users',
+                  child: _buildSidebarItem(
                     Icons.people_outline_rounded,
                     'Employees',
                     '/users',
@@ -3157,7 +3219,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                     isMobile,
                     isExpanded,
                   ),
-                  _buildSidebarTreeItem(
+                ),
+                CrmControlGuard(
+                  controlKey: 'page.campaign',
+                  child: _buildSidebarTreeItem(
                     icon: Icons.campaign_rounded,
                     label: 'Campaign',
                     currentPath: currentPath,
@@ -3183,34 +3248,89 @@ class _CRMAppShellState extends State<CRMAppShell>
                         _SidebarSubItemData(
                           icon: Icons.hub_outlined,
                           label: row['name']?.toString() ?? 'Portal',
-                          route: '/campaign/portal-leads/${row['id']}',
+                          route: '/campaign/portal-leads/' + row['id'],
                         ),
                     ],
                   ),
+                ),
+                CrmControlGuard(
+                  controlKey: 'page.reports',
+                  child: _buildSidebarItem(
+                    Icons.bar_chart_rounded,
+                    'Reports',
+                    '/reports',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
+                ),
+                CrmControlGuard(
+                  controlKey: 'page.library',
+                  child: _buildSidebarItem(
+                    Icons.folder_open_rounded,
+                    'Library',
+                    '/library',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
+                ),
+                if (RoleGuard.isSuperAdmin(userRole)) ...[
+                  CrmControlGuard(
+                    controlKey: 'page.settings.audit_logs',
+                    child: _buildSidebarItem(
+                      Icons.security_rounded,
+                      'Permissions Studio',
+                      '/admin/permissions',
+                      currentPath,
+                      isMobile,
+                      isExpanded,
+                    ),
+                  ),
+                  CrmControlGuard(
+                    controlKey: 'page.settings.audit_logs',
+                    child: _buildSidebarItem(
+                      Icons.workspace_premium_rounded,
+                      'Tier Plans Studio',
+                      '/admin/plans',
+                      currentPath,
+                      isMobile,
+                      isExpanded,
+                    ),
+                  ),
+                  CrmControlGuard(
+                    controlKey: 'page.settings.audit_logs',
+                    child: _buildSidebarItem(
+                      Icons.domain_rounded,
+                      'Broker Workspaces',
+                      '/admin/brokers',
+                      currentPath,
+                      isMobile,
+                      isExpanded,
+                    ),
+                  ),
                 ],
-                _buildSidebarItem(
-                  Icons.folder_open_rounded,
-                  'Library',
-                  '/library',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.settings',
+                  child: _buildSidebarItem(
+                    Icons.settings_rounded,
+                    'Settings',
+                    '/settings',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                _buildSidebarItem(
-                  Icons.settings_rounded,
-                  'Settings',
-                  '/settings',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
-                ),
-                _buildSidebarItem(
-                  Icons.delete_sweep_rounded,
-                  'Recycle Bin',
-                  '/bin',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.recycle_bin',
+                  child: _buildSidebarItem(
+                    Icons.delete_sweep_rounded,
+                    'Recycle Bin',
+                    '/bin',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
               ],
             ),

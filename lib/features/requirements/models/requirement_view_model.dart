@@ -86,10 +86,12 @@ class RequirementListItemViewModel {
     // 2. Effective status & mapped status
     final now = relativeNow ?? DateTime.now();
     String effStatus = r.status;
-    if (effStatus == 'New' || effStatus.isEmpty) {
-      if (now.difference(r.createdAt) >= const Duration(hours: 24)) {
+    if ((effStatus == 'New' || effStatus.isEmpty) && r.isManuallyAdded) {
+      final bool alreadyTransitioned = r.metaCustomFields?['auto_transitioned_to_not_started'] == true ||
+          r.metaCustomFields?['auto_transitioned_to_not_started'] == 'true';
+      if (!alreadyTransitioned && now.difference(r.createdAt) >= const Duration(hours: 24)) {
         effStatus = 'Not Started';
-      } else {
+      } else if (!alreadyTransitioned) {
         effStatus = 'New';
       }
     }
@@ -142,8 +144,9 @@ class RequirementListItemViewModel {
         ? '₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}'
         : 'Budget on Request';
 
-    // Date text
-    final String dateStr = DateFormat("dd MMM ''yy, h:mm a").format(r.createdAt.toLocal());
+    // Date text (use transfer date for transferred leads)
+    final effectiveLeadDate = (r.salesAssignedAt ?? r.createdAt).toLocal();
+    final String dateStr = DateFormat("dd MMM ''yy, h:mm a").format(effectiveLeadDate);
 
     // Specs text
     final String specs = '${r.propertyTypeName} (${(r.configurationName != null && r.configurationName!.isNotEmpty) ? r.configurationName : "Any Config"})';
@@ -166,7 +169,7 @@ class RequirementListItemViewModel {
       }
     }
 
-    final localCreated = r.createdAt.toLocal();
+    final localCreated = (r.salesAssignedAt ?? r.createdAt).toLocal();
     final dtForFilter = rejDate ?? localCreated;
     final int sortMillis = (rejDate ?? r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
     final int normSortMillis = (r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
@@ -233,15 +236,55 @@ class RequirementListItemViewModel {
 
   static bool _checkUserAssignee(RequirementModel r, dynamic user) {
     if (user == null) return false;
-    final uid = user is UserModel ? user.id : (user is users_model.UserModel ? user.id : '');
-    if (r.assignedTo != null && r.assignedTo == uid) return true;
+    final uid = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString())).trim();
+    if (uid.isNotEmpty) {
+      if (r.assignedTo != null && r.assignedTo!.isNotEmpty) {
+        return r.assignedTo == uid;
+      }
+      final metaAssigned = r.metaCustomFields?['assigned_to']?.toString().trim();
+      if (metaAssigned != null && metaAssigned.isNotEmpty) return metaAssigned == uid;
+    }
     final uName = (user is UserModel ? user.fullName : (user is users_model.UserModel ? user.fullName : '')).trim().toLowerCase();
     if (uName.isNotEmpty) {
-      if (r.assignedTo != null && r.assignedTo!.trim().toLowerCase() == uName) return true;
-      if (r.assigneeName != null && r.assigneeName!.trim().toLowerCase() == uName) return true;
+      if (r.assignedTo != null && r.assignedTo!.trim().isNotEmpty) {
+        return r.assignedTo!.trim().toLowerCase() == uName;
+      }
+      if (r.assigneeName != null && r.assigneeName!.trim().isNotEmpty) {
+        return r.assigneeName!.trim().toLowerCase() == uName;
+      }
     }
     return false;
   }
+
+  /// Returns true ONLY if this lead was directly allocated to the Salesperson
+  /// through the Admin's Salesperson lead allocation configuration (when Salesperson toggle was ON).
+  /// Excludes leads assigned through the Telecaller workflow, leads manually added by the Salesperson,
+  /// or leads belonging to other staff.
+  static bool isDirectSalesCampaignLead(RequirementModel r, dynamic user) {
+    if (user == null) return false;
+    final uid = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString())).trim();
+    if (uid.isEmpty) return false;
+
+    // 1. Must be currently assigned to this user
+    if (!_checkUserAssignee(r, user)) return false;
+
+    // 2. Must not be manually created by this user
+    if (_checkUserCreator(r, user)) return false;
+
+    // 3. Must have isDirectSalesAllocated set to true (or fallback to metadata tag)
+    if (r.isDirectSalesAllocated) return true;
+    final meta = r.metaCustomFields;
+    if (meta != null &&
+        (meta['direct_sales_allocated'] == true ||
+         meta['direct_sales_allocated'] == 'true' ||
+         meta['is_direct_sales_allocated'] == true ||
+         meta['is_direct_sales_allocated'] == 'true')) {
+      return true;
+    }
+
+    return false;
+  }
+
 
   static bool _checkLeadTransferredAway(RequirementModel r, dynamic currentUser) {
     if (currentUser == null) return false;
@@ -453,10 +496,23 @@ class RequirementFilterEngine {
         (currentUser == null || isAdmin);
 
     final filtered = <RequirementListItemViewModel>[];
+    final Set<String> seenRequirementIds = {};
 
     for (int i = 0; i < items.length; i++) {
       final vm = items[i];
       final r = vm.requirement;
+      if (r.id.isNotEmpty && !seenRequirementIds.add(r.id)) {
+        continue;
+      }
+
+      // 0. Campaign leads (Housing, Meta, Webhook, Portal, etc.) MUST NOT appear on the Leads page until assigned to a Salesperson.
+      if (r.isCampaignLead) {
+        final assigned = r.assignedTo?.trim();
+        final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+        if (!hasAssignedSalesperson) {
+          continue;
+        }
+      }
 
       // 1. Leads Added by Me check
       if (isLeadsAddedByMe) {
@@ -480,7 +536,10 @@ class RequirementFilterEngine {
             if (salesLeadGroupFilter == 'assigned') {
               final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
               final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
-              if (!isAssigned || isCreator) continue;
+              final isDirectCamp = RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser);
+              if (!isAssigned || isCreator || isDirectCamp) continue;
+            } else if (salesLeadGroupFilter == 'campaign') {
+              if (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) continue;
             } else if (salesLeadGroupFilter == 'added') {
               if (!RequirementListItemViewModel._checkUserCreator(r, currentUser)) continue;
             }
@@ -587,9 +646,17 @@ class RequirementFilterEngine {
               if (salesLeadGroupFilter == 'assigned') {
                 final isAssigned = selectedSales != null
                     ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
-                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales))
-                    : (r.assignedTo == selectedSalesFilterId && r.createdBy != selectedSalesFilterId);
+                        !RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
+                        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales))
+                    : (RequirementListItemViewModel._checkUserAssignee(r, selectedSalesFilterId) &&
+                        r.createdBy != selectedSalesFilterId &&
+                        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId));
                 if (!isAssigned) continue;
+              } else if (salesLeadGroupFilter == 'campaign') {
+                final isDirectCamp = selectedSales != null
+                    ? RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales)
+                    : RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId);
+                if (!isDirectCamp) continue;
               } else if (salesLeadGroupFilter == 'added') {
                 final isCreator = selectedSales != null
                     ? RequirementListItemViewModel._checkUserCreator(r, selectedSales)
@@ -650,7 +717,7 @@ class RequirementFilterEngine {
       }
 
       // 12. Date filter
-      final dt = isRejectedTab ? vm.filterDate : vm.requirement.createdAt.toLocal();
+      final dt = isRejectedTab ? vm.filterDate : (vm.requirement.salesAssignedAt != null ? vm.requirement.salesAssignedAt!.toLocal() : vm.requirement.createdAt.toLocal());
       bool matchesDate = true;
       switch (datePreset) {
         case LeadDateFilterPreset.today:

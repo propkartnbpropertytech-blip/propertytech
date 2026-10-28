@@ -167,6 +167,34 @@ class TeamUserVisibility {
   }
 
   static bool requirementBelongsToUser(RequirementModel req, dynamic user) {
+    if (user == null) return false;
+    String userRole = '';
+    if (user is UserModel) {
+      userRole = user.roleName;
+    } else {
+      try {
+        userRole = ((user as dynamic).roleName ?? (user as dynamic).role ?? '').toString();
+      } catch (_) {
+        userRole = '';
+      }
+    }
+    final bool isSales = isSalesRole(userRole.trim().toLowerCase());
+
+    if (isSales) {
+      // For sales users: lead strictly belongs if currently assigned to them or created by them (and not transferred away)
+      final isAssignee = _matchesPerson(req.assignedTo, user) || _matchesPerson(req.assigneeName, user);
+      if (isAssignee) return true;
+
+      final isCreator = _matchesPerson(req.createdBy, user) || _matchesPerson(req.creatorName, user);
+      if (isCreator) {
+        final assigned = req.assignedTo;
+        if (assigned == null || assigned.isEmpty || _matchesPerson(assigned, user)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     if (_matchesPerson(req.assignedTo, user) || _matchesPerson(req.assigneeName, user)) {
       return true;
     }

@@ -112,28 +112,30 @@ class _TelecallerShiftGateOverlayState extends State<TelecallerShiftGateOverlay>
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Your 6-hour manual OFF allowance for this 24-hour cycle has completed.',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFFDC2626),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your 6-hour manual OFF allowance for this 24-hour cycle has completed.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFDC2626),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'You must turn the Active toggle ON to receive new lead assignments again.\n\nYou can continue using the software normally to work on your current leads, but no new incoming leads will be assigned until your toggle is ON.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                  height: 1.45,
+                const SizedBox(height: 10),
+                Text(
+                  'You must turn the Active toggle ON to receive new lead assignments again.\n\nYou can continue using the software normally to work on your current leads, but no new incoming leads will be assigned until your toggle is ON.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                    height: 1.45,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             OutlinedButton(
@@ -362,7 +364,7 @@ class _TelecallerShiftGateOverlayState extends State<TelecallerShiftGateOverlay>
                       elevation: 3,
                       color: const Color(0xFFDC2626),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         child: Row(
                           children: [
                             const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),

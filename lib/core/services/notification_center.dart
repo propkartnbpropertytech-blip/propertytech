@@ -97,7 +97,7 @@ class NotificationCenter {
   }) async {
     await init(userId: _userId ?? RoleGuard.currentUser?.id);
 
-    final notifKey = '${title}_${message}'.replaceAll(' ', '').toLowerCase();
+    final notifKey = '${title}_$message'.replaceAll(' ', '').toLowerCase();
     if (_deletedIds.contains(notifKey)) {
       return;
     }
@@ -172,7 +172,7 @@ class NotificationCenter {
     if ((notif['action'] ?? '').toString() == 'refresh') return;
     final localId = (notif['id'] ?? '').toString();
     if (localId.startsWith('due_')) return;
-    final persistKey = '${type}_${title}_${message}'.replaceAll(' ', '').toLowerCase();
+    final persistKey = '${type}_${title}_$message'.replaceAll(' ', '').toLowerCase();
     if (_persistingKeys.contains(persistKey)) return;
     _persistingKeys.add(persistKey);
     try {
@@ -230,7 +230,7 @@ class NotificationCenter {
     _localNotifications.removeWhere((n) => n['id'] == id);
     _deletedIds.add(id);
     if (title != null && message != null) {
-      final notifKey = '${title}_${message}'.replaceAll(' ', '').toLowerCase();
+      final notifKey = '${title}_$message'.replaceAll(' ', '').toLowerCase();
       _deletedIds.add(notifKey);
     }
     await _saveToStorage();

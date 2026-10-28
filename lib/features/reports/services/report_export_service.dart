@@ -1,10 +1,3 @@
-/// ============================================================================
-/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
-/// All exported Excel/CSV/PDF reports and operational KPI sheets generated here
-/// MUST adhere to the Master KPI Rulebook: lib/core/constants/kpi_rulebook.dart
-/// and docs/KPIs.docx.
-/// ============================================================================
-import '../../../core/constants/kpi_rulebook.dart';
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -567,22 +560,23 @@ class ReportExportService {
     String? subjectLabel,
   }) {
     final excel = Excel.createExcel();
+    final title = reportTitle ?? 'PROPKART REAL ESTATE - AUTHORITATIVE EXECUTIVE KPI & INVENTORY DASHBOARD';
 
     // ────────────────────────────────────────────────────────────────────────────
-    // 1. EXECUTIVE DASHBOARD SHEET
+    // 1. SUMMARY SHEET
     // ────────────────────────────────────────────────────────────────────────────
-    final dashboardSheet = excel['Executive Dashboard'];
-    dashboardSheet.appendRow([TextCellValue('PROPKART REAL ESTATE - AUTHORITATIVE EXECUTIVE KPI & INVENTORY DASHBOARD')]);
-    dashboardSheet.appendRow([TextCellValue('Live Production CRM Audit • Master Operational & Analytical Records')]);
-    dashboardSheet.appendRow([TextCellValue('Reporting Period:'), TextCellValue(config.dateRange.formattedRange)]);
-    dashboardSheet.appendRow([TextCellValue('Export Generated:'), TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()))]);
+    final summarySheet = excel['Summary'];
+    summarySheet.appendRow([TextCellValue(title)]);
+    summarySheet.appendRow([TextCellValue('Live Production CRM Audit • Master Operational & Analytical Records')]);
+    summarySheet.appendRow([TextCellValue('Reporting Period:'), TextCellValue(config.dateRange.formattedRange)]);
+    summarySheet.appendRow([TextCellValue('Export Generated:'), TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()))]);
     if (subjectLabel != null && subjectLabel.isNotEmpty) {
-      dashboardSheet.appendRow([TextCellValue('Subject Context:'), TextCellValue(subjectLabel)]);
+      summarySheet.appendRow([TextCellValue('Subject Context:'), TextCellValue(subjectLabel)]);
     }
     if (config.filters.hasActiveFilters) {
-      dashboardSheet.appendRow([TextCellValue('Active Filters:'), TextCellValue('${config.filters.activeFiltersCount} filters applied')]);
+      summarySheet.appendRow([TextCellValue('Active Filters:'), TextCellValue('${config.filters.activeFiltersCount} filters applied')]);
     }
-    dashboardSheet.appendRow([]);
+    summarySheet.appendRow([]);
 
     // Headline Metrics
     final totalLeads = reportData.kpiValues[ReportKpiType.totalLeads]?.count ?? 0;
@@ -591,7 +585,7 @@ class ReportExportService {
     final convRate = reportData.kpiValues[ReportKpiType.convertedToWon]?.percentage ?? 0.0;
     final availableProps = reportData.availableProperties.where((p) => p.propertyStatusName.toLowerCase() == 'available').length;
 
-    dashboardSheet.appendRow([
+    summarySheet.appendRow([
       TextCellValue('Available Inventory'),
       IntCellValue(availableProps > 0 ? availableProps : reportData.availableProperties.length),
       TextCellValue('Total Leads'),
@@ -603,11 +597,18 @@ class ReportExportService {
       TextCellValue('Conversion Rate %'),
       TextCellValue('${convRate.toStringAsFixed(1)}%'),
     ]);
-    dashboardSheet.appendRow([]);
 
-    // Operational KPI Breakdown Table
-    dashboardSheet.appendRow([TextCellValue('=== OPERATIONAL KPI BREAKDOWN ===')]);
-    dashboardSheet.appendRow([
+    // Also populate Executive Dashboard sheet for backwards compatibility
+    final dashboardSheet = excel['Executive Dashboard'];
+    for (final row in summarySheet.rows) {
+      dashboardSheet.appendRow(row.map((c) => c?.value ?? TextCellValue('')).toList());
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // 2. KPIS SHEET
+    // ────────────────────────────────────────────────────────────────────────────
+    final kpiSheet = excel['KPIs'];
+    kpiSheet.appendRow([
       TextCellValue('Order'),
       TextCellValue('KPI Metric'),
       TextCellValue('Count'),
@@ -617,7 +618,7 @@ class ReportExportService {
     for (var i = 0; i < config.sortedEnabledKpis.length; i++) {
       final k = config.sortedEnabledKpis[i];
       final v = reportData.kpiValues[k.type];
-      dashboardSheet.appendRow([
+      kpiSheet.appendRow([
         IntCellValue(i + 1),
         TextCellValue(k.type.displayName),
         k.showCount ? IntCellValue(v?.count ?? 0) : TextCellValue('—'),
@@ -625,36 +626,20 @@ class ReportExportService {
         TextCellValue(v?.denominatorLabel ?? ''),
       ]);
     }
-    dashboardSheet.appendRow([]);
 
-    // Lead Sources Table
-    if (reportData.leadSources.isNotEmpty) {
-      dashboardSheet.appendRow([TextCellValue('=== LEAD SOURCE DISTRIBUTION ===')]);
-      dashboardSheet.appendRow([
-        TextCellValue('Lead Source'),
-        TextCellValue('Count'),
-        TextCellValue('Share %'),
-      ]);
-      for (final src in reportData.leadSources) {
-        dashboardSheet.appendRow([
-          TextCellValue(src.source),
-          IntCellValue(src.count),
-          DoubleCellValue(double.parse(src.percentage.toStringAsFixed(2))),
-        ]);
-      }
-      dashboardSheet.appendRow([]);
-    }
-
-    // Pipeline Stages Table
-    if (reportData.pipelineStages.isNotEmpty) {
-      dashboardSheet.appendRow([TextCellValue('=== PIPELINE STATUS BREAKDOWN ===')]);
-      dashboardSheet.appendRow([
+    // ────────────────────────────────────────────────────────────────────────────
+    // 3. LEAD STATUS SHEET (conditional)
+    // ────────────────────────────────────────────────────────────────────────────
+    if (config.showLeadStatusPipeline) {
+      final leadStatusSheet = excel['Lead Status'];
+      leadStatusSheet.appendRow([TextCellValue('=== PIPELINE STATUS BREAKDOWN ===')]);
+      leadStatusSheet.appendRow([
         TextCellValue('Pipeline Stage'),
         TextCellValue('Leads Count'),
         TextCellValue('Share %'),
       ]);
       for (final s in reportData.pipelineStages) {
-        dashboardSheet.appendRow([
+        leadStatusSheet.appendRow([
           TextCellValue(s.displayName),
           IntCellValue(s.count),
           DoubleCellValue(double.parse(s.percentage.toStringAsFixed(2))),
@@ -663,215 +648,29 @@ class ReportExportService {
     }
 
     // ────────────────────────────────────────────────────────────────────────────
-    // 2. PROPERTIES (INVENTORY) SHEET
+    // 4. CONVERSION FUNNEL SHEET (conditional)
     // ────────────────────────────────────────────────────────────────────────────
-    final propsSheet = excel['Properties'];
-    propsSheet.appendRow([
-      TextCellValue('Sr No'),
-      TextCellValue('Property Code'),
-      TextCellValue('Property Title'),
-      TextCellValue('Property Status'),
-      TextCellValue('Listing Type (Rental / Re-sale)'),
-      TextCellValue('Added By Role'),
-      TextCellValue('Added By Name'),
-      TextCellValue('Category'),
-      TextCellValue('Property Type'),
-      TextCellValue('Configuration'),
-      TextCellValue('Price / Rent (INR)'),
-      TextCellValue('Deposit (INR)'),
-      TextCellValue('Super Builtup Area (Sq.Ft)'),
-      TextCellValue('Carpet Area (Sq.Ft)'),
-      TextCellValue('Locality / Area'),
-      TextCellValue('City'),
-      TextCellValue('Owner Name'),
-      TextCellValue('Owner Mobile'),
-      TextCellValue('Date Added'),
-    ]);
-
-    for (var i = 0; i < reportData.availableProperties.length; i++) {
-      final p = reportData.availableProperties[i];
-      propsSheet.appendRow([
-        IntCellValue(i + 1),
-        TextCellValue(p.propertyCode),
-        TextCellValue(p.title),
-        TextCellValue(p.propertyStatusName),
-        TextCellValue(p.listingTypeName),
-        TextCellValue(p.createdByName.isNotEmpty ? 'Staff' : 'Owner'),
-        TextCellValue(p.createdByName),
-        TextCellValue(p.categoryName),
-        TextCellValue(p.propertyTypeName),
-        TextCellValue(p.configurationName ?? 'N/A'),
-        DoubleCellValue(p.price),
-        DoubleCellValue(p.deposit),
-        DoubleCellValue(p.superBuiltupArea ?? 0),
-        DoubleCellValue(p.carpetArea ?? 0),
-        TextCellValue(p.areaName.isNotEmpty ? p.areaName : p.address),
-        TextCellValue(p.cityName),
-        TextCellValue(p.ownerName),
-        TextCellValue(p.ownerMobile),
-        TextCellValue(DateFormat('yyyy-MM-dd').format(p.createdAt)),
+    if (config.showConversionFunnel) {
+      final funnelSheet = excel['Conversion Funnel'];
+      funnelSheet.appendRow([TextCellValue('=== CONVERSION FUNNEL ===')]);
+      funnelSheet.appendRow([
+        TextCellValue('Funnel Stage'),
+        TextCellValue('Leads Count'),
+        TextCellValue('Step Conversion %'),
       ]);
+      for (final s in reportData.funnelStages) {
+        funnelSheet.appendRow([
+          TextCellValue(s.stageName),
+          IntCellValue(s.count),
+          DoubleCellValue(double.parse(s.stageConversionRate.toStringAsFixed(2))),
+        ]);
+      }
     }
 
     // ────────────────────────────────────────────────────────────────────────────
-    // 3. ALL LEADS SHEET
+    // 5. FOLLOW-UPS SHEET (conditional)
     // ────────────────────────────────────────────────────────────────────────────
-    final leadsList = reportData.allLeads.isNotEmpty ? reportData.allLeads : reportData.filteredLeads;
-    final allLeadsSheet = excel['All Leads'];
-    allLeadsSheet.appendRow([
-      TextCellValue('Sr No'),
-      TextCellValue('Lead Date & Time'),
-      TextCellValue('Source'),
-      TextCellValue('Lead Type'),
-      TextCellValue('Customer Name'),
-      TextCellValue('Contact Mobile'),
-      TextCellValue('Email'),
-      TextCellValue('City / Locality'),
-      TextCellValue('Property Type & Config'),
-      TextCellValue('Budget Range (INR)'),
-      TextCellValue('Allocated Telecaller'),
-      TextCellValue('Telecaller Status'),
-      TextCellValue('Assigned Sales Executive'),
-      TextCellValue('Sales CRM Status'),
-      TextCellValue('Remarks / Notes'),
-    ]);
-
-    for (var i = 0; i < leadsList.length; i++) {
-      final l = leadsList[i];
-      final budgetStr = 'Rs ${l.minBudget.toInt()} - ${l.maxBudget.toInt()}';
-      final localityStr = l.areaNames.isNotEmpty ? l.areaNames.join(', ') : 'N/A';
-      final typeConfigStr = '${l.configurationName ?? "" } ${l.propertyTypeName}'.trim();
-
-      allLeadsSheet.appendRow([
-        IntCellValue(i + 1),
-        TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt)),
-        TextCellValue(l.leadSource ?? 'Direct'),
-        TextCellValue(l.listingTypeName ?? 'Requirement'),
-        TextCellValue(l.clientName),
-        TextCellValue(l.clientMobile),
-        TextCellValue(l.creatorEmail ?? ''),
-        TextCellValue(localityStr),
-        TextCellValue(typeConfigStr.isNotEmpty ? typeConfigStr : l.categoryName),
-        TextCellValue(budgetStr),
-        TextCellValue(l.creatorName ?? 'Unassigned'),
-        TextCellValue(l.status),
-        TextCellValue(l.assigneeName ?? 'Unassigned'),
-        TextCellValue(l.assigneeName != null ? l.status : 'Not Assigned to Sales'),
-        TextCellValue(l.remarks ?? l.notes ?? ''),
-      ]);
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // 4. INTERESTED LEADS SHEET
-    // ────────────────────────────────────────────────────────────────────────────
-    final interestedLeads = leadsList.where((l) {
-      final s = l.status.toLowerCase();
-      final r = (l.remarks ?? '').toLowerCase();
-      final n = (l.notes ?? '').toLowerCase();
-      final isDisqualified = s.contains('cnr') || s.contains('not interested') || s.contains('lost') || r.contains('not interested') || n.contains('not interested');
-      return !isDisqualified;
-    }).toList();
-
-    final interestedSheet = excel['Interested Leads'];
-    interestedSheet.appendRow([
-      TextCellValue('Sr No'),
-      TextCellValue('Lead Date & Time'),
-      TextCellValue('Customer Name'),
-      TextCellValue('Contact Mobile'),
-      TextCellValue('Email Address'),
-      TextCellValue('Client Intent / Toggle'),
-      TextCellValue('Current Status'),
-      TextCellValue('Assigned Telecaller'),
-      TextCellValue('Assigned Sales Executive'),
-      TextCellValue('Budget / Expected Rent'),
-      TextCellValue('Property Type & Config'),
-      TextCellValue('Preferred Locality / Address'),
-      TextCellValue('Telecaller & Sales Remarks'),
-    ]);
-
-    for (var i = 0; i < interestedLeads.length; i++) {
-      final l = interestedLeads[i];
-      final budgetStr = 'Rs ${l.minBudget.toInt()} - ${l.maxBudget.toInt()}';
-      final localityStr = l.areaNames.isNotEmpty ? l.areaNames.join(', ') : 'N/A';
-      final typeConfigStr = '${l.configurationName ?? "" } ${l.propertyTypeName}'.trim();
-      final intentStr = l.listingTypeName?.toLowerCase().contains('rent') == true
-          ? 'Tenant - Looking for Rent'
-          : (l.listingTypeName?.toLowerCase().contains('sale') == true ? 'Buyer - Re-sale' : 'Active Inquirer');
-
-      interestedSheet.appendRow([
-        IntCellValue(i + 1),
-        TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt)),
-        TextCellValue(l.clientName),
-        TextCellValue(l.clientMobile),
-        TextCellValue(l.creatorEmail ?? ''),
-        TextCellValue(intentStr),
-        TextCellValue(l.status),
-        TextCellValue(l.creatorName ?? 'Unassigned'),
-        TextCellValue(l.assigneeName ?? 'Unassigned'),
-        TextCellValue(budgetStr),
-        TextCellValue(typeConfigStr.isNotEmpty ? typeConfigStr : l.categoryName),
-        TextCellValue(localityStr),
-        TextCellValue(l.remarks ?? l.notes ?? ''),
-      ]);
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // 5. TEAM PERFORMANCE SHEET
-    // ────────────────────────────────────────────────────────────────────────────
-    final teamSheet = excel['Team Performance'];
-    teamSheet.appendRow([TextCellValue('=== SALES TEAM PERFORMANCE ===')]);
-    teamSheet.appendRow([
-      TextCellValue('Rank'),
-      TextCellValue('Sales Executive'),
-      TextCellValue('Leads Assigned'),
-      TextCellValue('Contacted'),
-      TextCellValue('Qualified'),
-      TextCellValue('Site Visits'),
-      TextCellValue('Deals Won'),
-      TextCellValue('Conversion Rate %'),
-    ]);
-    for (final s in reportData.salesRankings) {
-      teamSheet.appendRow([
-        IntCellValue(s.rank),
-        TextCellValue(s.userName),
-        IntCellValue(s.leadsCount),
-        IntCellValue(s.contactedCount),
-        IntCellValue(s.qualifiedCount),
-        IntCellValue(s.siteVisitsCount),
-        IntCellValue(s.wonCount),
-        DoubleCellValue(double.parse(s.conversionRate.toStringAsFixed(2))),
-      ]);
-    }
-
-    teamSheet.appendRow([]);
-    teamSheet.appendRow([TextCellValue('=== TELECALLER TEAM PERFORMANCE ===')]);
-    teamSheet.appendRow([
-      TextCellValue('Rank'),
-      TextCellValue('Telecaller'),
-      TextCellValue('Leads Handled'),
-      TextCellValue('Contacted'),
-      TextCellValue('Qualified'),
-      TextCellValue('Site Visits'),
-      TextCellValue('Deals Won'),
-      TextCellValue('Conversion Rate %'),
-    ]);
-    for (final t in reportData.telecallerRankings) {
-      teamSheet.appendRow([
-        IntCellValue(t.rank),
-        TextCellValue(t.userName),
-        IntCellValue(t.leadsCount),
-        IntCellValue(t.contactedCount),
-        IntCellValue(t.qualifiedCount),
-        IntCellValue(t.siteVisitsCount),
-        IntCellValue(t.wonCount),
-        DoubleCellValue(double.parse(t.conversionRate.toStringAsFixed(2))),
-      ]);
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // 6. FOLLOW-UPS SHEET (if enabled)
-    // ────────────────────────────────────────────────────────────────────────────
-    if (config.showFollowupAnalysis && reportData.followupCategories.isNotEmpty) {
+    if (config.showFollowupAnalysis) {
       final followupSheet = excel['Follow-ups'];
       followupSheet.appendRow([
         TextCellValue('Category'),
@@ -897,6 +696,207 @@ class ReportExportService {
       }
     }
 
+    // ────────────────────────────────────────────────────────────────────────────
+    // 6. TEAM RANKING SHEET (conditional)
+    // ────────────────────────────────────────────────────────────────────────────
+    if (config.showTeamRanking) {
+      final teamSheet = excel['Team Ranking'];
+      teamSheet.appendRow([TextCellValue('=== SALES TEAM PERFORMANCE ===')]);
+      teamSheet.appendRow([
+        TextCellValue('Rank'),
+        TextCellValue('Sales Executive'),
+        TextCellValue('Leads Assigned'),
+        TextCellValue('Contacted'),
+        TextCellValue('Qualified'),
+        TextCellValue('Site Visits'),
+        TextCellValue('Deals Won'),
+        TextCellValue('Conversion Rate %'),
+      ]);
+      for (final s in reportData.salesRankings) {
+        teamSheet.appendRow([
+          IntCellValue(s.rank),
+          TextCellValue(s.userName),
+          IntCellValue(s.leadsCount),
+          IntCellValue(s.contactedCount),
+          IntCellValue(s.qualifiedCount),
+          IntCellValue(s.siteVisitsCount),
+          IntCellValue(s.wonCount),
+          DoubleCellValue(double.parse(s.conversionRate.toStringAsFixed(2))),
+        ]);
+      }
+      teamSheet.appendRow([]);
+      teamSheet.appendRow([TextCellValue('=== TELECALLER TEAM PERFORMANCE ===')]);
+      teamSheet.appendRow([
+        TextCellValue('Rank'),
+        TextCellValue('Telecaller'),
+        TextCellValue('Leads Handled'),
+        TextCellValue('Contacted'),
+        TextCellValue('Qualified'),
+        TextCellValue('Site Visits'),
+        TextCellValue('Deals Won'),
+        TextCellValue('Conversion Rate %'),
+      ]);
+      for (final t in reportData.telecallerRankings) {
+        teamSheet.appendRow([
+          IntCellValue(t.rank),
+          TextCellValue(t.userName),
+          IntCellValue(t.leadsCount),
+          IntCellValue(t.contactedCount),
+          IntCellValue(t.qualifiedCount),
+          IntCellValue(t.siteVisitsCount),
+          IntCellValue(t.wonCount),
+          DoubleCellValue(double.parse(t.conversionRate.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // 7. LEAD SOURCES SHEET (conditional)
+    // ────────────────────────────────────────────────────────────────────────────
+    if (config.showLeadSourceAnalysis) {
+      final sourcesSheet = excel['Lead Sources'];
+      sourcesSheet.appendRow([TextCellValue('=== LEAD SOURCE DISTRIBUTION ===')]);
+      sourcesSheet.appendRow([
+        TextCellValue('Lead Source'),
+        TextCellValue('Count'),
+        TextCellValue('Share %'),
+      ]);
+      for (final src in reportData.leadSources) {
+        sourcesSheet.appendRow([
+          TextCellValue(src.source),
+          IntCellValue(src.count),
+          DoubleCellValue(double.parse(src.percentage.toStringAsFixed(2))),
+        ]);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // 8. GROWTH & COMPARISON SHEET (conditional)
+    // ────────────────────────────────────────────────────────────────────────────
+    if (config.showGrowthComparison) {
+      final growthSheet = excel['Growth & Comparison'];
+      growthSheet.appendRow([TextCellValue('=== GROWTH & COMPARISON ANALYSIS ===')]);
+      growthSheet.appendRow([
+        TextCellValue('Metric'),
+        TextCellValue('Current Count'),
+        TextCellValue('Previous Count'),
+        TextCellValue('Difference'),
+        TextCellValue('Growth Rate %'),
+      ]);
+      for (final item in reportData.growthComparisonItems) {
+        growthSheet.appendRow([
+          TextCellValue(item.metricName),
+          IntCellValue(item.currentCount.toInt()),
+          IntCellValue(item.previousCount.toInt()),
+          IntCellValue(item.difference.toInt()),
+          TextCellValue('${item.growthPercentage >= 0 ? "+" : ""}${item.growthPercentage.toStringAsFixed(1)}%'),
+        ]);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // 9. LEAD DETAILS SHEET
+    // ────────────────────────────────────────────────────────────────────────────
+    final leadsList = reportData.filteredLeads;
+    final detailsSheet = excel['Lead Details'];
+    detailsSheet.appendRow([
+      TextCellValue('Sr No'),
+      TextCellValue('Lead Date & Time'),
+      TextCellValue('Source'),
+      TextCellValue('Lead Type'),
+      TextCellValue('Customer Name'),
+      TextCellValue('Contact Mobile'),
+      TextCellValue('Email'),
+      TextCellValue('City / Locality'),
+      TextCellValue('Property Type & Config'),
+      TextCellValue('Budget Range (INR)'),
+      TextCellValue('Allocated Telecaller'),
+      TextCellValue('Telecaller Status'),
+      TextCellValue('Assigned Sales Executive'),
+      TextCellValue('Sales CRM Status'),
+      TextCellValue('Remarks / Notes'),
+    ]);
+    for (var i = 0; i < leadsList.length; i++) {
+      final l = leadsList[i];
+      final budgetStr = 'Rs ${l.minBudget.toInt()} - ${l.maxBudget.toInt()}';
+      final localityStr = l.areaNames.isNotEmpty ? l.areaNames.join(', ') : 'N/A';
+      final typeConfigStr = '${l.configurationName ?? "" } ${l.propertyTypeName}'.trim();
+
+      detailsSheet.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt)),
+        TextCellValue(l.leadSource ?? 'Direct'),
+        TextCellValue(l.listingTypeName ?? 'Requirement'),
+        TextCellValue(l.clientName),
+        TextCellValue(l.clientMobile),
+        TextCellValue(l.creatorEmail ?? ''),
+        TextCellValue(localityStr),
+        TextCellValue(typeConfigStr.isNotEmpty ? typeConfigStr : l.categoryName),
+        TextCellValue(budgetStr),
+        TextCellValue(l.creatorName ?? 'Unassigned'),
+        TextCellValue(l.status),
+        TextCellValue(l.assigneeName ?? 'Unassigned'),
+        TextCellValue(l.assigneeName != null ? l.status : 'Not Assigned to Sales'),
+        TextCellValue(l.remarks ?? l.notes ?? ''),
+      ]);
+    }
+
+    // Also keep All Leads and Interested Leads for detailed inspection
+    final allLeadsSheet = excel['All Leads'];
+    for (final row in detailsSheet.rows) {
+      allLeadsSheet.appendRow(row.map((c) => c?.value ?? TextCellValue('')).toList());
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // 10. PROPERTIES SHEET
+    // ────────────────────────────────────────────────────────────────────────────
+    final propsSheet = excel['Properties'];
+    propsSheet.appendRow([
+      TextCellValue('Sr No'),
+      TextCellValue('Property Code'),
+      TextCellValue('Property Title'),
+      TextCellValue('Property Status'),
+      TextCellValue('Listing Type (Rental / Re-sale)'),
+      TextCellValue('Added By Role'),
+      TextCellValue('Added By Name'),
+      TextCellValue('Category'),
+      TextCellValue('Property Type'),
+      TextCellValue('Configuration'),
+      TextCellValue('Price / Rent (INR)'),
+      TextCellValue('Deposit (INR)'),
+      TextCellValue('Super Builtup Area (Sq.Ft)'),
+      TextCellValue('Carpet Area (Sq.Ft)'),
+      TextCellValue('Locality / Area'),
+      TextCellValue('City'),
+      TextCellValue('Owner Name'),
+      TextCellValue('Owner Mobile'),
+      TextCellValue('Date Added'),
+    ]);
+    for (var i = 0; i < reportData.availableProperties.length; i++) {
+      final p = reportData.availableProperties[i];
+      propsSheet.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(p.propertyCode),
+        TextCellValue(p.title),
+        TextCellValue(p.propertyStatusName),
+        TextCellValue(p.listingTypeName),
+        TextCellValue(p.createdByName.isNotEmpty ? 'Staff' : 'Owner'),
+        TextCellValue(p.createdByName),
+        TextCellValue(p.categoryName),
+        TextCellValue(p.propertyTypeName),
+        TextCellValue(p.configurationName ?? 'N/A'),
+        DoubleCellValue(p.price),
+        DoubleCellValue(p.deposit),
+        DoubleCellValue(p.superBuiltupArea ?? 0),
+        DoubleCellValue(p.carpetArea ?? 0),
+        TextCellValue(p.areaName.isNotEmpty ? p.areaName : p.address),
+        TextCellValue(p.cityName),
+        TextCellValue(p.ownerName),
+        TextCellValue(p.ownerMobile),
+        TextCellValue(DateFormat('yyyy-MM-dd').format(p.createdAt)),
+      ]);
+    }
+
     // Remove default Sheet1 if present
     try {
       excel.delete('Sheet1');
@@ -904,7 +904,6 @@ class ReportExportService {
 
     return excel;
   }
-
   /// Export Genuine Excel (.xlsx) Workbook
   static Future<void> exportExcel({
     required ReportOverallData reportData,

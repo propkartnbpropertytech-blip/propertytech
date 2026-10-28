@@ -95,10 +95,25 @@ class RequirementsRepository {
               (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
           final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUser.id || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
               (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
-          return isCreator || isAssignee;
+          final meta = r.metaCustomFields;
+          final isMetaAssignee = meta != null &&
+              (meta['assigned_to'] == currentUser.id ||
+               (meta['_transfer'] is Map && meta['_transfer']['assigned_to'] == currentUser.id) ||
+               (uName.isNotEmpty && (meta['assigned_to_name']?.toString().trim().toLowerCase() == uName ||
+                                     (meta['_transfer'] is Map && meta['_transfer']['assigned_to_name']?.toString().trim().toLowerCase() == uName))));
+          return isCreator || isAssignee || isMetaAssignee;
         }).toList();
       }
     }
+
+    // Campaign leads (Housing, Meta, etc.) must not appear on the Leads page until assigned to a Salesperson.
+    requirements = requirements.where((r) {
+      if (r.isCampaignLead) {
+        final assigned = r.assignedTo?.trim();
+        return assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+      }
+      return true;
+    }).toList();
 
     if (listingTypeId != null && listingTypeId.isNotEmpty) {
       requirements = requirements.where((r) => r.listingTypeId == listingTypeId || r.listingTypeId == null || r.listingTypeId!.isEmpty).toList();
@@ -187,6 +202,12 @@ class RequirementsRepository {
         final model = RequirementModel.fromJson(item);
         _rememberMeta(model);
         return _withRememberedMeta(model);
+      }).where((r) {
+        if (r.isCampaignLead) {
+          final assigned = r.assignedTo?.trim();
+          return assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+        }
+        return true;
       }).toList();
       final jsonParseMs = DateTime.now().difference(parseStart).inMilliseconds;
 
@@ -285,6 +306,12 @@ class RequirementsRepository {
 
   void _rememberMeta(RequirementModel req) {
     RequirementLocalRepository.rememberMetaCustomFields(req.id, req.metaCustomFields);
+    if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberAssignedTo(req.id, req.assignedTo);
+    }
+    if (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty) {
+      RequirementLocalRepository.rememberAssigneeName(req.id, req.assigneeName);
+    }
     if (req.rejectionRemark != null && req.rejectionRemark!.trim().isNotEmpty) {
       RequirementLocalRepository.rememberRejectionRemark(req.id, req.rejectionRemark);
     }
@@ -297,12 +324,24 @@ class RequirementsRepository {
     final remembered = RequirementLocalRepository.metaCustomFieldsById[req.id];
     final rememberedRemark = RequirementLocalRepository.getRejectionRemark(req.id);
     final rememberedTelecallerId = RequirementLocalRepository.getAssignedTelecallerId(req.id);
+    final rememberedAssignedTo = RequirementLocalRepository.getAssignedTo(req.id);
+    final rememberedAssigneeName = RequirementLocalRepository.getAssigneeName(req.id);
     var updated = req;
     if (remembered != null && remembered.isNotEmpty) {
       updated = updated.copyWith(metaCustomFields: {
         ...remembered,
         ...?req.metaCustomFields,
       });
+    }
+    if ((updated.assignedTo == null || updated.assignedTo!.trim().isEmpty) &&
+        rememberedAssignedTo != null &&
+        rememberedAssignedTo.trim().isNotEmpty) {
+      updated = updated.copyWith(
+        assignedTo: rememberedAssignedTo,
+        assigneeName: (updated.assigneeName == null || updated.assigneeName!.trim().isEmpty)
+            ? rememberedAssigneeName
+            : updated.assigneeName,
+      );
     }
     if ((updated.rejectionRemark == null || updated.rejectionRemark!.trim().isEmpty) &&
         rememberedRemark != null &&
@@ -473,9 +512,11 @@ class RequirementsRepository {
     }
     if (data.containsKey('assigned_to')) {
       match.assignedTo = data['assigned_to'] as String?;
+      RequirementLocalRepository.rememberAssignedTo(match.id, data['assigned_to'] as String?);
     }
     if (data.containsKey('assignee_name') && data['assignee_name'] != null) {
       match.assigneeName = data['assignee_name'].toString();
+      RequirementLocalRepository.rememberAssigneeName(match.id, data['assignee_name'].toString());
     }
     if (data.containsKey('status') && data['status'] != null) {
       match.status = data['status'].toString();

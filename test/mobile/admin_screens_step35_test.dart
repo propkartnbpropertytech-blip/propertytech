@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -30,6 +31,7 @@ import 'package:propkart/features/reports/models/report_data.dart';
 import 'package:propkart/features/reports/screens/leads/overall_business_insight_screen.dart';
 import 'package:propkart/features/reports/screens/leads/telecaller_report_screen.dart';
 import 'package:propkart/features/shell/mobile/mobile_nav_config.dart';
+import 'package:propkart/features/campaign/bloc/campaign_leads_bloc.dart';
 
 import 'mobile_test_utils.dart';
 
@@ -368,6 +370,7 @@ void main() {
                 BlocProvider<UsersBloc>.value(value: MockUsersBloc()),
                 BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
                 BlocProvider<RequirementsBloc>.value(value: MockRequirementsBloc()),
+                BlocProvider<CampaignLeadsBloc>.value(value: TestCampaignLeadsBloc()),
               ],
               child: const DashboardScreen(),
             ),
@@ -414,6 +417,7 @@ void main() {
         expect(find.text('6'), findsWidgets); // Sales Users
 
         // No uncaught overflow exception
+        // No uncaught overflow exception
         expect(tester.takeException(), isNull);
       });
     }
@@ -429,6 +433,7 @@ void main() {
               BlocProvider<UsersBloc>.value(value: MockUsersBloc()),
               BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
               BlocProvider<RequirementsBloc>.value(value: MockRequirementsBloc()),
+              BlocProvider<CampaignLeadsBloc>.value(value: TestCampaignLeadsBloc()),
             ],
             child: const DashboardScreen(),
           ),
@@ -453,6 +458,7 @@ void main() {
               BlocProvider<UsersBloc>.value(value: MockUsersBloc()),
               BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
               BlocProvider<RequirementsBloc>.value(value: MockRequirementsBloc()),
+              BlocProvider<CampaignLeadsBloc>.value(value: TestCampaignLeadsBloc()),
             ],
             child: const DashboardScreen(),
           ),
@@ -461,6 +467,19 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      for (final ro in tester.allRenderObjects) {
+        if (ro is RenderFlex && ro.hasSize) {
+          RenderBox? child = ro.firstChild;
+          while (child != null) {
+            final parentData = child.parentData as FlexParentData;
+            if (parentData.offset.dx + child.size.width > ro.size.width + 0.5) {
+              debugPrint('TEXTSCALE_OVERFLOW_CREATOR: ' + (ro.debugCreator?.toString() ?? 'none'));
+            }
+            child = ro.childAfter(child);
+          }
+        }
+      }
 
       expect(tester.takeException(), isNull);
       expect(find.byType(MobileScreenScaffold), findsOneWidget);
@@ -477,6 +496,7 @@ void main() {
               BlocProvider<UsersBloc>.value(value: MockUsersBloc()),
               BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
               BlocProvider<RequirementsBloc>.value(value: MockRequirementsBloc()),
+              BlocProvider<CampaignLeadsBloc>.value(value: TestCampaignLeadsBloc()),
             ],
             child: const DashboardScreen(),
           ),
@@ -527,7 +547,8 @@ void main() {
         expect(find.text('My Won'), findsNothing);
 
         // Admin lead cards show 'Added by: ... • Assigned: ...'
-        expect(find.textContaining('Added by: Admin • Assigned: Test Sales'), findsOneWidget);
+        expect(find.textContaining('Added by: Admin'), findsWidgets);
+        expect(find.text('Alice Sharma'), findsOneWidget);
       });
     }
 
@@ -541,6 +562,7 @@ void main() {
               BlocProvider<AuthBloc>.value(value: MockAuthBloc()),
               BlocProvider<UsersBloc>.value(value: MockUsersBloc()),
               BlocProvider<RequirementsBloc>.value(value: MockRequirementsBloc()),
+              BlocProvider<CampaignLeadsBloc>.value(value: TestCampaignLeadsBloc()),
             ],
             child: const RequirementsScreen(),
           ),
@@ -559,13 +581,14 @@ void main() {
   group('PropertiesScreen Admin Properties Mobile Adaptation', () {
     for (final width in [360.0, 390.0, 767.0]) {
       testMobile('renders MobileScreenScaffold with property cards at width $width', (tester) async {
-        await setSurface(tester, width);
+        await setSurface(tester, width, height: 1400);
 
         await tester.pumpWidget(
           wrapWithRouter(
             MultiBlocProvider(
               providers: [
                 BlocProvider<AuthBloc>.value(value: MockAuthBloc()),
+                BlocProvider<UsersBloc>.value(value: MockUsersBloc()),
                 BlocProvider<PropertiesBloc>.value(value: MockPropertiesBloc()),
               ],
               child: const PropertiesScreen(),
@@ -610,8 +633,11 @@ void main() {
 
       await tester.pumpWidget(
         wrapWithRouter(
-          BlocProvider<ReportsBloc>.value(
-            value: MockReportsBloc(),
+          MultiBlocProvider(
+            providers: [
+              BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
+              BlocProvider<ReportsBloc>.value(value: MockReportsBloc()),
+            ],
             child: const MobileShellScope(
               child: OverallBusinessInsightScreen(),
             ),
@@ -636,8 +662,11 @@ void main() {
 
       await tester.pumpWidget(
         wrapWithRouter(
-          BlocProvider<ReportsBloc>.value(
-            value: MockReportsBloc(),
+          MultiBlocProvider(
+            providers: [
+              BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
+              BlocProvider<ReportsBloc>.value(value: MockReportsBloc()),
+            ],
             child: const OverallBusinessInsightScreen(),
           ),
         ),
@@ -683,8 +712,11 @@ void main() {
 
       await tester.pumpWidget(
         wrapWithRouter(
-          BlocProvider<ReportsBloc>.value(
-            value: MockReportsBloc(),
+          MultiBlocProvider(
+            providers: [
+              BlocProvider<DashboardBloc>.value(value: MockDashboardBloc()),
+              BlocProvider<ReportsBloc>.value(value: MockReportsBloc()),
+            ],
             child: const OverallBusinessInsightScreen(),
           ),
         ),

@@ -28,6 +28,21 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  Future<String> getAllocationTargetRole() async {
+    try {
+      final res = await _apiClient.get(ApiConstants.campaignAllocationMode);
+      final role = (res.data['targetRole'] ?? res.data['allocationMode'] ?? '').toString().trim();
+      if (role.isNotEmpty) return role;
+    } catch (_) {}
+    try {
+      final res = await _apiClient.get(ApiConstants.adminAllocationConfig);
+      final data = res.data['data'] as Map<String, dynamic>? ?? {};
+      return (data['targetRole'] ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
@@ -98,6 +113,7 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
   String _googleSheetUrl = '';
   Timer? _sheetPollTimer;
   String? lastSyncError;
+  String? lastTargetRole;
   List<PropertyModel>? _propertyCache;
   DateTime? _propertyCacheAt;
   int _campaignUiWatchers = 0;
@@ -1061,6 +1077,9 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
 
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
+        if (data['targetRole'] != null && data['targetRole'].toString().trim().isNotEmpty) {
+          lastTargetRole = data['targetRole'].toString().trim();
+        }
         final List<dynamic> leadsList = data['leads'] ?? [];
 
         var incoming = <IntegrationLeadModel>[];
@@ -1796,14 +1815,15 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
           },
         ));
 
-        if (targetLead?.leadType == 'Property Listing') {
-          unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: true));
-        } else if (requirementId.isNotEmpty && requirementId != 'null') {
+        if (requirementId.isNotEmpty && requirementId != 'null') {
           unawaited(_requirementsRepository.refreshFromServerNow());
+          unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
+        } else if (targetLead?.leadType == 'Property Listing') {
+          unawaited(importLeadsToProperties([leadId], skipFetchServerLeads: true));
         } else {
           unawaited(importLeadsToCrm([leadId], forceReimport: true, skipFetchServerLeads: true));
+          unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
         }
-        unawaited(_requirementsRepository.getRequirements(refreshFromServer: true));
       }
 
       final data = res.data is Map ? Map<String, dynamic>.from(res.data) : <String, dynamic>{};
@@ -2268,8 +2288,9 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
         });
       }
 
-      final isSuccess = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
-      if (isSuccess) {
+      final statusCode = res?.statusCode;
+      final isSuccess = statusCode != null && statusCode >= 200 && statusCode < 300;
+      if (isSuccess && res != null) {
         if (res.data is Map && res.data['lead'] is Map) {
           try {
             final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(res.data['lead']));

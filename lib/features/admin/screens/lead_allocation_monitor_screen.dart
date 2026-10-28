@@ -1,3 +1,4 @@
+import 'package:go_router/go_router.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -126,6 +127,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
         final queue = Map<String, dynamic>.from(state.data['queue'] ?? {});
         final telecallers = List<dynamic>.from(state.data['telecallers'] ?? []);
         final history = List<dynamic>.from(state.data['recentAssignments'] ?? []);
+        final bool isSalesMode = (state.data['targetRole'] ?? 'Telecaller').toString().toLowerCase() == 'sales';
 
         if (CRMBreakpoints.isPhone(context)) {
           return MobileScreenScaffold(
@@ -133,7 +135,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
             onRefresh: () async {
               context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
             },
-            body: _buildMobileLayout(context, state, queue, telecallers, history),
+            body: _buildMobileLayout(context, state, queue, telecallers, history, isSalesMode: isSalesMode),
           );
         }
 
@@ -155,6 +157,26 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   ),
                   Row(
                     children: [
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await context.push('/admin/lead-allocation/configure');
+                          if (context.mounted) {
+                            context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
+                          }
+                        },
+                        icon: const Icon(Icons.tune_rounded, size: 16),
+                        label: const Text(
+                          'Configure',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6366F1),
+                          side: const BorderSide(color: Color(0xFF6366F1), width: 1.2),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       Builder(
                         builder: (ctx) {
                           final bool isEngineOn = state.data['engineEnabled'] ?? true;
@@ -270,7 +292,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${queue['unallocatedOldUntouchedCount'] ?? 0} historical leads waiting for allocation to active telecallers.',
+                              '${queue['unallocatedOldUntouchedCount'] ?? 0} historical leads waiting for allocation to active ${isSalesMode ? "salespersons" : "telecallers"}.',
                               style: const TextStyle(fontSize: 13, color: Color(0xFF166534)),
                             ),
                           ],
@@ -279,7 +301,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                       const SizedBox(width: 12),
                       FilledButton.icon(
                         style: FilledButton.styleFrom(backgroundColor: const Color(0xFF16A34A)),
-                        onPressed: () => _confirmAllocateOldLeads(context, queue['unallocatedOldUntouchedCount'] ?? 0),
+                        onPressed: () => _confirmAllocateOldLeads(context, queue['unallocatedOldUntouchedCount'] ?? 0, isSalesMode: isSalesMode),
                         icon: const Icon(Icons.auto_mode, size: 18),
                         label: const Text('Allocate Leads'),
                       ),
@@ -355,6 +377,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<int>(
+                            isDense: true,
                                 value: [4, 8, 12, 24].contains(expirationHours) ? expirationHours : 8,
                                 icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF4F46E5)),
                                 style: TextStyle(
@@ -386,13 +409,30 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                 },
               ),
               const SizedBox(height: 24),
-              const Text('Telecallers Workload & Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              Builder(
+                builder: (context) {
+                  final rawRole = (state.data['targetRole'] ?? 'Telecaller').toString().trim().toLowerCase();
+                  final bool isBothOff = rawRole == 'none' || rawRole == 'off';
+                  final bool isSalesMode = rawRole == 'sales';
+                  return Text(
+                    isBothOff || isSalesMode ? 'Sales Team Workload & Status' : 'Telecallers Workload & Status',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  );
+                },
+              ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  for (final raw in telecallers)
+              Builder(
+                builder: (context) {
+                  final rawRole = (state.data['targetRole'] ?? 'Telecaller').toString().trim().toLowerCase();
+                  final bool isBothOff = rawRole == 'none' || rawRole == 'off';
+                  if (isBothOff) {
+                    return _buildDisabledAllocationMessage(context);
+                  }
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final raw in telecallers)
                     Builder(
                       builder: (context) {
                         final t = Map<String, dynamic>.from(raw as Map);
@@ -446,6 +486,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                   telecallerId: t['id']?.toString() ?? '',
                                   telecallerName: t['name']?.toString() ?? '',
                                   allTelecallers: telecallers,
+                                  isSales: isSalesMode,
                                   onLeadReassigned: () {
                                     context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
                                   },
@@ -478,13 +519,72 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            'Workload: $workload / $capacity Leads',
+                                    if (isSalesMode) ...[
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: CRMColors.primary.withValues(alpha: 0.12),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Icon(Icons.assignment_outlined, size: 20, color: CRMColors.primary),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  'Allocated Leads',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Color(0xFF64748B),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${t['directAllocatedLeads'] ?? t['allocatedLeads'] ?? t['totalAssigned'] ?? workload}',
+                                                  style: TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: CRMColors.primary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      const Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'View Details',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                          ),
+                                          Icon(Icons.chevron_right, size: 14, color: Color(0xFF64748B)),
+                                        ],
+                                      ),
+                                    ] else ...[
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              'Workload: $workload / $capacity Leads',
                                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -535,11 +635,14 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'Active Toggle:',
+                                          Wrap(
+                                             spacing: 4,
+                                             runSpacing: 2,
+                                             alignment: WrapAlignment.spaceBetween,
+                                             crossAxisAlignment: WrapCrossAlignment.center,
+                                             children: [
+                                               const Text(
+                                                 'Active Toggle:',
                                                 style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                                               ),
                                               Container(
@@ -598,10 +701,13 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                             ],
                                           ),
                                           const SizedBox(height: 5),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                          Wrap(
+                                             spacing: 4,
+                                             runSpacing: 2,
+                                             alignment: WrapAlignment.spaceBetween,
+                                             crossAxisAlignment: WrapCrossAlignment.center,
+                                             children: [
+                                               const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                                               Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
@@ -647,10 +753,13 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                             ],
                                           ),
                                           const SizedBox(height: 3),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                          Wrap(
+                                             spacing: 4,
+                                             runSpacing: 2,
+                                             alignment: WrapAlignment.spaceBetween,
+                                             crossAxisAlignment: WrapCrossAlignment.center,
+                                             children: [
+                                               const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                                               Text(
                                                 isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(liveRemainingSeconds)} / 6h',
                                                 style: TextStyle(
@@ -686,6 +795,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                       ],
                                     ),
                                   ],
+                                  ],
                                 ),
                               ),
                             ),
@@ -694,9 +804,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                       },
                     ),
                 ],
+                  );
+                },
               ),
               const SizedBox(height: 28),
-              const Text('Recent Assignments & Reassignments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              Text(isSalesMode ? 'Recent Sales Assignments & Reassignments (${history.length})' : 'Recent Telecaller Assignments & Reassignments (${history.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 8),
               if (history.isEmpty)
                 const Padding(
@@ -736,7 +848,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         dense: true,
-                        onTap: () => _showLeadDetailsDialog(context, h),
+                        onTap: () => _showLeadDetailsDialog(context, h, isSalesMode: isSalesMode),
                         leading: CircleAvatar(
                           radius: 18,
                           backgroundColor: (isPeer
@@ -782,8 +894,8 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
                                 ),
-                                child: const Text(
-                                  'Telecaller transfer',
+                                child: Text(
+                                  isSalesMode ? 'Sales transfer' : 'Telecaller transfer',
                                   style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold),
                                 ),
                               ),
@@ -817,7 +929,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             OutlinedButton.icon(
-                              onPressed: () => _showLeadDetailsDialog(context, h),
+                              onPressed: () => _showLeadDetailsDialog(context, h, isSalesMode: isSalesMode),
                               icon: const Icon(Icons.info_outline, size: 14),
                               label: const Text('Details'),
                               style: OutlinedButton.styleFrom(
@@ -846,13 +958,158 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     );
   }
 
+  static Widget _buildDisabledAllocationMessage(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = CRMBreakpoints.isPhone(context);
+
+    const messageText =
+        'Lead allocation is currently disabled. Please enable either Telecaller or Salesperson allocation in Configure Settings to resume lead allocation.';
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 22,
+        vertical: isMobile ? 18 : 22,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? const Color(0xFFD97706).withValues(alpha: 0.35) : const Color(0xFFFDE68A),
+          width: 1.2,
+        ),
+      ),
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.pause_circle_outline_rounded,
+                        color: Color(0xFFD97706),
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Allocation Disabled',
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  messageText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    height: 1.45,
+                    color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await context.push('/admin/lead-allocation/configure');
+                      if (context.mounted) {
+                        context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
+                      }
+                    },
+                    icon: const Icon(Icons.tune_rounded, size: 15),
+                    label: const Text(
+                      'Configure Settings',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD97706),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.pause_circle_outline_rounded,
+                    color: Color(0xFFD97706),
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    messageText,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
+                      color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 18),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    await context.push('/admin/lead-allocation/configure');
+                    if (context.mounted) {
+                      context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
+                    }
+                  },
+                  icon: const Icon(Icons.tune_rounded, size: 16),
+                  label: const Text(
+                    'Configure Settings',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD97706),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
   static Widget _buildMobileLayout(
     BuildContext context,
     LeadAllocationMonitorState state,
     Map<String, dynamic> queue,
     List<dynamic> telecallers,
-    List<dynamic> history,
-  ) {
+    List<dynamic> history, {
+    bool isSalesMode = false,
+  }) {
     final bool isEngineOn = state.data['engineEnabled'] ?? true;
     final int expirationHours = int.tryParse(state.data['tokenExpirationHours']?.toString() ?? '') ?? 8;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -874,21 +1131,43 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
                     children: [
-                      Expanded(
-                        child: Text(
-                          'Lead Allocation Monitoring',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
-                          ),
+                      Text(
+                        'Lead Allocation Monitoring',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
                         ),
                       ),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await context.push('/admin/lead-allocation/configure');
+                          if (context.mounted) {
+                            context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
+                          }
+                        },
+                        icon: const Icon(Icons.tune_rounded, size: 14),
+                        label: const Text(
+                          'Configure',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6366F1),
+                          side: const BorderSide(color: Color(0xFF6366F1), width: 1.1),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         decoration: BoxDecoration(
                           color: (isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
@@ -902,19 +1181,19 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                           children: [
                             Icon(
                               isEngineOn ? Icons.check_circle : Icons.pause_circle_outline,
-                              size: 15,
+                              size: 14,
                               color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
                             ),
-                            const SizedBox(width: 5),
+                            const SizedBox(width: 3),
                             Text(
-                              isEngineOn ? 'Active' : 'Paused',
+                              isEngineOn ? 'Engine: Active' : 'Engine: Paused',
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
                                 color: isEngineOn ? const Color(0xFF16A34A) : Colors.amber.shade800,
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 4),
                             SizedBox(
                               height: 20,
                               width: 32,
@@ -1033,7 +1312,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${queue['unallocatedOldUntouchedCount'] ?? 0} leads created before auto-allocation was enabled are currently waiting. Allocate them in batches to currently active telecallers.',
+                              '${queue['unallocatedOldUntouchedCount'] ?? 0} leads created before auto-allocation was enabled are currently waiting. Allocate them in batches to currently active ${isSalesMode ? "salespersons" : "telecallers"}.',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: isDark ? Colors.green.shade100 : const Color(0xFF166534),
@@ -1049,7 +1328,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                     width: double.infinity,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(backgroundColor: const Color(0xFF16A34A)),
-                      onPressed: () => _confirmAllocateOldLeads(context, queue['unallocatedOldUntouchedCount'] ?? 0),
+                      onPressed: () => _confirmAllocateOldLeads(context, queue['unallocatedOldUntouchedCount'] ?? 0, isSalesMode: isSalesMode),
                       icon: const Icon(Icons.auto_mode, size: 16),
                       label: Text('Allocate Leads (${queue['unallocatedOldUntouchedCount'] ?? 0})'),
                     ),
@@ -1118,8 +1397,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const Text(
                         'Shift Duration:',
@@ -1136,6 +1418,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
+                            isDense: true,
                             value: [4, 8, 12, 24].contains(expirationHours) ? expirationHours : 8,
                             icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF4F46E5)),
                             style: TextStyle(
@@ -1146,7 +1429,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                             dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                             items: const [
                               DropdownMenuItem(value: 4, child: Text('4 Hours')),
-                              DropdownMenuItem(value: 8, child: Text('8 Hours (Standard Shift)')),
+                              DropdownMenuItem(value: 8, child: Text('8 Hours')),
                               DropdownMenuItem(value: 12, child: Text('12 Hours')),
                               DropdownMenuItem(value: 24, child: Text('24 Hours')),
                             ],
@@ -1168,24 +1451,55 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
           ),
           const SizedBox(height: 18),
 
-          // 5. Telecaller Workload Section
-          Text(
-            'Telecallers Workload & Status (${telecallers.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Telecallers are sorted by lowest workload first. Round-robin assigns to the least busy active telecaller.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          // 5. Workload Section (Telecaller / Sales)
+          Builder(
+            builder: (context) {
+              final rawRole = (state.data['targetRole'] ?? 'Telecaller').toString().trim().toLowerCase();
+              final bool isBothOff = rawRole == 'none' || rawRole == 'off';
+              final bool isSalesMode = rawRole == 'sales';
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isBothOff
+                        ? 'Sales Team Workload & Status'
+                        : '${isSalesMode ? "Sales Team" : "Telecallers"} Workload & Status (${telecallers.length})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  if (!isBothOff) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      isSalesMode
+                          ? 'Salespersons are sorted by lowest workload first. Round-robin assigns to the least busy active salesperson.'
+                          : 'Telecallers are sorted by lowest workload first. Round-robin assigns to the least busy active telecaller.',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
           const SizedBox(height: 10),
-          for (final raw in telecallers)
-            _buildMobileTelecallerCard(context, raw as Map, telecallers, isDark, state),
+          Builder(
+            builder: (context) {
+              final rawRole = (state.data['targetRole'] ?? 'Telecaller').toString().trim().toLowerCase();
+              final bool isBothOff = rawRole == 'none' || rawRole == 'off';
+              if (isBothOff) {
+                return _buildDisabledAllocationMessage(context);
+              }
+              return Column(
+                children: [
+                  for (final raw in telecallers)
+                    _buildMobileTelecallerCard(context, raw as Map, telecallers, isDark, state, isSalesMode: isSalesMode),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 18),
 
           // 6. Recent Assignments Section
           Text(
-            'Recent Assignments & Reassignments (${history.length})',
+            isSalesMode ? 'Recent Sales Assignments & Reassignments (${history.length})' : 'Recent Telecaller Assignments & Reassignments (${history.length})',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 2),
@@ -1201,7 +1515,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
             )
           else
             for (final raw in history)
-              _buildMobileHistoryCard(context, raw as Map, telecallers, isDark),
+              _buildMobileHistoryCard(context, raw as Map, telecallers, isDark, isSalesMode: isSalesMode),
         ],
       ),
     );
@@ -1212,8 +1526,9 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     Map raw,
     List<dynamic> allTelecallers,
     bool isDark,
-    LeadAllocationMonitorState state,
-  ) {
+    LeadAllocationMonitorState state, {
+    bool isSalesMode = false,
+  }) {
     final t = Map<String, dynamic>.from(raw);
     final status = (t['status'] ?? 'INACTIVE').toString();
     final isFresh = t['heartbeatFresh'] == true;
@@ -1264,6 +1579,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
               telecallerId: t['id']?.toString() ?? '',
               telecallerName: t['name']?.toString() ?? '',
               allTelecallers: allTelecallers,
+              isSales: isSalesMode,
               onLeadReassigned: () {
                 context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
               },
@@ -1296,13 +1612,72 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        'Workload: $workload / $capacity Leads',
+                if (isSalesMode) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: CRMColors.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.assignment_outlined, size: 20, color: CRMColors.primary),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Allocated Leads',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${t['directAllocatedLeads'] ?? t['allocatedLeads'] ?? t['totalAssigned'] ?? workload}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: CRMColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        'View Details',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      ),
+                      Icon(Icons.chevron_right, size: 14, color: Color(0xFF64748B)),
+                    ],
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Workload: $workload / $capacity Leads',
                         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1353,8 +1728,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text(
                             'Active Toggle:',
@@ -1416,8 +1794,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ],
                       ),
                       const SizedBox(height: 5),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text('OFF-Time Counter:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                           Row(
@@ -1465,8 +1846,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text('24h Allowance Left:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                           Text(
@@ -1485,8 +1869,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 2,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       'Sales: ${t['salesTransfers'] ?? 0}',
@@ -1504,6 +1891,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   ],
                 ),
               ],
+              ],
             ),
           ),
         ),
@@ -1515,8 +1903,9 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     BuildContext context,
     Map raw,
     List<dynamic> telecallers,
-    bool isDark,
-  ) {
+    bool isDark, {
+    bool isSalesMode = false,
+  }) {
     final h = Map<String, dynamic>.from(raw);
     final leadId = h['lead_id']?.toString() ?? '';
     final type = h['assignment_type']?.toString() ?? 'ASSIGNMENT';
@@ -1604,8 +1993,8 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
                                 ),
-                                child: const Text(
-                                  'Telecaller transfer',
+                                child: Text(
+                                  isSalesMode ? 'Sales transfer' : 'Telecaller transfer',
                                   style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold),
                                 ),
                               ),
@@ -1636,8 +2025,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     OutlinedButton.icon(
                       onPressed: () => _showLeadDetailsDialog(context, h),
@@ -1805,8 +2197,9 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
 
   static Future<void> _confirmAllocateOldLeads(
     BuildContext context,
-    dynamic unallocatedCount,
-  ) async {
+    dynamic unallocatedCount, {
+    bool isSalesMode = false,
+  }) async {
     final count = (unallocatedCount is int)
         ? unallocatedCount
         : int.tryParse(unallocatedCount.toString()) ?? 0;
@@ -1828,9 +2221,11 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
           children: [
             Text('There are $count old untouched leads waiting for allocation.'),
             const SizedBox(height: 12),
-            const Text(
-              'The allocation engine will distribute these leads in a round-robin manner to currently active and available telecallers with capacity.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+            Text(
+              isSalesMode
+                  ? 'The allocation engine will distribute these leads directly to currently active salespersons according to their campaign and category assignments.'
+                  : 'The allocation engine will distribute these leads in a round-robin manner to currently active and available telecallers with capacity.',
+              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -1860,7 +2255,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     }
   }
 
-  static void _showLeadDetailsDialog(BuildContext context, Map<String, dynamic> h) {
+  static void _showLeadDetailsDialog(BuildContext context, Map<String, dynamic> h, {bool isSalesMode = false}) {
     final leadId = h['lead_id']?.toString() ?? '';
     final lead = (h['lead'] is Map) ? Map<String, dynamic>.from(h['lead'] as Map) : <String, dynamic>{};
     dynamic rawData = lead['raw_json'];
@@ -1955,7 +2350,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
 
                 const SizedBox(height: 16),
                 _sectionHeader('Assignment Details'),
-                _detailRow('Assigned Telecaller', telecallerName),
+                _detailRow(isSalesMode ? 'Assigned Salesperson' : 'Assigned Telecaller', telecallerName),
                 _detailRow('Assignment Type', assignmentType),
                 _detailRow('Assigned At', assignedAt),
                 if (h['reason'] != null) _detailRow('Reason', h['reason'].toString()),

@@ -301,13 +301,13 @@ void main() {
     test('Telecaller', () {
       expect(labels('Telecaller'), [
         'All leads', 'Properties', 'Library', 'Messages', //
-        'Profile', 'Settings', 'Recycle bin',
+        'Profile', 'Support', 'Settings', 'Recycle bin',
       ]);
     });
 
     test('Sales', () {
       expect(labels('Sales'),
-          ['Library', 'Messages', 'Profile', 'Settings', 'Recycle bin']);
+          ['Library', 'Messages', 'Profile', 'Support', 'Settings', 'Recycle bin']);
     });
 
     test('Admin has no Super Admin metrics; Super Admin does', () {

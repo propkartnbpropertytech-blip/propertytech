@@ -325,12 +325,32 @@ class MobileNavConfig {
           if (RoleGuard.isSuperAdmin(role)) adminSupport,
           library,
           bin,
-          MobileMoreEntry(
-            id: 'audit_logs',
-            label: 'Audit logs',
-            icon: Icons.history_rounded,
-            route: '/settings/audit-logs',
-          ),
+          if (RoleGuard.isSuperAdmin(role)) ...[
+            const MobileMoreEntry(
+              id: 'permissions_studio',
+              label: 'Permissions Studio',
+              icon: Icons.security_rounded,
+              route: '/admin/permissions',
+            ),
+            const MobileMoreEntry(
+              id: 'tier_plans_studio',
+              label: 'Tier Plans Studio',
+              icon: Icons.workspace_premium_rounded,
+              route: '/admin/plans',
+            ),
+            const MobileMoreEntry(
+              id: 'broker_workspaces',
+              label: 'Broker Workspaces',
+              icon: Icons.domain_rounded,
+              route: '/admin/brokers',
+            ),
+            const MobileMoreEntry(
+              id: 'audit_logs',
+              label: 'Audit logs',
+              icon: Icons.history_rounded,
+              route: '/settings/audit-logs',
+            ),
+          ],
           settings,
           MobileMoreEntry(
             id: 'sync_diagnostics',

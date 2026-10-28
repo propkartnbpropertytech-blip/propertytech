@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../../api/dio_client.dart';
 import '../../tokens/app_colors.dart';

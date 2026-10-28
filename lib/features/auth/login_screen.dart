@@ -1,24 +1,25 @@
 import 'dart:convert';
-import 'dart:math' as math;
-import '../../core/services/notification_center.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 import 'bloc/auth_bloc.dart';
 import 'services/auth_service.dart';
 import 'widgets/mfa_verify_dialog.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/theme_manager.dart';
-import '../../core/design_system/tokens/app_colors.dart';
-import '../../core/design_system/tokens/app_shadows.dart';
-import '../../core/design_system/tokens/app_spacing.dart';
-import '../../core/design_system/tokens/app_typography.dart';
-import '../../core/design_system/widgets/buttons.dart';
-import '../../core/design_system/widgets/crm_brand_lockup.dart';
 import '../../core/api/dio_client.dart';
+import '../../core/design_system/tokens/app_colors.dart';
+import '../../core/services/notification_center.dart';
+import '../../core/theme/theme_manager.dart';
 import '../../core/utils/seo_helper.dart';
 
+/// Luxury PropKart Login Screen implementing Shubhangi's architectural design:
+/// - Full-bleed villa background image (`landing_villa.webp` / `landing_villa.jpg`)
+/// - Multi-stop dark scrim overlay (`rgba(5, 10, 8, ...)`)
+/// - Architectural editorial hero copy (Inclusive Sans + Inter)
+/// - Translucent frosted glass card with "Welcome back."
+/// - Live dynamic backend CAPTCHA with distorted slight blur & refresh button
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -37,21 +38,35 @@ class _LoginScreenState extends State<LoginScreen> {
   Uint8List? _captchaImageBytes;
   bool _isLoadingCaptcha = false;
   String? _captchaError;
+  bool _obscurePassword = true;
+  bool _rememberMe = true;
+  bool _imagePrecached = false;
 
   @override
   void initState() {
     super.initState();
     SeoHelper.updateTags(
       title: 'Login | PropKart CRM',
-      description: 'Log in to your PropKart account to access the property management dashboard, update listings, coordinate with clients, and review lead analytics.',
+      description:
+          'Log in to your PropKart account to access the property management dashboard, update listings, coordinate with clients, and review lead analytics.',
       canonicalUrl: 'https://propkart.nbpropertytech.com/login',
-      imageUrl: 'https://propkart.nbpropertytech.com/assets/logo.png',
+      imageUrl: 'https://propkart.nbpropertytech.com/assets/images/landing_villa.jpg',
     );
     _fetchCaptcha();
   }
 
-  bool _obscurePassword = true;
-  bool _rememberMe = true;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_imagePrecached) {
+      _imagePrecached = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        precacheImage(const AssetImage('assets/images/landing_villa.webp'), context).catchError((_) {});
+        precacheImage(const AssetImage('assets/images/landing_logo.webp'), context).catchError((_) {});
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -70,7 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     });
     try {
-      final res = await _authService.getCaptcha().timeout(const Duration(seconds: 4));
+      final res = await _authService.getCaptcha().timeout(const Duration(seconds: 10));
       final data = res['data'] is Map<String, dynamic>
           ? res['data'] as Map<String, dynamic>
           : <String, dynamic>{};
@@ -106,28 +121,35 @@ class _LoginScreenState extends State<LoginScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+            borderRadius: BorderRadius.circular(16),
           ),
-          backgroundColor: CRMColors.surfaceElevatedOf(context),
+          backgroundColor: Colors.white,
           title: Row(
             children: [
               const Icon(Icons.error_outline_rounded, color: CRMColors.danger, size: 28),
               const SizedBox(width: 10),
               Text(
                 title,
-                style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF141614),
+                ),
               ),
             ],
           ),
           content: Text(
             message,
-            style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: const Color(0xFF737773),
+            ),
           ),
           actionsPadding: const EdgeInsets.only(bottom: 16, right: 16),
           actions: [
             TextButton(
               style: TextButton.styleFrom(
-                foregroundColor: CRMColors.primaryOf(context),
+                foregroundColor: const Color(0xFF141614),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -155,12 +177,16 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (context, setState) {
             return AlertDialog(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                borderRadius: BorderRadius.circular(16),
               ),
-              backgroundColor: CRMColors.surfaceElevatedOf(context),
+              backgroundColor: Colors.white,
               title: Text(
                 'Forgot Password',
-                style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF141614),
+                ),
               ),
               content: Form(
                 key: formKey,
@@ -170,14 +196,46 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Text(
                       'Enter your email address below. We will email you a confirmation and send the reset request to your administrator.',
-                      style: CRMTypography.subheadline.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: const Color(0xFF737773),
+                        height: 1.4,
+                      ),
                     ),
                     const SizedBox(height: 18),
-                    PremiumTextField(
+                    TextFormField(
                       controller: emailController,
-                      labelText: 'Email Address',
-                      prefixIcon: Icons.mail_outline_rounded,
                       keyboardType: TextInputType.emailAddress,
+                      style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF141614)),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFFCFCFA),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        hintText: 'Email address',
+                        hintStyle: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF737773)),
+                        prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20, color: Color(0xFF737773)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFDCDDD8)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFDCDDD8)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF141614), width: 1.5),
+                        ),
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: CRMColors.danger),
+                        ),
+                        focusedErrorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: CRMColors.danger, width: 1.5),
+                        ),
+                      ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Please enter your email address';
@@ -195,17 +253,14 @@ class _LoginScreenState extends State<LoginScreen> {
               actions: [
                 TextButton(
                   style: TextButton.styleFrom(
-                    foregroundColor: CRMColors.textSecondaryOf(context),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    foregroundColor: const Color(0xFF737773),
                   ),
                   onPressed: isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: CRMColors.primaryOf(context),
+                    backgroundColor: const Color(0xFF141614),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -227,39 +282,46 @@ class _LoginScreenState extends State<LoginScreen> {
                                 message: 'Password reset requested for email: $email',
                                 type: 'forgot_password',
                               );
-                              
+
                               if (!context.mounted) return;
                               showDialog(
                                 context: context,
                                 builder: (context) => AlertDialog(
-                                  backgroundColor: CRMColors.surfaceElevatedOf(context),
+                                  backgroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
                                   title: Row(
                                     children: [
-                                      Icon(Icons.check_circle_outline_rounded, color: CRMColors.primaryOf(context), size: 28),
+                                      const Icon(Icons.check_circle_outline_rounded,
+                                          color: Color(0xFF141614), size: 28),
                                       const SizedBox(width: 10),
-                                      Text('Email Sent', style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+                                      Text('Email Sent',
+                                          style: GoogleFonts.inter(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 18,
+                                              color: const Color(0xFF141614))),
                                     ],
                                   ),
                                   content: Text(
                                     response.data['message'] ??
                                         'A password reset link has been sent to your email. Please check your inbox and spam folder.',
-                                    style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                                    style: GoogleFonts.inter(
+                                        fontSize: 14, color: const Color(0xFF737773)),
                                   ),
                                   actions: [
                                     TextButton(
                                       onPressed: () => Navigator.pop(context),
-                                      child: Text('Dismiss', style: TextStyle(color: CRMColors.primaryOf(context), fontWeight: FontWeight.bold)),
+                                      child: const Text('Dismiss',
+                                          style: TextStyle(
+                                              color: Color(0xFF141614),
+                                              fontWeight: FontWeight.bold)),
                                     ),
                                   ],
                                 ),
                               );
                             } catch (e) {
-                              setState(() {
-                                isSubmitting = false;
-                              });
+                              setState(() => isSubmitting = false);
                               String errorMsg = 'Failed to submit request. Please try again.';
                               if (e is DioException) {
                                 final resData = e.response?.data;
@@ -273,7 +335,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(errorMsg),
-                                  backgroundColor: AppColors.error,
+                                  backgroundColor: CRMColors.danger,
                                 ),
                               );
                             }
@@ -309,14 +371,14 @@ class _LoginScreenState extends State<LoginScreen> {
       TextInput.finishAutofillContext();
 
       context.read<AuthBloc>().add(
-        LoginSubmitted(
-          email: email,
-          password: password,
-          rememberMe: _rememberMe,
-          captchaId: _captchaId,
-          captchaAnswer: captchaAnswer,
-        ),
-      );
+            LoginSubmitted(
+              email: email,
+              password: password,
+              rememberMe: _rememberMe,
+              captchaId: _captchaId,
+              captchaAnswer: captchaAnswer,
+            ),
+          );
     }
   }
 
@@ -326,7 +388,7 @@ class _LoginScreenState extends State<LoginScreen> {
       listenable: ThemeManager(),
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: CRMColors.backgroundOf(context),
+          backgroundColor: const Color(0xFF141614),
           body: BlocListener<AuthBloc, AuthState>(
             listener: (context, state) {
               if (state is AuthError) {
@@ -342,124 +404,417 @@ class _LoginScreenState extends State<LoginScreen> {
                 MfaVerifyDialog.show(context, state);
               }
             },
-            child: SafeArea(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 1. Full-bleed villa background image
+                Positioned.fill(
+                  child: Image.asset(
+                    'assets/images/landing_villa.webp',
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    errorBuilder: (_, _, _) => Image.asset(
+                      'assets/images/landing_villa.jpg',
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                    ),
+                  ),
+                ),
+
+                // 2. Multi-stop dark gradient scrim
+                Positioned.fill(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0.0, 0.35, 0.55, 1.0],
+                        colors: [
+                          Color(0x1F050A08), // rgba(5, 10, 8, 0.12)
+                          Color(0x1F050A08),
+                          Color(0x2E050A08), // rgba(5, 10, 8, 0.18)
+                          Color(0xA6050A08), // rgba(5, 10, 8, 0.65)
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // 3. Responsive Content Layer
+                SafeArea(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      // Increase breakpoint to 950 to fit 1000px container and prevent test overflows at 800px width
                       final isDesktop = constraints.maxWidth >= 950;
-
                       if (isDesktop) {
-                        final double cardWidth = math.min(1000.0, constraints.maxWidth - (CRMSpacing.l * 2));
-                        final double cardHeight = constraints.maxHeight > 760 ? 720.0 : math.max(640.0, constraints.maxHeight - (CRMSpacing.l * 2));
-
-                        return Center(
-                          child: SingleChildScrollView(
-                            child: Padding(
-                              padding: const EdgeInsets.all(CRMSpacing.l),
-                              child: SizedBox(
-                                width: cardWidth,
-                                height: cardHeight,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: CRMColors.cardBgOf(context),
-                                    borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                                    border: Border.all(color: CRMColors.borderOf(context), width: 1),
-                                    boxShadow: CRMShadows.large,
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      Expanded(
-                                        flex: 5,
-                                        child: Center(
-                                          child: SingleChildScrollView(
-                                            child: _buildFormContent(isDesktop: true),
-                                          ),
-                                        ),
-                                      ),
-                                      const Expanded(
-                                        flex: 6,
-                                        child: _HeroSection(),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
+                        return _buildDesktopLayout(constraints);
                       }
-
-                      // Mobile Layout
-                      return Center(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                          child: Container(
-                            constraints: const BoxConstraints(maxWidth: 450),
-                            decoration: BoxDecoration(
-                              color: CRMColors.cardBgOf(context),
-                              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                              border: Border.all(color: CRMColors.borderOf(context), width: 1),
-                              boxShadow: CRMShadows.large,
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: _buildFormContent(isDesktop: false),
-                          ),
-                        ),
-                      );
+                      return _buildMobileLayout(constraints);
                     },
                   ),
                 ),
+              ],
             ),
-          );
-        },
-      );
+          ),
+        );
+      },
+    );
   }
 
-  Widget _buildFormContent({required bool isDesktop}) {
+  /// Desktop Layout: Side-by-side hero editorial copy + floating frosted sign-in card
+  Widget _buildDesktopLayout(BoxConstraints constraints) {
+    final horizontalPadding = (constraints.maxWidth * 0.05).clamp(32.0, 78.0);
     return Padding(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Brand Navigation Bar
+          _buildBrandBar(),
+
+          // Main Center Area: Left Editorial Copy, Right Frosted Card
+          Expanded(
+            child: Center(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Left Story Copy
+                  Expanded(
+                    flex: 11,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 48),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Eyebrow tag + Rule
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'YOUR NEXT CHAPTER STARTS HERE',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Container(
+                                height: 1,
+                                width: 32,
+                                color: Colors.white.withValues(alpha: 0.8),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Editorial Headline in Inclusive Sans
+                          Text(
+                            'Your next home.\nOne step closer.',
+                            style: GoogleFonts.inclusiveSans(
+                              fontSize: constraints.maxWidth > 1200 ? 66 : 52,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              height: 0.98,
+                              shadows: const [
+                                Shadow(
+                                  offset: Offset(1, 5),
+                                  blurRadius: 10,
+                                  color: Color(0x80000000),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // Description
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 580),
+                            child: Text(
+                              'Log in to revisit your favourites, explore premium properties, and make your next move with confidence.',
+                              style: GoogleFonts.inter(
+                                fontSize: constraints.maxWidth > 1200 ? 20 : 17,
+                                color: Colors.white.withValues(alpha: 0.82),
+                                height: 1.45,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Right Frosted Glass Sign-In Card
+                  SizedBox(
+                    width: 460,
+                    child: SingleChildScrollView(
+                      child: _buildSignInCard(isDesktop: true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Bottom Member Benefits Row
+          _buildMemberBenefitsRow(),
+        ],
+      ),
+    );
+  }
+
+  /// Mobile & Tablet Layout: Single-column clean vertical stack
+  Widget _buildMobileLayout(BoxConstraints constraints) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Brand Bar
+          _buildBrandBar(),
+          const SizedBox(height: 28),
+
+          // Story copy
+          Text(
+            'Your next home.\nOne step closer.',
+            style: GoogleFonts.inclusiveSans(
+              fontSize: (constraints.maxWidth * 0.08).clamp(32.0, 44.0),
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              height: 1.05,
+              shadows: const [
+                Shadow(
+                  offset: Offset(1, 4),
+                  blurRadius: 8,
+                  color: Color(0x80000000),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Log in to revisit your favourites, explore premium properties, and make your next move with confidence.',
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              color: Colors.white.withValues(alpha: 0.8),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Centered Sign-In Card
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: _buildSignInCard(isDesktop: false),
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          // Member Benefits
+          Center(child: _buildMemberBenefitsRow()),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  /// Top Brand Logo and Monogram
+  Widget _buildBrandBar() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Brand Mark Logo matching Get Started screen
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromRGBO(0, 0, 0, 0.25),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset(
+            'assets/images/landing_logo.webp',
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (context, error, stackTrace) => Image.asset(
+              'assets/images/landing_logo.png',
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (context, error, stackTrace) => Image.asset(
+                'assets/app_icon.png',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const ColoredBox(
+                  color: Colors.black,
+                  child: Icon(Icons.apartment_rounded, color: Color(0xFFD9AD6E)),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          'PropKart',
+          style: GoogleFonts.inter(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            letterSpacing: -0.4,
+            height: 1.0,
+            shadows: const [
+              Shadow(
+                color: Color.fromRGBO(0, 0, 0, 0.50),
+                offset: Offset(0, 2),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Member Benefits Footer strip
+  Widget _buildMemberBenefitsRow() {
+    return Wrap(
+      alignment: WrapAlignment.start,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
+      children: [
+        _buildBenefitText('Saved properties'),
+        _buildBenefitDot(),
+        _buildBenefitText('Personalised matches'),
+        _buildBenefitDot(),
+        _buildBenefitText('Seamless enquiries'),
+      ],
+    );
+  }
+
+  Widget _buildBenefitText(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        color: Colors.white.withValues(alpha: 0.85),
+      ),
+    );
+  }
+
+  Widget _buildBenefitDot() {
+    return Container(
+      width: 4,
+      height: 4,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  /// Frosted White Sign-In Card matching Shubhangi's design specifications
+  Widget _buildSignInCard({required bool isDesktop}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26000000), // rgba(0, 0, 0, 0.15)
+            offset: Offset(0, 20),
+            blurRadius: 60,
+          ),
+        ],
+      ),
       padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 36 : 24,
-        vertical: isDesktop ? 20 : 20,
+        horizontal: isDesktop ? 32 : 24,
+        vertical: isDesktop ? 32 : 26,
       ),
       child: Form(
         key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            CRMBrandLockup(
-              markSize: 36,
-              wordmarkColor: CRMColors.primaryOf(context),
-            ),
-            const SizedBox(height: 18),
-
-            // Header Texts - Retain exact string "Go ahead to your account" for test assertion
+            // Welcome Title in Inclusive Sans
             Text(
-              'Go ahead to your account',
-              style: CRMTypography.headline.copyWith(color: CRMColors.textOf(context)),
+              'Welcome back.',
+              style: GoogleFonts.inclusiveSans(
+                fontSize: 38,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF141614),
+                height: 1.1,
+              ),
             ),
             const SizedBox(height: 4),
-            Text(
-              'Enter your credentials to access your account.',
-              style: CRMTypography.subheadline.copyWith(color: CRMColors.textSecondaryOf(context)),
-            ),
-            const SizedBox(height: 18),
 
+            // Subtitle - Maintains exact test assertion string "Go ahead to your account"
+            Text(
+              'Go ahead to your account',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: const Color(0xFF737773),
+              ),
+            ),
+            const SizedBox(height: 22),
+
+            // Form Fields in AutofillGroup
             AutofillGroup(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Email input
-                  PremiumTextField(
+                  // Email Address
+                  Text(
+                    'Email Address',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF141614),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextFormField(
                     controller: _emailController,
-                    labelText: 'Email Address',
-                    prefixIcon: Icons.mail_outline_rounded,
                     keyboardType: TextInputType.emailAddress,
                     autofillHints: const [AutofillHints.email],
                     textInputAction: TextInputAction.next,
+                    style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF141614)),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFFCFCFA),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      hintText: 'Enter your email address',
+                      hintStyle: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF737773)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFDCDDD8)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFDCDDD8)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF141614), width: 1.5),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: CRMColors.danger),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: CRMColors.danger, width: 1.5),
+                      ),
+                    ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
                         return 'Please enter your email address';
@@ -470,28 +825,64 @@ class _LoginScreenState extends State<LoginScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
 
-                  // Password input
-                  PremiumTextField(
+                  // Password
+                  Text(
+                    'Password',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF141614),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextFormField(
                     controller: _passwordController,
-                    labelText: 'Password',
-                    prefixIcon: Icons.lock_outline_rounded,
                     obscureText: _obscurePassword,
                     autofillHints: const [AutofillHints.password],
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _submit(),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                        color: CRMColors.textSecondaryOf(context),
-                        size: 20,
+                    style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF141614)),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFFCFCFA),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      hintText: 'Enter your password',
+                      hintStyle: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF737773)),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: const Color(0xFF737773),
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFDCDDD8)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFDCDDD8)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF141614), width: 1.5),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: CRMColors.danger),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: CRMColors.danger, width: 1.5),
+                      ),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
@@ -503,28 +894,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
 
-            // Remember me and Forgot password
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 16,
-              runSpacing: 10,
+            // Preferences: Remember Me & Forgot Password
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      height: 22,
-                      width: 22,
+                      height: 18,
+                      width: 18,
                       child: Checkbox(
                         value: _rememberMe,
-                        activeColor: CRMColors.primaryOf(context),
+                        activeColor: const Color(0xFF141614),
                         checkColor: Colors.white,
-                        side: BorderSide(color: CRMColors.borderOf(context), width: 1.5),
+                        side: const BorderSide(color: Color(0xFFDCDDD8), width: 1.2),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         onChanged: (value) {
                           setState(() {
@@ -533,7 +921,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () {
                         setState(() {
@@ -542,8 +930,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       },
                       child: Text(
                         'Remember me',
-                        style: CRMTypography.label.copyWith(
-                          color: CRMColors.textSecondaryOf(context),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFF737773),
                         ),
                       ),
                     ),
@@ -554,176 +943,236 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: GestureDetector(
                     onTap: _showForgotPasswordDialog,
                     child: Text(
-                      'Forgot Password?',
-                      style: CRMTypography.label.copyWith(
-                        color: CRMColors.primaryOf(context),
+                      'Forgot password?',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        letterSpacing: -0.2,
+                        color: const Color(0xFF141614),
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 18),
 
-            // Dimension 10: Universal CAPTCHA / Bot Protection (Enforced for Everyone)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: CRMColors.backgroundOf(context),
-                borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-                border: Border.all(
-                  color: _captchaError != null ? CRMColors.danger : CRMColors.borderOf(context),
-                  width: _captchaError != null ? 1.5 : 1.0,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      // Distorted PNG CAPTCHA Image
-                      Expanded(
-                        child: Container(
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: CRMColors.borderOf(context)),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: _isLoadingCaptcha
-                              ? const Center(
-                                  child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  ),
-                                )
-                              : _captchaImageBytes != null
-                                  ? Image.memory(
-                                      _captchaImageBytes!,
-                                      fit: BoxFit.fill,
-                                      gaplessPlayback: true,
-                                      filterQuality: FilterQuality.medium,
-                                    )
-                                  : Center(
-                                      child: Text(
-                                        _captchaError ?? 'Click refresh',
-                                        style: CRMTypography.caption.copyWith(
-                                          color: CRMColors.textSecondaryOf(context),
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Refresh button
-                      Tooltip(
-                        message: 'Refresh verification code',
-                        child: InkWell(
-                          onTap: _isLoadingCaptcha ? null : _fetchCaptcha,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            height: 38,
-                            width: 38,
-                            decoration: BoxDecoration(
-                              color: CRMColors.cardBgOf(context),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: CRMColors.borderOf(context)),
-                            ),
-                            child: Icon(
-                              Icons.refresh_rounded,
-                              color: CRMColors.primaryOf(context),
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  // CAPTCHA Text Input
-                  TextFormField(
-                    controller: _captchaController,
-                    textInputAction: TextInputAction.done,
-                    textCapitalization: TextCapitalization.characters,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
-                      LengthLimitingTextInputFormatter(5),
-                    ],
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 4,
-                      fontSize: 15,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Enter 5-character code',
-                      hintStyle: TextStyle(
-                        fontFamily: 'monospace',
-                        letterSpacing: 0.5,
-                        fontSize: 12,
-                        color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.6),
-                      ),
-                      prefixIcon: Icon(
-                        Icons.verified_user_outlined,
-                        size: 18,
-                        color: CRMColors.primaryOf(context),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      filled: true,
-                      fillColor: CRMColors.cardBgOf(context),
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      if (_captchaError != null) {
-                        setState(() => _captchaError = null);
-                      }
-                    },
-                    onFieldSubmitted: (_) => _submit(),
-                  ),
-                  if (_captchaError != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      _captchaError!,
-                      style: const TextStyle(color: CRMColors.danger, fontSize: 11),
-                    ),
-                  ],
-                ],
+            // Security Verification / CAPTCHA Section matching Shubhangi's design
+            Text(
+              'Security verification',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF141614),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 2),
+            Text(
+              'Enter the code shown on the right',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: const Color(0xFF777E78),
+              ),
+            ),
+            const SizedBox(height: 8),
 
-            // Sign In Button
+            // CAPTCHA Row: Input on Left, Live Distorted Image on Right, Refresh Button
+            Row(
+              children: [
+                // 1. CAPTCHA Input Field
+                Expanded(
+                  flex: 5,
+                  child: SizedBox(
+                    height: 48,
+                    child: TextFormField(
+                      controller: _captchaController,
+                      textInputAction: TextInputAction.done,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                        LengthLimitingTextInputFormatter(5),
+                      ],
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 3.0,
+                        fontSize: 15,
+                        color: Color(0xFF141614),
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFFCFCFA),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                        hintText: 'Enter CAPTCHA',
+                        hintStyle: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: const Color(0xFFA3A9A4),
+                          letterSpacing: 0,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: _captchaError != null ? CRMColors.danger : const Color(0xFFDCDDD8),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: _captchaError != null ? CRMColors.danger : const Color(0xFFDCDDD8),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: _captchaError != null ? CRMColors.danger : const Color(0xFF141614),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        if (_captchaError != null) {
+                          setState(() => _captchaError = null);
+                        }
+                      },
+                      onFieldSubmitted: (_) => _submit(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // 2. Distorted Live PNG CAPTCHA Image Container (Slight blur / antialiased security rendering)
+                Expanded(
+                  flex: 4,
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDF1F5), // Light square vector fill
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFD9DDD8), width: 1.0),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: _isLoadingCaptcha
+                        ? const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF141614),
+                              ),
+                            ),
+                          )
+                        : _captchaImageBytes != null
+                            ? Image.memory(
+                                _captchaImageBytes!,
+                                fit: BoxFit.fill,
+                                gaplessPlayback: true,
+                                filterQuality: FilterQuality.medium, // Produces the slight blur / antialiased look
+                              )
+                            : Center(
+                                child: Text(
+                                  _captchaError ?? 'Click refresh',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: const Color(0xFF737773),
+                                  ),
+                                ),
+                              ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+
+                // 3. Refresh Action Button
+                Tooltip(
+                  message: 'Refresh verification code',
+                  child: InkWell(
+                    onTap: _isLoadingCaptcha ? null : _fetchCaptcha,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      height: 48,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF6F7F6), // Square vector fill
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFD9DDD8), width: 1.0),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.refresh_rounded,
+                        size: 20,
+                        color: Color(0xFF141614),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_captchaError != null) ...[
+              const SizedBox(height: 5),
+              Text(
+                _captchaError!,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: CRMColors.danger,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+            const SizedBox(height: 22),
+
+            // Log In Button with Arrow Icon
             BlocBuilder<AuthBloc, AuthState>(
               builder: (context, state) {
                 final isLoading = state is AuthLoading;
-                return CRMButton(
-                  label: 'Sign In',
-                  isLoading: isLoading,
-                  onPressed: _submit,
+                return SizedBox(
                   width: double.infinity,
-                  height: 44,
-                  borderRadius: CRMBorderRadius.input,
-                  backgroundColor: CRMColors.primaryOf(context),
-                  foregroundColor: Colors.white,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF141614),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                    ),
+                    onPressed: isLoading ? null : _submit,
+                    child: isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Log In',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
+                  ),
                 );
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
 
-            // Browsewrap legal disclaimer
+            // Legal notice
             Align(
               alignment: Alignment.center,
               child: Wrap(
@@ -731,41 +1180,53 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
-                    'By signing in, you agree to our ',
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
+                    'By continuing, you agree to our ',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: const Color(0xFF737773),
+                      height: 1.6,
                     ),
                   ),
                   GestureDetector(
                     onTap: () => context.push('/terms-and-conditions'),
                     child: Text(
-                      'Terms & Conditions',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.primaryOf(context),
-                        fontWeight: FontWeight.bold,
+                      'Terms of Service',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF141614),
+                        decoration: TextDecoration.underline,
+                        height: 1.6,
                       ),
                     ),
                   ),
                   Text(
                     ' and ',
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: const Color(0xFF737773),
+                      height: 1.6,
                     ),
                   ),
                   GestureDetector(
                     onTap: () => context.push('/privacy-policy'),
                     child: Text(
                       'Privacy Policy',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.primaryOf(context),
-                        fontWeight: FontWeight.bold,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF141614),
+                        decoration: TextDecoration.underline,
+                        height: 1.6,
                       ),
                     ),
                   ),
                   Text(
                     '.',
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: const Color(0xFF737773),
+                      height: 1.6,
                     ),
                   ),
                 ],
@@ -773,71 +1234,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _HeroSection extends StatelessWidget {
-  const _HeroSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
-    final theme = ThemeManager().currentTheme;
-    final primaryColor = isDark ? theme.primaryDark : theme.primaryLight;
-    final heroBg = isDark ? const Color(0xFF0F172A) : const Color(0xFF1E293B);
-    final borderLeft = isDark ? const Color(0xFF334155) : const Color(0xFF334155);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: heroBg,
-        border: Border(
-          left: BorderSide(color: borderLeft, width: 1.0),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 48),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: primaryColor.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: primaryColor.withValues(alpha: 0.4),
-              ),
-            ),
-            child: Text(
-              'REAL ESTATE CRM',
-              style: CRMTypography.captionBold.copyWith(
-                color: isDark ? theme.primaryHoverDark : theme.primaryLight,
-                fontSize: 11,
-                letterSpacing: 1.0,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Architectural precision for modern real-estate operations.',
-            style: CRMTypography.display.copyWith(
-              fontSize: 30,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFFF8FAFC),
-              height: 1.25,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Manage properties, buyer requirements, and team workflows in one calm, unified workspace.',
-            style: CRMTypography.body.copyWith(
-              color: const Color(0xFF94A3B8),
-              height: 1.5,
-            ),
-          ),
-        ],
       ),
     );
   }

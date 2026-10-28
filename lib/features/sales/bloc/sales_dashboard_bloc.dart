@@ -4,6 +4,7 @@ import '../../../core/api/dio_client.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/security/role_guard.dart';
 import '../../requirements/repository/requirements_repository.dart';
+import '../../../core/utils/app_logger.dart';
 
 // --- EVENTS ---
 abstract class SalesDashboardEvent extends Equatable {
@@ -56,6 +57,7 @@ class SalesDashboardBloc extends Bloc<SalesDashboardEvent, SalesDashboardState> 
         final res = await DioClient.dio.get(ApiConstants.salesDashboardSummary);
         resData = Map<String, dynamic>.from(res.data['data'] ?? res.data ?? {});
       } catch (e) {
+        AppLogger.e('SalesDashboardBloc fetch error: $e');
         // Safe fallback below
       }
 

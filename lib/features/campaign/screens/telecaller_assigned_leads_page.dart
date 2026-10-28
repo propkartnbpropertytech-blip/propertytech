@@ -1017,6 +1017,33 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                   ],
                 ),
               ),
+              // Assigned Salesperson badge
+              if (lead.assignedToName?.isNotEmpty == true) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.assignment_ind_rounded, size: 12, color: Color(0xFF10B981)),
+                      const SizedBox(width: 4),
+                      Text(
+                        lead.assignedToName!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               // Status Badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1226,6 +1253,8 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                 _buildDetailRow('Lead Type', lead.leadType),
                 _buildDetailRow('Status', lead.campaignStatus),
                 _buildDetailRow('Received Date', DateFormat('d MMM y, h:mm a').format(lead.receivedAt)),
+                if (lead.assignedToName != null && lead.assignedToName!.isNotEmpty)
+                  _buildDetailRow('Assigned Salesperson', lead.assignedToName!),
                 if (lead.assignedTelecallerName != null)
                   _buildDetailRow('Assigned Telecaller', lead.assignedTelecallerName!),
                 if (lead.telecallerAssignedAt != null)

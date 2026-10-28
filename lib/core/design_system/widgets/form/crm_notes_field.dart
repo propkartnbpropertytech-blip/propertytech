@@ -28,7 +28,7 @@ class CRMNotesField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${labelText}${isRequired ? " *" : ""}',
+          '$labelText${isRequired ? " *" : ""}',
           style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
         ),
         const SizedBox(height: CRMSpacing.xs),
@@ -62,7 +62,7 @@ class CRMNotesField extends StatelessWidget {
             ),
           ),
           validator: isRequired
-              ? (v) => CRMValidators.required(v, message: '${labelText} is required')
+              ? (v) => CRMValidators.required(v, message: '$labelText is required')
               : null,
         ),
       ],

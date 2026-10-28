@@ -45,6 +45,17 @@ class ApiConstants {
   static const telecallerCallbacks = "/telecaller/callbacks";
   static const telecallerCnr = "/telecaller/cnr";
   static const telecallerTransferLead = "/telecaller/transfer-lead";
+  static const adminAllocationConfig = "/admin/allocation-config";
+  static const adminAllocationConfigUserAvailability = "/admin/allocation-config/user-availability";
+  static const adminAllocationConfigRole = "/admin/allocation-config/role";
+  static const campaignAllocationMode = "/integrations/allocation-mode";
+  static const adminAllocationConfigUserCampaigns = "/admin/allocation-config/user-campaigns";
+  static const adminAllocationCategoryAllocation = "/admin/allocation-config/category-allocation";
+  static String adminAllocationCategoryToggle(String id) => "/admin/allocation-config/category-allocation/$id/toggle";
+  static String adminAllocationCategoryDelete(String id) => "/admin/allocation-config/category-allocation/$id";
+  static const adminAllocationCategoryBatch = "/admin/allocation-config/category-allocations-batch";
+  static const salesAvailability = "/sales/availability";
+  static const salesHeartbeat = "/sales/heartbeat";
   static const adminAllocationMonitor = "/admin/allocation-monitor";
   static const adminAllocationEngineToggle = "/admin/allocation-engine/toggle";
   static const adminAllocationEngineStatus = "/admin/allocation-engine/status";

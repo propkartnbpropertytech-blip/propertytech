@@ -66,7 +66,7 @@ void main() {
       print("Text Widget: '${widget.data}'");
     }
 
-    await tester.tap(find.text('Get Started'));
+    await tester.tap(find.text('Log In'));
     for (int i = 0; i < 5; i++) {
       await tester.pump(const Duration(milliseconds: 200));
     }

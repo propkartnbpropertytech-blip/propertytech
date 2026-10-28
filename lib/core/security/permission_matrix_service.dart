@@ -754,6 +754,10 @@ class PermissionMatrixService extends ChangeNotifier {
       permKey = 'page.messages';
     } else if (r.startsWith('/builders')) {
       permKey = 'page.builders';
+    } else if (r.startsWith('/admin/permissions') ||
+               r.startsWith('/admin/plans') ||
+               r.startsWith('/admin/brokers')) {
+      return normRole == 'Super Admin';
     }
 
     if (permKey != null) {

@@ -179,7 +179,10 @@ class _InventoryDemandAnalyticsSectionState
         // Section Header
         Padding(
           padding: const EdgeInsets.only(bottom: 14),
-          child: Row(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
             children: [
               Container(
                 width: 4,
@@ -189,7 +192,6 @@ class _InventoryDemandAnalyticsSectionState
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(width: 8),
               Text(
                 'Locality Intelligence',
                 style: TextStyle(
@@ -201,7 +203,6 @@ class _InventoryDemandAnalyticsSectionState
                       : const Color(0xFF1E293B),
                 ),
               ),
-              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
@@ -2654,8 +2655,11 @@ class _InventoryDemandAnalyticsSectionState
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 500;
 
-              final toggleWidget = Container(
-                height: 30,
+              final toggleWidget = FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  height: 30,
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   color: isDark
@@ -2697,7 +2701,8 @@ class _InventoryDemandAnalyticsSectionState
                     ),
                   ],
                 ),
-              );
+              ),
+            );
 
               final titleContent = Row(
                 crossAxisAlignment: CrossAxisAlignment.center,

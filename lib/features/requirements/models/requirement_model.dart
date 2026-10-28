@@ -51,8 +51,10 @@ class RequirementModel {
   final Map<String, dynamic>? metaCustomFields;
   final String? leadQuality;
   final String? assignedTelecallerId;
+  String? get telecallerId => assignedTelecallerId;
   final DateTime? salesAssignedAt;
   final String? rejectionRemark;
+  final bool isDirectSalesAllocated;
 
   RequirementModel({
     required this.id,
@@ -107,7 +109,55 @@ class RequirementModel {
     this.assignedTelecallerId,
     this.salesAssignedAt,
     this.rejectionRemark,
+    this.isDirectSalesAllocated = false,
   });
+
+  /// Returns true if this lead originated from an external campaign connection (Housing, Meta, Webhook, Portal, etc.)
+  bool get isCampaignLead {
+    if (isDirectSalesAllocated) return true;
+    if (isMetaLead) return true;
+    if (metaLeadId != null && metaLeadId!.trim().isNotEmpty) return true;
+    if (metaCampaignId != null && metaCampaignId!.trim().isNotEmpty) return true;
+    if (metaCampaignName != null && metaCampaignName!.trim().isNotEmpty) return true;
+    if (metaFormId != null && metaFormId!.trim().isNotEmpty) return true;
+    if (metaPageId != null && metaPageId!.trim().isNotEmpty) return true;
+    if (metaAdId != null && metaAdId!.trim().isNotEmpty) return true;
+    if (metaAdName != null && metaAdName!.trim().isNotEmpty) return true;
+
+    final src = (leadSource ?? '').trim().toLowerCase();
+    if (src.contains('housing') ||
+        src.contains('meta') ||
+        src.contains('facebook') ||
+        src.contains('instagram') ||
+        src.contains('webhook') ||
+        src.contains('portal') ||
+        src.contains('campaign')) {
+      return true;
+    }
+
+    if (metaCustomFields != null) {
+      if (metaCustomFields!['flat_id'] != null ||
+          metaCustomFields!['form_id'] != null ||
+          metaCustomFields!['ad_id'] != null ||
+          metaCustomFields!['campaign_id'] != null ||
+          metaCustomFields!['portal'] != null) {
+        return true;
+      }
+      final customSource = metaCustomFields!['source']?.toString().trim().toLowerCase();
+      if (customSource != null &&
+          (customSource.contains('housing') ||
+           customSource.contains('meta') ||
+           customSource.contains('facebook') ||
+           customSource.contains('instagram') ||
+           customSource.contains('webhook') ||
+           customSource.contains('portal') ||
+           customSource.contains('campaign'))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   bool get isMetaLead => metaLeadId != null && metaLeadId!.isNotEmpty;
   String? get metaCampaignDisplayName => metaCampaignName ?? metaCampaignId;
@@ -188,21 +238,31 @@ class RequirementModel {
   }
 
   String? get leadSourceDisplay {
+    final cName = (metaCampaignName != null && metaCampaignName!.trim().isNotEmpty)
+        ? metaCampaignName!.trim()
+        : null;
+
     if (isMetaLead) {
-      if (metaCampaignName != null && metaCampaignName!.isNotEmpty) {
-        return 'Meta Ads ($metaCampaignName)';
+      if (cName != null) {
+        return 'Meta Ads ($cName)';
       }
       return 'Meta Ads';
     }
     final src = (leadSource != null && leadSource!.trim().isNotEmpty)
         ? leadSource!.trim()
         : null;
-    if (src == null) return null;
+    if (src == null) {
+      if (cName != null) return cName;
+      return null;
+    }
     if (src.toLowerCase() == 'referral' || src.toLowerCase() == 'referrel') {
       if (referralName != null && referralName!.trim().isNotEmpty) {
         return 'Referral (${referralName!.trim()})';
       }
       return 'Referral';
+    }
+    if (cName != null && !src.toLowerCase().contains(cName.toLowerCase())) {
+      return '$src ($cName)';
     }
     return src;
   }
@@ -462,8 +522,9 @@ class RequirementModel {
     }
 
     String? parsedRemarks;
-    if (json['remarks'] != null && json['remarks'].toString().trim().isNotEmpty) {
-      parsedRemarks = json['remarks'].toString().trim();
+    final rawRem = json['remarks']?.toString().trim();
+    if (rawRem != null && rawRem.isNotEmpty && rawRem.toLowerCase() != 'null') {
+      parsedRemarks = rawRem;
     } else if (json['internal_crm_remarks'] != null) {
       if (json['internal_crm_remarks'] is List && (json['internal_crm_remarks'] as List).isNotEmpty) {
         final remarksList = List.from(json['internal_crm_remarks']);
@@ -477,16 +538,28 @@ class RequirementModel {
           }
           return 0;
         });
-        final last = remarksList.last;
-        if (last is Map && last['remark'] != null) {
-          parsedRemarks = last['remark']?.toString();
-        } else if (last is String) {
-          parsedRemarks = last;
+        for (final item in remarksList.reversed) {
+          String? candidate;
+          if (item is Map && item['remark'] != null) {
+            candidate = item['remark']?.toString().trim();
+          } else if (item is String) {
+            candidate = item.trim();
+          }
+          if (candidate != null && candidate.isNotEmpty && candidate.toLowerCase() != 'null') {
+            parsedRemarks = candidate;
+            break;
+          }
         }
       } else if (json['internal_crm_remarks'] is Map) {
-        parsedRemarks = json['internal_crm_remarks']['remark']?.toString();
+        final candidate = json['internal_crm_remarks']['remark']?.toString().trim();
+        if (candidate != null && candidate.isNotEmpty && candidate.toLowerCase() != 'null') {
+          parsedRemarks = candidate;
+        }
       } else if (json['internal_crm_remarks'] is String) {
-        parsedRemarks = json['internal_crm_remarks'];
+        final candidate = (json['internal_crm_remarks'] as String).trim();
+        if (candidate.isNotEmpty && candidate.toLowerCase() != 'null') {
+          parsedRemarks = candidate;
+        }
       }
     }
 
@@ -582,9 +655,23 @@ class RequirementModel {
       adminId: (json['admin_id'] ?? json['adminId'])?.toString(),
       assignedTo: () {
         final v = json['assigned_to'] ?? json['assignedTo'];
-        if (v == null) return null;
-        final s = v.toString().trim();
-        return s.isEmpty ? null : s;
+        if (v != null && v.toString().trim().isNotEmpty && v.toString().trim().toLowerCase() != 'null') {
+          return v.toString().trim();
+        }
+        final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+        if (meta is Map) {
+          final mAssigned = meta['assigned_to']?.toString().trim();
+          if (mAssigned != null && mAssigned.isNotEmpty && mAssigned.toLowerCase() != 'null') {
+            return mAssigned;
+          }
+          if (meta['_transfer'] is Map) {
+            final tAssigned = meta['_transfer']['assigned_to']?.toString().trim();
+            if (tAssigned != null && tAssigned.isNotEmpty && tAssigned.toLowerCase() != 'null') {
+              return tAssigned;
+            }
+          }
+        }
+        return null;
       }(),
       organizationId: json['organization_id']?.toString(),
       assigneeName: () {
@@ -598,13 +685,14 @@ class RequirementModel {
         if (json['assigned_user'] is Map) {
           return (json['assigned_user']['full_name'] ?? json['assigned_user']['fullName'] ?? json['assigned_user']['name']) as String?;
         }
-        if (json['meta_custom_fields'] is Map && json['meta_custom_fields']['_transfer'] is Map) {
-          final tName = json['meta_custom_fields']['_transfer']['assigned_to_name'];
-          if (tName != null && tName.toString().trim().isNotEmpty) return tName.toString().trim();
-        }
-        if (json['metaCustomFields'] is Map && json['metaCustomFields']['_transfer'] is Map) {
-          final tName = json['metaCustomFields']['_transfer']['assigned_to_name'];
-          if (tName != null && tName.toString().trim().isNotEmpty) return tName.toString().trim();
+        final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
+        if (meta is Map) {
+          final mName = meta['assigned_to_name'];
+          if (mName != null && mName.toString().trim().isNotEmpty) return mName.toString().trim();
+          if (meta['_transfer'] is Map) {
+            final tName = meta['_transfer']['assigned_to_name'];
+            if (tName != null && tName.toString().trim().isNotEmpty) return tName.toString().trim();
+          }
         }
         return null;
       }(),
@@ -644,7 +732,15 @@ class RequirementModel {
       metaPageId: (json['meta_page_id'] ?? json['metaPageId'])?.toString(),
       metaFormId: (json['meta_form_id'] ?? json['metaFormId'])?.toString(),
       metaCampaignId: (json['meta_campaign_id'] ?? json['metaCampaignId'])?.toString(),
-      metaCampaignName: (json['meta_campaign_name'] ?? json['metaCampaignName'])?.toString(),
+      metaCampaignName: (json['meta_campaign_name'] ??
+          json['metaCampaignName'] ??
+          json['campaign_name'] ??
+          json['campaignName'] ??
+          (json['meta_custom_fields'] is Map
+              ? (json['meta_custom_fields']['campaign_name'] ??
+                  json['meta_custom_fields']['campaign'] ??
+                  json['meta_custom_fields']['project_name'])
+              : null))?.toString(),
       metaAdsetId: (json['meta_adset_id'] ?? json['metaAdsetId'])?.toString(),
       metaAdsetName: (json['meta_adset_name'] ?? json['metaAdsetName'])?.toString(),
       metaAdId: (json['meta_ad_id'] ?? json['metaAdId'])?.toString(),
@@ -701,12 +797,20 @@ class RequirementModel {
             json['assigned_at'] ??
             (json['meta_custom_fields'] is Map
                 ? (json['meta_custom_fields']['sales_assigned_at'] ??
-                    json['meta_custom_fields']['telecaller_assigned_at'] ??
+                    json['meta_custom_fields']['transferred_at'] ??
+                    (json['meta_custom_fields']['_transfer'] is Map
+                        ? json['meta_custom_fields']['_transfer']['interacted_at'] ??
+                            json['meta_custom_fields']['_transfer']['transferred_at']
+                        : null) ??
                     json['meta_custom_fields']['assigned_at'])
                 : null) ??
             (json['metaCustomFields'] is Map
                 ? (json['metaCustomFields']['sales_assigned_at'] ??
-                    json['metaCustomFields']['telecaller_assigned_at'] ??
+                    json['metaCustomFields']['transferred_at'] ??
+                    (json['metaCustomFields']['_transfer'] is Map
+                        ? json['metaCustomFields']['_transfer']['interacted_at'] ??
+                            json['metaCustomFields']['_transfer']['transferred_at']
+                        : null) ??
                     json['metaCustomFields']['assigned_at'])
                 : null);
         if (raw != null && raw.toString().trim().isNotEmpty) {
@@ -715,6 +819,14 @@ class RequirementModel {
         return null;
       }(),
       rejectionRemark: (json['rejection_remark'] ?? json['rejectionRemark'])?.toString(),
+      isDirectSalesAllocated: json['is_direct_sales_allocated'] == true ||
+          json['isDirectSalesAllocated'] == true ||
+          (json['meta_custom_fields'] is Map &&
+              (json['meta_custom_fields']['direct_sales_allocated'] == true ||
+                  json['meta_custom_fields']['is_direct_sales_allocated'] == true)) ||
+          (json['metaCustomFields'] is Map &&
+              (json['metaCustomFields']['direct_sales_allocated'] == true ||
+                  json['metaCustomFields']['is_direct_sales_allocated'] == true)),
     );
   }
 
@@ -781,10 +893,12 @@ class RequirementModel {
         ? 'Referral ($referralName)'
         : leadSource;
 
+    final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
     String? cleanUuid(String? val) {
       if (val == null) return null;
       final trimmed = val.trim();
-      if (trimmed.isEmpty || trimmed.toLowerCase() == 'unknown' || trimmed.toLowerCase() == 'n/a' || trimmed == 'None') return null;
+      if (trimmed.isEmpty || trimmed.toLowerCase() == 'unknown' || trimmed.toLowerCase() == 'n/a' || trimmed.toLowerCase() == 'none') return null;
+      if (!uuidRegex.hasMatch(trimmed)) return null;
       return trimmed;
     }
 
@@ -839,6 +953,8 @@ class RequirementModel {
       if (metaCustomFields != null) 'meta_custom_fields': metaCustomFields,
       if (leadQuality != null) 'lead_quality': leadQuality,
       if (rejectionRemark != null) 'rejection_remark': rejectionRemark,
+      if (salesAssignedAt != null) 'sales_assigned_at': salesAssignedAt!.toIso8601String(),
+      'is_direct_sales_allocated': isDirectSalesAllocated,
     };
   }
 
@@ -1047,7 +1163,9 @@ class RequirementModel {
     Map<String, dynamic>? metaCustomFields,
     String? leadQuality,
     String? assignedTelecallerId,
+    DateTime? salesAssignedAt,
     String? rejectionRemark,
+    bool? isDirectSalesAllocated,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -1100,8 +1218,12 @@ class RequirementModel {
       metaCustomFields: metaCustomFields ?? this.metaCustomFields,
       leadQuality: leadQuality ?? this.leadQuality,
       assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
-      salesAssignedAt: salesAssignedAt,
+      salesAssignedAt: salesAssignedAt ?? this.salesAssignedAt,
       rejectionRemark: rejectionRemark ?? this.rejectionRemark,
+      isDirectSalesAllocated: isDirectSalesAllocated ?? this.isDirectSalesAllocated,
     );
   }
-}
+
+  /// Exact date and time to display: transfer date for transferred leads, else creation date.
+  DateTime get effectiveDate => (salesAssignedAt ?? createdAt).toLocal();
+}
