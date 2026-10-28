@@ -1830,7 +1830,11 @@ class _CRMAppShellState extends State<CRMAppShell>
               unreadNotifications: _unreadNotificationsCount,
               unreadMessages: _unreadTeamMessagesCount,
               roleControl: (isTelecaller || RoleGuard.isSales(role))
-                  ? const TelecallerAvailabilityToggle(compact: true)
+                  ? TelecallerAvailabilityToggle(
+                      compact: true,
+                      isReadOnly: RoleGuard.isSales(role),
+                      showTimer: !RoleGuard.isSales(role),
+                    )
                   : null,
               searchBar: searchOpen
                   ? MobileSearchBar(

@@ -1,14 +1,27 @@
+import '../../../core/security/role_guard.dart';
 import 'package:flutter/material.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../services/telecaller_shift_manager.dart';
 
 class TelecallerAvailabilityToggle extends StatelessWidget {
   final bool compact;
-  const TelecallerAvailabilityToggle({super.key, this.compact = false});
+  final bool? isReadOnly;
+  final bool? showTimer;
+
+  const TelecallerAvailabilityToggle({
+    super.key,
+    this.compact = false,
+    this.isReadOnly,
+    this.showTimer,
+  });
 
   @override
   Widget build(BuildContext context) {
     final shiftManager = TelecallerShiftManager.instance;
+    final currentUserRole = RoleGuard.currentUser?.role;
+    final isSalesUser = RoleGuard.isSales(currentUserRole);
+    final effectiveReadOnly = isReadOnly ?? isSalesUser;
+    final effectiveShowTimer = showTimer ?? !isSalesUser;
 
     return ValueListenableBuilder<String>(
       valueListenable: shiftManager.currentStatusNotifier,
@@ -51,11 +64,15 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                     }
 
                     final offLimitReached = isOffLimitExpired || remainingSec <= 0;
-                    final tooltipMsg = isActive
-                        ? 'Active · Receiving leads (${shiftManager.formatRemainingOffTime()} OFF allowance left today)'
-                        : (offLimitReached
-                            ? '6-hour OFF allowance expired! Must turn ON to receive leads.'
-                            : 'Inactive · ${shiftManager.formatRemainingOffTime()} OFF allowance remaining today');
+                    final tooltipMsg = effectiveReadOnly
+                        ? (isActive
+                            ? 'Lead Allocation: ACTIVE (Managed by Administrator)'
+                            : 'Lead Allocation: INACTIVE (Managed by Administrator)')
+                        : (isActive
+                            ? 'Active · Receiving leads (${shiftManager.formatRemainingOffTime()} OFF allowance left today)'
+                            : (offLimitReached
+                                ? '6-hour OFF allowance expired! Must turn ON to receive leads.'
+                                : 'Inactive · ${shiftManager.formatRemainingOffTime()} OFF allowance remaining today'));
 
                     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -140,7 +157,20 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                                   width: 38,
                                   child: FittedBox(
                                     fit: BoxFit.contain,
-                                    child: Switch(
+                                    child: effectiveReadOnly
+                                        ? IgnorePointer(
+                                            ignoring: true,
+                                            child: Switch(
+                                              value: isActive,
+                                              activeThumbColor: const Color(0xFF10B981),
+                                              activeTrackColor: const Color(0xFFA7F3D0),
+                                              inactiveThumbColor: const Color(0xFF94A3B8),
+                                              inactiveTrackColor: const Color(0xFFE2E8F0),
+                                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              onChanged: (_) {},
+                                            ),
+                                          )
+                                        : Switch(
                                       value: isActive,
                                       activeThumbColor: const Color(0xFF10B981),
                                       activeTrackColor: const Color(0xFFA7F3D0),
@@ -177,9 +207,10 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                           ),
                         ),
 
-                        // Display countdown timer directly below the Active toggle
-                        const SizedBox(height: 2),
-                        if (offLimitReached)
+                        // Display countdown timer directly below the Active toggle (Telecaller only)
+                        if (effectiveShowTimer) ...[
+                          const SizedBox(height: 2),
+                          if (offLimitReached)
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -243,6 +274,7 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                               );
                             },
                           ),
+                        ],
                       ],
                     );
                   },

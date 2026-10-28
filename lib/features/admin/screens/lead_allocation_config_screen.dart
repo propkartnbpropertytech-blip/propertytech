@@ -208,6 +208,20 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     final userName = user['name']?.toString() ?? 'User';
     if (userId.isEmpty) return;
 
+    final isAllocEnabled = user['isAllocatedEnabled'] != false && user['status'] != 'INACTIVE';
+    if (role == 'Sales' && !isAllocEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$userName lead allocation is turned OFF. Turn ON their toggle in Available Salespersons to assign.'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
     final existing = _getAssignedAllocations(role, campaignId, categoryName);
     final alreadyAssigned = existing.any((a) => a['user_id']?.toString() == userId);
     if (alreadyAssigned) {
@@ -273,6 +287,67 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to assign $userName: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+
+  /// Toggle a salesperson's individual lead allocation availability ON / OFF
+  Future<void> _toggleSalespersonAvailability(String userId, String userName, bool newStatus) async {
+    if (_pendingActionIds.contains(userId)) return;
+
+    final index = _salespersons.indexWhere((u) => u['id']?.toString() == userId);
+    if (index == -1) return;
+
+    final oldAllocEnabled = _salespersons[index]['isAllocatedEnabled'] != false && _salespersons[index]['status'] != 'INACTIVE';
+
+    // Optimistic UI update
+    setState(() {
+      _salespersons[index]['isAllocatedEnabled'] = newStatus;
+      _salespersons[index]['status'] = newStatus ? 'ACTIVE' : 'INACTIVE';
+      _pendingActionIds.add(userId);
+    });
+
+    try {
+      await DioClient.dio.post(
+        ApiConstants.adminAllocationConfigUserAvailability,
+        data: {
+          'userId': userId,
+          'isEnabled': newStatus,
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _pendingActionIds.remove(userId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newStatus
+                  ? '$userName is now ACTIVE for lead allocation & round-robin.'
+                  : '$userName is now PAUSED (OFF) from lead allocation.',
+            ),
+            backgroundColor: newStatus ? const Color(0xFF10B981) : const Color(0xFF64748B),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _salespersons[index]['isAllocatedEnabled'] = oldAllocEnabled;
+          _salespersons[index]['status'] = oldAllocEnabled ? 'ACTIVE' : 'INACTIVE';
+          _pendingActionIds.remove(userId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update status for $userName: $e'),
             backgroundColor: Colors.red.shade700,
             behavior: SnackBarBehavior.floating,
           ),
@@ -488,7 +563,20 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
                                   ),
                                 )
-                              : ElevatedButton(
+                              : ((u['isAllocatedEnabled'] == false || u['status'] == 'INACTIVE') && role == 'Sales')
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                                      ),
+                                      child: const Text(
+                                        'Disabled (OFF)',
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
+                                      ),
+                                    )
+                                  : ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: role == 'Sales' ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
                                     foregroundColor: Colors.white,
@@ -1222,8 +1310,28 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     bool isDark,
     Color accentColor,
   ) {
+    final userId = user['id']?.toString() ?? '';
     final name = user['name']?.toString() ?? 'User';
     final workload = (user['currentWorkload'] as num?)?.toInt() ?? 0;
+    final isAllocEnabled = user['isAllocatedEnabled'] != false && user['status'] != 'INACTIVE';
+    final isPending = _pendingActionIds.contains(userId);
+    final canDrag = (role != 'Sales') || isAllocEnabled;
+
+    final chipContent = _buildChipContent(
+      user: user,
+      name: name,
+      workload: workload,
+      isDark: isDark,
+      accentColor: accentColor,
+      role: role,
+      isAllocEnabled: isAllocEnabled,
+      isPending: isPending,
+      canDrag: canDrag,
+    );
+
+    if (!canDrag) {
+      return chipContent;
+    }
 
     return Draggable<Map<String, dynamic>>(
       data: user,
@@ -1258,21 +1366,42 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       ),
       childWhenDragging: Opacity(
         opacity: 0.4,
-        child: _buildChipContent(name, workload, isDark, accentColor),
+        child: chipContent,
       ),
-      child: _buildChipContent(name, workload, isDark, accentColor),
+      child: chipContent,
     );
   }
 
-  Widget _buildChipContent(String name, int workload, bool isDark, Color accentColor) {
+  Widget _buildChipContent({
+    required Map<String, dynamic> user,
+    required String name,
+    required int workload,
+    required bool isDark,
+    required Color accentColor,
+    required String role,
+    required bool isAllocEnabled,
+    required bool isPending,
+    required bool canDrag,
+  }) {
+    final userId = user['id']?.toString() ?? '';
+    final isSales = role == 'Sales';
+
+    final effectiveColor = (!isSales || isAllocEnabled)
+        ? accentColor
+        : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8));
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: isDark ? 0.15 : 0.08),
-        borderRadius: BorderRadius.circular(20),
+        color: (!isSales || isAllocEnabled)
+            ? accentColor.withValues(alpha: isDark ? 0.15 : 0.08)
+            : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: accentColor.withValues(alpha: 0.35),
-          width: 1,
+          color: (!isSales || isAllocEnabled)
+              ? accentColor.withValues(alpha: 0.35)
+              : (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+          width: 1.2,
         ),
       ),
       child: Row(
@@ -1280,7 +1409,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
         children: [
           CircleAvatar(
             radius: 11,
-            backgroundColor: accentColor,
+            backgroundColor: effectiveColor,
             child: Text(
               name.isNotEmpty ? name[0].toUpperCase() : 'U',
               style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
@@ -1292,23 +1421,84 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
+              color: (!isSales || isAllocEnabled)
+                  ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                  : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
             ),
           ),
           const SizedBox(width: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.2),
+              color: effectiveColor.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               '$workload leads',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: accentColor),
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: effectiveColor),
             ),
           ),
-          const SizedBox(width: 4),
-          Icon(Icons.drag_indicator, size: 14, color: isDark ? Colors.grey.shade400 : Colors.grey.shade500),
+          if (isSales) ...[
+            const SizedBox(width: 8),
+            // Individual ON/OFF Toggle switch next to Salesperson's name
+            Tooltip(
+              message: isAllocEnabled
+                  ? 'Allocation ACTIVE (Click to turn OFF for $name)'
+                  : 'Allocation OFF (Click to turn ON for $name)',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isAllocEnabled ? 'ON' : 'OFF',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.bold,
+                      color: isAllocEnabled
+                          ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  if (isPending)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    SizedBox(
+                      height: 20,
+                      width: 32,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: Switch(
+                          value: isAllocEnabled,
+                          activeThumbColor: const Color(0xFF10B981),
+                          activeTrackColor: const Color(0xFFA7F3D0),
+                          inactiveThumbColor: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                          inactiveTrackColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          onChanged: (val) {
+                            _toggleSalespersonAvailability(userId, name, val);
+                          },
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(width: 6),
+          Tooltip(
+            message: canDrag ? 'Hold & drag to assign' : 'Disabled from lead allocation (Turn ON to drag)',
+            child: Icon(
+              canDrag ? Icons.drag_indicator : Icons.block,
+              size: 14,
+              color: canDrag
+                  ? (isDark ? Colors.grey.shade400 : Colors.grey.shade500)
+                  : (isDark ? Colors.red.shade400 : Colors.red.shade600),
+            ),
+          ),
         ],
       ),
     );
@@ -1495,7 +1685,10 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     final assigned = _getAssignedAllocations('Sales', campaignId, catName);
 
     return DragTarget<Map<String, dynamic>>(
-      onWillAcceptWithDetails: (details) => true,
+      onWillAcceptWithDetails: (details) {
+        final u = details.data;
+        return (u['isAllocatedEnabled'] != false && u['status'] != 'INACTIVE');
+      },
       onAcceptWithDetails: (details) {
         _assignUserToCategory(
           role: 'Sales',
