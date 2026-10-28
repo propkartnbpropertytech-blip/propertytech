@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/dio_client.dart';
-import '../design_system/tokens/app_colors.dart';
-import '../design_system/tokens/app_typography.dart';
 import '../navigation/app_router.dart';
 import 'notification_center.dart';
 import 'platform_notifier/platform_notifier.dart';

@@ -4,6 +4,7 @@
 /// or drilldown dialog trigger, you MUST strictly adhere to the Master KPI Rulebook:
 /// `lib/core/constants/kpi_rulebook.dart` and `docs/KPIs.docx`.
 /// ============================================================================
+library;
 import 'dart:math' as math;
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/model_mappers.dart';

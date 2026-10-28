@@ -3,7 +3,6 @@ import '../../../core/storage/local_repositories.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/model_mappers.dart';
 import 'package:collection/collection.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';

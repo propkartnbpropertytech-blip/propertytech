@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 enum DocumentStatus { active, expired, archived }
 

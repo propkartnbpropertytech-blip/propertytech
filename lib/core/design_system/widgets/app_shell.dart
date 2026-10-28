@@ -9,6 +9,7 @@ import '../../security/role_guard.dart';
 import '../../../features/integration/services/integration_service.dart';
 import '../../../features/campaign/services/portal_integrations_service.dart';
 import '../../security/permission_matrix_service.dart';
+import '../../security/crm_control_guard.dart';
 import '../../../../features/auth/bloc/auth_bloc.dart';
 import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
@@ -17,7 +18,6 @@ import '../tokens/app_typography.dart';
 import '../tokens/app_motion.dart';
 import '../tokens/app_shadows.dart';
 import 'crm_brand_lockup.dart';
-import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
@@ -837,17 +837,17 @@ class _CRMAppShellState extends State<CRMAppShell>
       final lakhs = val / 100000;
       final lakhsStr = lakhs.toStringAsFixed(lakhs.truncateToDouble() == lakhs ? 0 : 1);
       list.add('${lakhsStr}l');
-      list.add('${lakhsStr} l');
+      list.add('$lakhsStr l');
       list.add('${lakhsStr}lakh');
-      list.add('${lakhsStr} lakh');
-      list.add('${lakhsStr} lakhs');
+      list.add('$lakhsStr lakh');
+      list.add('$lakhsStr lakhs');
     } else if (val >= 1000) {
       final k = val / 1000;
       final kStr = k.toStringAsFixed(k.truncateToDouble() == k ? 0 : 1);
       list.add('${kStr}k');
-      list.add('${kStr} k');
+      list.add('$kStr k');
       list.add('${kStr}thousand');
-      list.add('${kStr} thousand');
+      list.add('$kStr thousand');
     }
   }
 
@@ -3172,32 +3172,42 @@ class _CRMAppShellState extends State<CRMAppShell>
                 horizontal: isExpanded ? CRMSpacing.s : CRMSpacing.xxs,
               ),
               children: [
-                _buildSidebarItem(
-                  Icons.dashboard_rounded,
-                  'Dashboard',
-                  '/dashboard',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.dashboard',
+                  child: _buildSidebarItem(
+                    Icons.dashboard_rounded,
+                    'Dashboard',
+                    '/dashboard',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                _buildSidebarItem(
-                  Icons.home_work_rounded,
-                  'Properties',
-                  '/properties',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.properties',
+                  child: _buildSidebarItem(
+                    Icons.home_work_rounded,
+                    'Properties',
+                    '/properties',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                _buildSidebarItem(
-                  Icons.assignment_rounded,
-                  'Leads',
-                  '/requirements',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.leads',
+                  child: _buildSidebarItem(
+                    Icons.assignment_rounded,
+                    'Leads',
+                    '/requirements',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                if (userRole == 'Admin' || userRole == 'Super Admin') ...[
-                  _buildSidebarItem(
+                CrmControlGuard(
+                  controlKey: 'page.users',
+                  child: _buildSidebarItem(
                     Icons.people_outline_rounded,
                     'Employees',
                     '/users',
@@ -3205,7 +3215,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                     isMobile,
                     isExpanded,
                   ),
-                  _buildSidebarTreeItem(
+                ),
+                CrmControlGuard(
+                  controlKey: 'page.campaign',
+                  child: _buildSidebarTreeItem(
                     icon: Icons.campaign_rounded,
                     label: 'Campaign',
                     currentPath: currentPath,
@@ -3231,34 +3244,89 @@ class _CRMAppShellState extends State<CRMAppShell>
                         _SidebarSubItemData(
                           icon: Icons.hub_outlined,
                           label: row['name']?.toString() ?? 'Portal',
-                          route: '/campaign/portal-leads/${row['id']}',
+                          route: '/campaign/portal-leads/' + row['id'],
                         ),
                     ],
                   ),
+                ),
+                CrmControlGuard(
+                  controlKey: 'page.reports',
+                  child: _buildSidebarItem(
+                    Icons.bar_chart_rounded,
+                    'Reports',
+                    '/reports',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
+                ),
+                CrmControlGuard(
+                  controlKey: 'page.library',
+                  child: _buildSidebarItem(
+                    Icons.folder_open_rounded,
+                    'Library',
+                    '/library',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
+                ),
+                if (RoleGuard.isSuperAdmin(userRole)) ...[
+                  CrmControlGuard(
+                    controlKey: 'page.settings.audit_logs',
+                    child: _buildSidebarItem(
+                      Icons.security_rounded,
+                      'Permissions Studio',
+                      '/admin/permissions',
+                      currentPath,
+                      isMobile,
+                      isExpanded,
+                    ),
+                  ),
+                  CrmControlGuard(
+                    controlKey: 'page.settings.audit_logs',
+                    child: _buildSidebarItem(
+                      Icons.workspace_premium_rounded,
+                      'Tier Plans Studio',
+                      '/admin/plans',
+                      currentPath,
+                      isMobile,
+                      isExpanded,
+                    ),
+                  ),
+                  CrmControlGuard(
+                    controlKey: 'page.settings.audit_logs',
+                    child: _buildSidebarItem(
+                      Icons.domain_rounded,
+                      'Broker Workspaces',
+                      '/admin/brokers',
+                      currentPath,
+                      isMobile,
+                      isExpanded,
+                    ),
+                  ),
                 ],
-                _buildSidebarItem(
-                  Icons.folder_open_rounded,
-                  'Library',
-                  '/library',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.settings',
+                  child: _buildSidebarItem(
+                    Icons.settings_rounded,
+                    'Settings',
+                    '/settings',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
-                _buildSidebarItem(
-                  Icons.settings_rounded,
-                  'Settings',
-                  '/settings',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
-                ),
-                _buildSidebarItem(
-                  Icons.delete_sweep_rounded,
-                  'Recycle Bin',
-                  '/bin',
-                  currentPath,
-                  isMobile,
-                  isExpanded,
+                CrmControlGuard(
+                  controlKey: 'page.recycle_bin',
+                  child: _buildSidebarItem(
+                    Icons.delete_sweep_rounded,
+                    'Recycle Bin',
+                    '/bin',
+                    currentPath,
+                    isMobile,
+                    isExpanded,
+                  ),
                 ),
               ],
             ),

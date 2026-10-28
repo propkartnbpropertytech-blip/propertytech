@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
-import 'package:url_launcher/url_launcher.dart';
 import '../../properties/services/properties_service.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
@@ -10,7 +9,6 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
-import '../../../core/design_system/widgets/crm_data_table.dart';
 import '../../../core/design_system/widgets/crm_status_chips.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/design_system/widgets/empty_state.dart';

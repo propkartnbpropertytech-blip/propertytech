@@ -230,6 +230,29 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         route: '/settings',
                         isActive: currentPath == '/settings',
                       ),
+                    if (RoleGuard.isSuperAdmin(widget.userRole)) ...[
+                      _buildNavItem(
+                        context,
+                        title: 'Permissions Studio',
+                        icon: Icons.security_rounded,
+                        route: '/admin/permissions',
+                        isActive: currentPath.startsWith('/admin/permissions'),
+                      ),
+                      _buildNavItem(
+                        context,
+                        title: 'Tier Plans Studio',
+                        icon: Icons.workspace_premium_rounded,
+                        route: '/admin/plans',
+                        isActive: currentPath.startsWith('/admin/plans'),
+                      ),
+                      _buildNavItem(
+                        context,
+                        title: 'Broker Workspaces',
+                        icon: Icons.domain_rounded,
+                        route: '/admin/brokers',
+                        isActive: currentPath.startsWith('/admin/brokers'),
+                      ),
+                    ],
                     if (RoleGuard.isSuperAdmin(widget.userRole))
                       _buildNavItem(
                         context,

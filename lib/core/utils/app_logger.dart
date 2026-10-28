@@ -18,7 +18,7 @@ class AppLogger {
 
   /// Sensitive regex to redact secrets from printed logs.
   static final RegExp _sensitivePattern = RegExp(
-    r'(Bearer\s+[A-Za-z0-9\-._~+/]+=*)|(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)|(password["\s:=]+[^,\s}"]+)|(refreshToken["\s:=]+[^,\s}"]+)|(Authorization["\s:=]+[^,\s}"]+)',
+    r"""(Authorization[\s:=]+Bearer\s+\S+)|(Authorization[\s:=]+\S+)|(Bearer\s+\S+)|(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)|((?:password|refreshToken|token|apiKey|secret)[\s:=]+["']?[^,\s}"']+["']?)""",
     caseSensitive: false,
   );
 
@@ -73,10 +73,12 @@ class AppLogger {
     dynamic data,
     dynamic error,
     int? durationMs,
+    String? requestId,
   }) {
     final statusStr = statusCode != null ? ' [$statusCode]' : '';
     final durationStr = durationMs != null ? ' in ${durationMs}ms' : '';
-    final logMessage = '🌐 [HTTP $method] $url$statusStr$durationStr';
+    final reqIdStr = requestId != null ? ' [req:$requestId]' : '';
+    final logMessage = '🌐 [HTTP $method] $url$statusStr$durationStr$reqIdStr';
 
     if (error != null || (statusCode != null && statusCode >= 400)) {
       _logger.e(

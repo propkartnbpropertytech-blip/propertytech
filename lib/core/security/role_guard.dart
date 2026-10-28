@@ -78,7 +78,10 @@ class RoleGuard {
     '/messages',
     '/support',
     '/admin/support',
-    '/bin',
+    '/admin/permissions',
+    '/admin/plans',
+    '/admin/brokers',
+        '/bin',
     '/settings',
     '/settings/audit-logs',
     '/users',
@@ -133,6 +136,12 @@ class RoleGuard {
       return '/dashboard';
     }
     if (pathOnly.startsWith('/reports') && !canViewReports(role)) {
+      return '/dashboard';
+    }
+    if ((pathOnly.startsWith('/admin/permissions') ||
+         pathOnly.startsWith('/admin/plans') ||
+         pathOnly.startsWith('/admin/brokers')) &&
+        !isSuperAdmin(role)) {
       return '/dashboard';
     }
     if (!canViewPage(role, pathOnly)) {

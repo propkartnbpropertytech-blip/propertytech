@@ -8,9 +8,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:url_launcher/url_launcher.dart';
-import '../domain/usecases/reclassify_campaign_lead_usecase.dart';
-import '../widgets/campaign_column_settings_dialog.dart';
-import '../widgets/lead_reclassify_dialog.dart';
 import '../../../core/config/app_env.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -38,8 +35,6 @@ import '../../users/models/user_model.dart' as users_model;
 import '../../team_messages/services/team_messages_service.dart';
 import '../../../core/utils/team_user_visibility.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
-import '../../../core/design_system/mobile/mobile.dart';
-import '../../telecaller/widgets/mobile_telecaller_outcome_sheet.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
   final String? initialSource;
@@ -8020,8 +8015,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             const SizedBox(height: 6),
             Text(
               isMetaBlocked
-                  ? "Meta has restricted App ID 1632855004850842. Google Sheets & direct webhooks are operational. You have ${_cachedCountYesterday} leads from Yesterday and $allTimeCount Total leads."
-                  : "New leads will appear here automatically. You have ${_cachedCountYesterday} leads from Yesterday and $allTimeCount Total leads.",
+                  ? "Meta has restricted App ID 1632855004850842. Google Sheets & direct webhooks are operational. You have $_cachedCountYesterday leads from Yesterday and $allTimeCount Total leads."
+                  : "New leads will appear here automatically. You have $_cachedCountYesterday leads from Yesterday and $allTimeCount Total leads.",
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
@@ -8046,7 +8041,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                       );
                     },
                     icon: const Icon(Icons.history_rounded, size: 14),
-                    label: Text('View Yesterday (${_cachedCountYesterday})'),
+                    label: Text('View Yesterday ($_cachedCountYesterday)'),
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                       textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
@@ -11114,7 +11109,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Reorder ${_selectedSection} Columns',
+                    'Reorder $_selectedSection Columns',
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -11128,7 +11123,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Drag and drop ${_selectedSection} columns using the handles (⠿) to change their display order. Layout is saved for ${_selectedSection} tab.',
+                    'Drag and drop $_selectedSection columns using the handles (⠿) to change their display order. Layout is saved for $_selectedSection tab.',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 12),
@@ -11136,7 +11131,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${allHeaders.length} ${_selectedSection} Columns',
+                        '${allHeaders.length} $_selectedSection Columns',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       TextButton.icon(

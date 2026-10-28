@@ -1,10 +1,3 @@
-/// ============================================================================
-/// ⚠️ PROPKART MASTER KPI GOVERNANCE RULE:
-/// All exported Excel/CSV/PDF reports and operational KPI sheets generated here
-/// MUST adhere to the Master KPI Rulebook: lib/core/constants/kpi_rulebook.dart
-/// and docs/KPIs.docx.
-/// ============================================================================
-import '../../../core/constants/kpi_rulebook.dart';
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';

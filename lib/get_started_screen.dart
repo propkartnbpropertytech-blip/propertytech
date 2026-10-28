@@ -280,12 +280,12 @@ class _LandingNavigationBar extends StatelessWidget {
           style: GoogleFonts.inter(
             fontSize: brandFontSize,
             fontWeight: FontWeight.w700,
-            color: const Color(0xFF050A08),
+            color: Colors.white,
             letterSpacing: -0.5,
             height: 1.0,
             shadows: const [
               Shadow(
-                color: Color.fromRGBO(255, 255, 255, 0.45),
+                color: Color.fromRGBO(0, 0, 0, 0.50),
                 offset: Offset(0, 1),
                 blurRadius: 2,
               ),
@@ -415,7 +415,11 @@ class _DesignerLogInButtonState extends State<_DesignerLogInButton> {
             width: buttonWidth,
             height: buttonHeight,
             decoration: BoxDecoration(
-              color: _isHovered ? const Color(0xFFF8F9FA) : Colors.white,
+              color: _isHovered ? const Color(0xFF262A26) : const Color(0xFF141614),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.15),
+                width: 1,
+              ),
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
@@ -436,14 +440,15 @@ class _DesignerLogInButtonState extends State<_DesignerLogInButton> {
                   style: GoogleFonts.inter(
                     fontSize: widget.isDesktop ? 18.0 : 16.0,
                     fontWeight: FontWeight.w600,
-                    color: const Color(0xFF050A08),
+                    color: Colors.white,
                     height: 1.0,
                   ),
                 ),
-                const SizedBox(width: 10),
-                const _DesignerArrowVector(
-                  color: Color(0xFF050A08),
-                  size: 16,
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 18,
+                  color: Colors.white,
                 ),
               ],
             ),
@@ -452,66 +457,4 @@ class _DesignerLogInButtonState extends State<_DesignerLogInButton> {
       ),
     );
   }
-}
-
-/// Exact vector recreation of designer's `Arraow.svg`:
-/// ```xml
-/// <svg width="16" height="15" viewBox="0 0 16 15" fill="none">
-/// <path d="M1 7.5H15M8.875 14L15 7.5L8.875 1" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-/// </svg>
-/// ```
-class _DesignerArrowVector extends StatelessWidget {
-  final Color color;
-  final double size;
-
-  const _DesignerArrowVector({
-    this.color = const Color(0xFF050A08),
-    this.size = 16.0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size * (15.0 / 16.0),
-      child: CustomPaint(
-        painter: _ArrowPainter(color: color),
-      ),
-    );
-  }
-}
-
-class _ArrowPainter extends CustomPainter {
-  final Color color;
-
-  const _ArrowPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-
-    final scaleX = size.width / 16.0;
-    final scaleY = size.height / 15.0;
-
-    final path = Path();
-    // Horizontal stem: M1 7.5 H15
-    path.moveTo(1.0 * scaleX, 7.5 * scaleY);
-    path.lineTo(15.0 * scaleX, 7.5 * scaleY);
-
-    // Chevron: M8.875 14 L15 7.5 L8.875 1
-    path.moveTo(8.875 * scaleX, 14.0 * scaleY);
-    path.lineTo(15.0 * scaleX, 7.5 * scaleY);
-    path.lineTo(8.875 * scaleX, 1.0 * scaleY);
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ArrowPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

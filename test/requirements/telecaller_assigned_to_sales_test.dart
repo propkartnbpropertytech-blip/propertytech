@@ -5,7 +5,6 @@ import 'package:propkart/features/requirements/models/requirement_view_model.dar
 import 'package:propkart/features/users/models/user_model.dart' as users_model;
 import 'package:propkart/core/utils/team_user_visibility.dart';
 import 'package:propkart/core/storage/model_mappers.dart';
-import 'package:propkart/core/storage/local_repositories.dart';
 
 void main() {
   group('Telecaller Assigned to Sales Verification', () {

@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import '../../../core/services/notification_center.dart';
+import '../../../core/security/crm_control_guard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import '../../../core/theme/theme_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -35,11 +35,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import '../../dashboard/repository/dashboard_repository.dart';
 import '../../dashboard/models/dashboard_summary.dart';
-import '../domain/usecases/load_requirements_usecase.dart';
-import '../domain/usecases/update_requirement_status_usecase.dart';
-import '../widgets/requirement_summary_bar.dart';
-import '../widgets/requirement_filter_bar.dart';
-import '../widgets/requirement_action_dialogs.dart';
 import '../../../core/utils/budget_formatter.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
@@ -54,7 +49,6 @@ import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/isar_collections.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../../core/utils/formatters.dart';
-import '../widgets/pdf_option_selection_dialog.dart';
 import '../../properties/widgets/property_pdf_content_selection_dialog.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/utils/team_user_visibility.dart';
@@ -2054,7 +2048,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           if (state is RequirementsSuccess) {
             final isWonActive = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
             final msg = isWonActive
-                ? '${state.message} (${_activeMainTab} only shows Won items.)'
+                ? '${state.message} ($_activeMainTab only shows Won items.)'
                 : state.message;
             AppStatusSnackBar.show(
               context,
@@ -2100,7 +2094,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           if (state is RequirementsSuccess) {
             final isWonActive = _activeMainTab == 'My Won' || _activeMainTab == 'Won';
             final msg = isWonActive
-                ? '${state.message} (${_activeMainTab} only shows Won items.)'
+                ? '${state.message} ($_activeMainTab only shows Won items.)'
                 : state.message;
             AppStatusSnackBar.show(
               context,
@@ -2367,12 +2361,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
               const SizedBox(width: 8),
               Flexible(
-                child: CRMButton(
-                  label: 'Add Lead',
+                child: CrmControlGuard(
+                  controlKey: 'action.leads.create',
+                  child: CRMButton(
+                    label: 'Add Lead',
                   prefixIcon: Icons.add_rounded,
                   height: 36,
                   onPressed: () => _showAddEditDialog(null, 0, false),
-                ),
+                ),),
+
               ),
             ],
           ),
@@ -3367,19 +3364,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       children: [
         CRMPageHeader(
           title: isTelecaller ? 'All Leads (Track)' : 'Leads',
-          trailing: ListenableBuilder(
-            listenable: PermissionMatrixService.instance,
-            builder: (context, _) {
-              final canAddLead = !isTelecaller ||
-                  RoleGuard.hasPermission(currentUser?.role, 'leads.create');
-              if (!canAddLead) return const SizedBox.shrink();
-              return CRMButton(
-                label: 'Add Lead',
-                prefixIcon: Icons.add_rounded,
-                height: 40,
-                onPressed: () => _showAddEditDialog(),
-              );
-            },
+          trailing: CrmControlGuard(
+            controlKey: 'action.leads.create',
+            child: CRMButton(
+              label: 'Add Lead',
+              prefixIcon: Icons.add_rounded,
+              height: 40,
+              onPressed: () => _showAddEditDialog(),
+            ),
           ),
         ),
         const SizedBox(height: CRMSpacing.s),
@@ -3594,7 +3586,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                             value: _selectedCategoryId,
                             items: [
                               const DropdownMenuItem(value: null, child: Text("All Categories")),
-                              ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                              ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
                             ],
                             isMobile: isMobile,
                             onChanged: (val) {
@@ -3678,7 +3670,7 @@ _recomputeFilteredRequirements();
                       value: _selectedCategoryId,
                       items: [
                         const DropdownMenuItem(value: null, child: Text("All Categories")),
-                        ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                        ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
                       ],
                       isMobile: isMobile,
                       onChanged: (val) {
@@ -8052,7 +8044,7 @@ _recomputeFilteredRequirements();
                 value: _selectedCategoryId,
                 items: [
                   const DropdownMenuItem(value: null, child: Text("All Categories")),
-                  ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                  ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
                 ],
                 isMobile: isMobile,
                 onChanged: (val) {

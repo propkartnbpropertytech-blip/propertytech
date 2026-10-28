@@ -3,7 +3,6 @@ import 'package:isar/isar.dart';
 import 'isar_collections.dart';
 import 'isar_service.dart';
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'web_storage/web_storage_service.dart';
 import 'web_storage/web_storage_migration.dart';
 

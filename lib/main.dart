@@ -17,6 +17,7 @@ import 'features/builders/bloc/builders_bloc.dart';
 import 'features/campaign/bloc/campaign_leads_bloc.dart';
 import 'features/integration/services/integration_service.dart';
 import 'core/navigation/app_router.dart';
+import 'core/security/access_control_bloc.dart';
 import 'core/design_system/theme/propkart_theme.dart';
 import 'core/theme/theme_manager.dart';
 
@@ -106,6 +107,21 @@ void main() async {
               blob.contains('429')) {
             return null;
           }
+
+          // Centralized PII / Secret Redaction for Sentry Events (Step 12)
+          if (event.exceptions != null) {
+            final sanitizedExceptions = event.exceptions!.map((ex) {
+              if (ex.value == null) return ex;
+              final scrubbed = ex.value!
+                  .replaceAll(RegExp(r'Bearer\s+[A-Za-z0-9\-._~+/]+=*', caseSensitive: false), 'Bearer [REDACTED]')
+                  .replaceAll(RegExp(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'), '[JWT REDACTED]')
+                  .replaceAll(RegExp(r'password["\s:=]+[^,\s}"]+', caseSensitive: false), 'password: [REDACTED]')
+                  .replaceAll(RegExp(r'refreshToken["\s:=]+[^,\s}"]+', caseSensitive: false), 'refreshToken: [REDACTED]')
+                  .replaceAll(RegExp(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'), '[EMAIL REDACTED]');
+              return ex.copyWith(value: scrubbed);
+            }).toList();
+            return event.copyWith(exceptions: sanitizedExceptions);
+          }
           return event;
         };
       },
@@ -135,6 +151,13 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _authBloc = AuthBloc(authRepository: widget.authRepository)..add(AuthCheckStatus());
+    _authBloc.stream.listen((state) {
+      if (state is Authenticated) {
+        AccessControlBloc.instance.add(const LoadAccessControlsEvent());
+      } else if (state is Unauthenticated) {
+        AccessControlBloc.instance.add(const ClearAccessControlsEvent());
+      }
+    });
     _appRouter = AppRouter(_authBloc);
   }
 
@@ -210,6 +233,7 @@ class _MyAppState extends State<MyApp> {
       child: MultiBlocProvider(
         providers: [
           BlocProvider.value(value: _authBloc),
+          BlocProvider.value(value: AccessControlBloc.instance),
           BlocProvider(
             create: (context) => DashboardBloc(
               dashboardRepository: context.read<DashboardRepository>(),
