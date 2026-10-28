@@ -54,6 +54,7 @@ class RequirementModel {
   String? get telecallerId => assignedTelecallerId;
   final DateTime? salesAssignedAt;
   final String? rejectionRemark;
+  final bool isDirectSalesAllocated;
 
   RequirementModel({
     required this.id,
@@ -108,10 +109,12 @@ class RequirementModel {
     this.assignedTelecallerId,
     this.salesAssignedAt,
     this.rejectionRemark,
+    this.isDirectSalesAllocated = false,
   });
 
   /// Returns true if this lead originated from an external campaign connection (Housing, Meta, Webhook, Portal, etc.)
   bool get isCampaignLead {
+    if (isDirectSalesAllocated) return true;
     if (isMetaLead) return true;
     if (metaLeadId != null && metaLeadId!.trim().isNotEmpty) return true;
     if (metaCampaignId != null && metaCampaignId!.trim().isNotEmpty) return true;
@@ -816,6 +819,14 @@ class RequirementModel {
         return null;
       }(),
       rejectionRemark: (json['rejection_remark'] ?? json['rejectionRemark'])?.toString(),
+      isDirectSalesAllocated: json['is_direct_sales_allocated'] == true ||
+          json['isDirectSalesAllocated'] == true ||
+          (json['meta_custom_fields'] is Map &&
+              (json['meta_custom_fields']['direct_sales_allocated'] == true ||
+                  json['meta_custom_fields']['is_direct_sales_allocated'] == true)) ||
+          (json['metaCustomFields'] is Map &&
+              (json['metaCustomFields']['direct_sales_allocated'] == true ||
+                  json['metaCustomFields']['is_direct_sales_allocated'] == true)),
     );
   }
 
@@ -943,6 +954,7 @@ class RequirementModel {
       if (leadQuality != null) 'lead_quality': leadQuality,
       if (rejectionRemark != null) 'rejection_remark': rejectionRemark,
       if (salesAssignedAt != null) 'sales_assigned_at': salesAssignedAt!.toIso8601String(),
+      'is_direct_sales_allocated': isDirectSalesAllocated,
     };
   }
 
@@ -1153,6 +1165,7 @@ class RequirementModel {
     String? assignedTelecallerId,
     DateTime? salesAssignedAt,
     String? rejectionRemark,
+    bool? isDirectSalesAllocated,
   }) {
     return RequirementModel(
       id: id ?? this.id,
@@ -1207,6 +1220,7 @@ class RequirementModel {
       assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
       salesAssignedAt: salesAssignedAt ?? this.salesAssignedAt,
       rejectionRemark: rejectionRemark ?? this.rejectionRemark,
+      isDirectSalesAllocated: isDirectSalesAllocated ?? this.isDirectSalesAllocated,
     );
   }
 

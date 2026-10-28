@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
@@ -32,6 +33,8 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
   // Search filter query
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _salesPoolScrollController = ScrollController();
+  final ScrollController _telecallerPoolScrollController = ScrollController();
 
   // Static standard property categories for Salesperson
   static const List<Map<String, dynamic>> _salesPropertyCategories = [
@@ -81,13 +84,26 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
 
     try {
       final res = await DioClient.dio.get(ApiConstants.adminAllocationConfig);
-      final data = res.data['data'] as Map<String, dynamic>? ?? {};
+      final rawData = res.data is Map ? (res.data['data'] ?? res.data) : null;
+      final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
 
       final rawTargetRole = (data['targetRole'] ?? 'NONE').toString().trim();
-      final rawCampaigns = (data['campaigns'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-      final rawTelecallers = (data['telecallers'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-      final rawSalespersons = (data['salespersons'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-      final rawCategoryAllocations = (data['categoryAllocations'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+      final rawCampaigns = (data['campaigns'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final rawTelecallers = (data['telecallers'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final rawSalespersons = (data['salespersons'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final rawCategoryAllocations = (data['categoryAllocations'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
 
       setState(() {
         if (rawTargetRole.toLowerCase() == 'sales') {
@@ -208,19 +224,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     final userName = user['name']?.toString() ?? 'User';
     if (userId.isEmpty) return;
 
-    final isAllocEnabled = user['isAllocatedEnabled'] != false && user['status'] != 'INACTIVE';
-    if (role == 'Sales' && !isAllocEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$userName lead allocation is turned OFF. Turn ON their toggle in Available Salespersons to assign.'),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
+// Category allocation can be added and toggled independently
 
     final existing = _getAssignedAllocations(role, campaignId, categoryName);
     final alreadyAssigned = existing.any((a) => a['user_id']?.toString() == userId);
@@ -267,10 +271,18 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
         },
       );
 
-      final saved = res.data['data'] as Map<String, dynamic>?;
+      final resPayload = res.data is Map ? res.data as Map : {};
+      final savedData = resPayload['data'] is Map ? resPayload['data'] as Map : resPayload;
+      final saved = savedData.isNotEmpty ? Map<String, dynamic>.from(savedData) : null;
       if (saved != null && mounted) {
         setState(() {
-          _categoryAllocations.removeWhere((a) => a['id'] == tempId);
+          _categoryAllocations.removeWhere((a) =>
+              a['id'] == tempId ||
+              a['id'] == saved['id'] ||
+              (a['user_id']?.toString() == userId &&
+                  a['role']?.toString().toUpperCase() == role.toUpperCase() &&
+                  a['campaign_id']?.toString().toUpperCase() == campaignId.toUpperCase() &&
+                  a['category_name']?.toString().toUpperCase() == categoryName.toUpperCase()));
           _categoryAllocations.add({
             ...saved,
             'user_name': userName,
@@ -304,11 +316,23 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     if (index == -1) return;
 
     final oldAllocEnabled = _salespersons[index]['isAllocatedEnabled'] != false && _salespersons[index]['status'] != 'INACTIVE';
+    final Map<String, bool> oldCategoryStates = {};
+    for (final alloc in _categoryAllocations) {
+      if (alloc['user_id']?.toString() == userId && alloc['id'] != null) {
+        oldCategoryStates[alloc['id'].toString()] = alloc['is_enabled'] != false;
+      }
+    }
 
     // Optimistic UI update
     setState(() {
       _salespersons[index]['isAllocatedEnabled'] = newStatus;
       _salespersons[index]['status'] = newStatus ? 'ACTIVE' : 'INACTIVE';
+      for (final alloc in _categoryAllocations) {
+        if (alloc['user_id']?.toString() == userId) {
+          alloc['is_enabled'] = newStatus;
+        }
+      }
+
       _pendingActionIds.add(userId);
     });
 
@@ -343,6 +367,15 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
         setState(() {
           _salespersons[index]['isAllocatedEnabled'] = oldAllocEnabled;
           _salespersons[index]['status'] = oldAllocEnabled ? 'ACTIVE' : 'INACTIVE';
+          if (oldCategoryStates.isNotEmpty) {
+            for (final alloc in _categoryAllocations) {
+              final id = alloc['id']?.toString();
+              if (id != null && oldCategoryStates.containsKey(id)) {
+                alloc['is_enabled'] = oldCategoryStates[id];
+              }
+            }
+          }
+
           _pendingActionIds.remove(userId);
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -563,20 +596,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
                                   ),
                                 )
-                              : ((u['isAllocatedEnabled'] == false || u['status'] == 'INACTIVE') && role == 'Sales')
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                                      ),
-                                      child: const Text(
-                                        'Disabled (OFF)',
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
-                                      ),
-                                    )
-                                  : ElevatedButton(
+                              : ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: role == 'Sales' ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
                                     foregroundColor: Colors.white,
@@ -615,70 +635,211 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-        elevation: 0.5,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: isDark ? Colors.white : const Color(0xFF0F172A)),
-          onPressed: () => context.pop(),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Lead Allocation Configuration',
-              style: TextStyle(
-                fontSize: isMobile ? 16 : 18,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
+      appBar: isMobile
+          ? AppBar(
+              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+              elevation: 0.5,
+              leading: IconButton(
+                icon: Icon(Icons.arrow_back, color: isDark ? Colors.white : const Color(0xFF0F172A)),
+                onPressed: () => context.pop(),
               ),
-            ),
-            Text(
-              'Dynamic campaign & property-category lead routing',
-              style: TextStyle(
-                fontSize: isMobile ? 11 : 12,
-                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Lead Allocation Configuration',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Dynamic campaign & property-category lead routing',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh Configuration',
-            onPressed: _loadConfig,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh Configuration',
+                  onPressed: _loadConfig,
+                ),
+                const SizedBox(width: 8),
+              ],
+            )
+          : null,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? _buildErrorView()
-              : RefreshIndicator(
-                  onRefresh: _loadConfig,
-                  child: ListView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isMobile ? 16 : 24,
-                      vertical: 20,
+              : isMobile
+                  ? RefreshIndicator(
+                      onRefresh: _loadConfig,
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 20,
+                        ),
+                        children: [
+                          _buildDualRoleTogglesCard(isDark, true),
+                          const SizedBox(height: 24),
+                          if (_targetRole == 'Sales')
+                            _buildSalespersonAllocationView(isDark, true, screenWidth)
+                          else if (_targetRole == 'Telecaller')
+                            _buildTelecallerAllocationView(isDark, true, screenWidth)
+                          else
+                            _buildBothOffView(isDark),
+                          const SizedBox(height: 48),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadConfig,
+                      child: CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildDesktopHeader(isDark),
+                                  const SizedBox(height: 20),
+                                  _buildDualRoleTogglesCard(isDark, false),
+                                  const SizedBox(height: 24),
+                                  if (_targetRole == 'Sales') ...[
+                                    _buildSalespersonSectionHeader(isDark, false),
+                                    const SizedBox(height: 12),
+                                  ] else if (_targetRole == 'Telecaller') ...[
+                                    _buildTelecallerSectionHeader(isDark, false),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (_targetRole == 'Sales') ...[
+                            SliverPersistentHeader(
+                              pinned: true,
+                              delegate: _StickyPoolHeaderDelegate(
+                                isDark: isDark,
+                                height: 104.0,
+                                child: _buildUserDraggablePool(
+                                  users: _salespersons,
+                                  role: 'Sales',
+                                  isDark: isDark,
+                                  accentColor: const Color(0xFF10B981),
+                                  isSticky: true,
+                                ),
+                              ),
+                            ),
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSearchField(isDark),
+                                    const SizedBox(height: 20),
+                                    _buildSalespersonCampaignsList(isDark, screenWidth),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ] else if (_targetRole == 'Telecaller') ...[
+                            SliverPersistentHeader(
+                              pinned: true,
+                              delegate: _StickyPoolHeaderDelegate(
+                                isDark: isDark,
+                                height: 104.0,
+                                child: _buildUserDraggablePool(
+                                  users: _telecallers,
+                                  role: 'Telecaller',
+                                  isDark: isDark,
+                                  accentColor: const Color(0xFF3B82F6),
+                                  isSticky: true,
+                                ),
+                              ),
+                            ),
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSearchField(isDark),
+                                    const SizedBox(height: 20),
+                                    _buildTelecallerCampaignsList(isDark, screenWidth),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ] else
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+                                child: _buildBothOffView(isDark),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                    children: [
-                      // Top Dual Toggles Card (Telecaller vs Salesperson)
-                      _buildDualRoleTogglesCard(isDark, isMobile),
-                      const SizedBox(height: 24),
+    );
+  }
 
-                      // Main Content Area based on current Target Role
-                      if (_targetRole == 'Sales')
-                        _buildSalespersonAllocationView(isDark, isMobile, screenWidth)
-                      else if (_targetRole == 'Telecaller')
-                        _buildTelecallerAllocationView(isDark, isMobile, screenWidth)
-                      else
-                        _buildBothOffView(isDark),
-
-                      const SizedBox(height: 48),
-                    ],
-                  ),
+  Widget _buildDesktopHeader(bool isDark) {
+    return Row(
+      children: [
+        IconButton(
+          icon: Icon(
+            Icons.arrow_back,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
+          ),
+          tooltip: 'Back to Lead Allocation',
+          onPressed: () => context.pop(),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Lead Allocation Configuration',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                'Dynamic campaign & property-category lead routing',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Refresh Configuration',
+          onPressed: _loadConfig,
+        ),
+      ],
     );
   }
 
@@ -1033,9 +1194,47 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
   }
 
   // -------------------------------------------------------------
-  // 3. SALESPERSON ALLOCATION VIEW
+  // 3. SALESPERSON ALLOCATION VIEW & COMPONENTS
   // -------------------------------------------------------------
-  Widget _buildSalespersonAllocationView(bool isDark, bool isMobile, double screenWidth) {
+  Widget _buildSalespersonSectionHeader(bool isDark, bool isMobile) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Salesperson Campaign Lead Allocation',
+                style: TextStyle(fontSize: isMobile ? 16 : 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Drag salespersons into property categories below, or click + on any category.',
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF10B981), width: 1),
+          ),
+          child: Text(
+            '${_salespersons.length} Salespersons',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSalespersonCampaignsList(bool isDark, double screenWidth) {
     final filteredCampaigns = _campaigns.where((c) {
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.toLowerCase();
@@ -1044,102 +1243,109 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       return name.contains(q) || id.contains(q);
     }).toList();
 
+    if (filteredCampaigns.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Center(
+          child: Text(
+            _searchQuery.isNotEmpty
+                ? 'No campaigns match "$_searchQuery"'
+                : 'No campaigns found in database.',
+            style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double maxWidth = constraints.maxWidth;
+        final bool isTwoCol = maxWidth >= 860;
+        final double spacing = 18.0;
+        final double cardWidth = isTwoCol ? (maxWidth - spacing) / 2 : maxWidth;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: filteredCampaigns.map((camp) {
+            return SizedBox(
+              width: cardWidth,
+              child: _buildSalespersonCampaignCard(camp, isDark, cardWidth),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildSalespersonAllocationView(bool isDark, bool isMobile, double screenWidth) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Salesperson Campaign Lead Allocation',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Drag salespersons into property categories below, or click + on any category.',
-                  style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF10B981), width: 1),
-              ),
-              child: Text(
-                '${_salespersons.length} Salespersons',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-              ),
-            ),
-          ],
-        ),
+        _buildSalespersonSectionHeader(isDark, isMobile),
         const SizedBox(height: 16),
-
-        // Salesperson Draggable Pool Tray
         _buildUserDraggablePool(
           users: _salespersons,
           role: 'Sales',
           isDark: isDark,
           accentColor: const Color(0xFF10B981),
+          isSticky: false,
         ),
         const SizedBox(height: 20),
-
-        // Search Bar for Campaigns
         _buildSearchField(isDark),
         const SizedBox(height: 20),
-
-        // Dynamic Campaigns List in a clean 2-column grid (2 items per row)
-        if (filteredCampaigns.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E293B) : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-            ),
-            child: Center(
-              child: Text(
-                _searchQuery.isNotEmpty
-                    ? 'No campaigns match "$_searchQuery"'
-                    : 'No campaigns found in database.',
-                style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
-              ),
-            ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final double maxWidth = constraints.maxWidth;
-              final bool isTwoCol = maxWidth >= 860;
-              final double spacing = 18.0;
-              final double cardWidth = isTwoCol ? (maxWidth - spacing) / 2 : maxWidth;
-
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: filteredCampaigns.map((camp) {
-                  return SizedBox(
-                    width: cardWidth,
-                    child: _buildSalespersonCampaignCard(camp, isDark, cardWidth),
-                  );
-                }).toList(),
-              );
-            },
-          ),
+        _buildSalespersonCampaignsList(isDark, screenWidth),
       ],
     );
   }
 
   // -------------------------------------------------------------
-  // 4. TELECALLER ALLOCATION VIEW
+  // 4. TELECALLER ALLOCATION VIEW & COMPONENTS
   // -------------------------------------------------------------
-  Widget _buildTelecallerAllocationView(bool isDark, bool isMobile, double screenWidth) {
+  Widget _buildTelecallerSectionHeader(bool isDark, bool isMobile) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Telecaller Campaign Lead Allocation',
+                style: TextStyle(fontSize: isMobile ? 16 : 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Drag telecallers into campaign connections. Leads route to assigned telecallers.',
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF3B82F6), width: 1),
+          ),
+          child: Text(
+            '${_telecallers.length} Telecallers',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF3B82F6)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTelecallerCampaignsList(bool isDark, double screenWidth) {
     final filteredCampaigns = _campaigns.where((c) {
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.toLowerCase();
@@ -1148,94 +1354,63 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       return name.contains(q) || id.contains(q);
     }).toList();
 
+    if (filteredCampaigns.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Center(
+          child: Text(
+            _searchQuery.isNotEmpty
+                ? 'No campaign connections match "$_searchQuery"'
+                : 'No campaign connections found in database.',
+            style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double maxWidth = constraints.maxWidth;
+        final bool isTwoCol = maxWidth >= 860;
+        final double spacing = 18.0;
+        final double cardWidth = isTwoCol ? (maxWidth - spacing) / 2 : maxWidth;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: filteredCampaigns.map((camp) {
+            return SizedBox(
+              width: cardWidth,
+              child: _buildTelecallerCampaignConnectionCard(camp, isDark),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildTelecallerAllocationView(bool isDark, bool isMobile, double screenWidth) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Telecaller Campaign Lead Allocation',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Drag telecallers into campaign connections. Leads route to assigned telecallers.',
-                  style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF3B82F6), width: 1),
-              ),
-              child: Text(
-                '${_telecallers.length} Telecallers',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF3B82F6)),
-              ),
-            ),
-          ],
-        ),
+        _buildTelecallerSectionHeader(isDark, isMobile),
         const SizedBox(height: 16),
-
-        // Telecaller Draggable Pool Tray
         _buildUserDraggablePool(
           users: _telecallers,
           role: 'Telecaller',
           isDark: isDark,
           accentColor: const Color(0xFF3B82F6),
+          isSticky: false,
         ),
         const SizedBox(height: 20),
-
-        // Search Bar for Campaigns
         _buildSearchField(isDark),
         const SizedBox(height: 20),
-
-        // Dynamic Campaign Connections List for Telecallers in a clean 2-column grid
-        if (filteredCampaigns.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E293B) : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-            ),
-            child: Center(
-              child: Text(
-                _searchQuery.isNotEmpty
-                    ? 'No campaign connections match "$_searchQuery"'
-                    : 'No campaign connections found in database.',
-                style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
-              ),
-            ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final double maxWidth = constraints.maxWidth;
-              final bool isTwoCol = maxWidth >= 860;
-              final double spacing = 18.0;
-              final double cardWidth = isTwoCol ? (maxWidth - spacing) / 2 : maxWidth;
-
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: filteredCampaigns.map((camp) {
-                  return SizedBox(
-                    width: cardWidth,
-                    child: _buildTelecallerCampaignConnectionCard(camp, isDark),
-                  );
-                }).toList(),
-              );
-            },
-          ),
+        _buildTelecallerCampaignsList(isDark, screenWidth),
       ],
     );
   }
@@ -1248,7 +1423,142 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     required String role,
     required bool isDark,
     required Color accentColor,
+    bool isSticky = false,
   }) {
+    if (isSticky) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
+                const SizedBox(width: 8),
+                Text(
+                  role == 'Sales'
+                      ? 'Available Salespersons (Drag to assign)'
+                      : 'Available Telecallers (Drag to assign)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'Hold & drag into any drop zone below',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                InkWell(
+                  onTap: () {
+                    final ctrl = role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController;
+                    if (ctrl.hasClients) {
+                      ctrl.animateTo(
+                        (ctrl.offset - 220).clamp(0.0, ctrl.position.maxScrollExtent),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.chevron_left,
+                      size: 16,
+                      color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () {
+                    final ctrl = role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController;
+                    if (ctrl.hasClients) {
+                      ctrl.animateTo(
+                        (ctrl.offset + 220).clamp(0.0, ctrl.position.maxScrollExtent),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (users.isEmpty)
+              SizedBox(
+                height: 38,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'No active users found for this role.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: 40,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    scrollbars: false,
+                    dragDevices: {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                    },
+                  ),
+                  child: SingleChildScrollView(
+                    controller: role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: users.map((u) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: _buildDraggableUserChip(u, role, isDark, accentColor),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1261,26 +1571,67 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
-              const SizedBox(width: 8),
-              Text(
-                role == 'Sales'
-                    ? 'Available Salespersons (Drag to assign)'
-                    : 'Available Telecallers (Drag to assign)',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                'Hold & drag into any drop zone below',
-                style: TextStyle(fontSize: 11, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 480;
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            role == 'Sales'
+                                ? 'Available Salespersons (Drag to assign)'
+                                : 'Available Telecallers (Drag to assign)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Hold & drag into any drop zone below',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    role == 'Sales'
+                        ? 'Available Salespersons (Drag to assign)'
+                        : 'Available Telecallers (Drag to assign)',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Hold & drag into any drop zone below',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 12),
           if (users.isEmpty)
@@ -1315,7 +1666,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     final workload = (user['currentWorkload'] as num?)?.toInt() ?? 0;
     final isAllocEnabled = user['isAllocatedEnabled'] != false && user['status'] != 'INACTIVE';
     final isPending = _pendingActionIds.contains(userId);
-    final canDrag = (role != 'Sales') || isAllocEnabled;
+    final canDrag = !isPending;
 
     final chipContent = _buildChipContent(
       user: user,
@@ -1426,18 +1777,20 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                   : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
             ),
           ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: effectiveColor.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(10),
+          if (!isSales) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: effectiveColor.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$workload leads',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: effectiveColor),
+              ),
             ),
-            child: Text(
-              '$workload leads',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: effectiveColor),
-            ),
-          ),
+          ],
           if (isSales) ...[
             const SizedBox(width: 8),
             // Individual ON/OFF Toggle switch next to Salesperson's name
@@ -1984,7 +2337,9 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
   }) {
     final allocId = allocation['id']?.toString() ?? '';
     final userName = allocation['user_name']?.toString() ?? 'User';
-    final bool isEnabled = allocation['is_enabled'] != false;
+
+    // Independent campaign category toggle
+    final bool isCategoryEnabled = allocation['is_enabled'] != false;
     final bool isPending = _pendingActionIds.contains(allocId);
 
     return Container(
@@ -1992,11 +2347,11 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: isDark
-            ? (isEnabled ? const Color(0xFF1E293B) : const Color(0xFF0F172A))
-            : (isEnabled ? Colors.white : const Color(0xFFF1F5F9)),
+            ? (isCategoryEnabled ? const Color(0xFF1E293B) : const Color(0xFF0F172A))
+            : (isCategoryEnabled ? Colors.white : const Color(0xFFF1F5F9)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isEnabled
+          color: isCategoryEnabled
               ? (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0))
               : Colors.red.withValues(alpha: 0.3),
         ),
@@ -2005,7 +2360,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
         children: [
           CircleAvatar(
             radius: 12,
-            backgroundColor: isEnabled
+            backgroundColor: isCategoryEnabled
                 ? accentColor.withValues(alpha: 0.15)
                 : Colors.grey.withValues(alpha: 0.2),
             child: Text(
@@ -2013,7 +2368,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
               style: TextStyle(
                 fontSize: 10.5,
                 fontWeight: FontWeight.bold,
-                color: isEnabled ? accentColor : Colors.grey,
+                color: isCategoryEnabled ? accentColor : Colors.grey,
               ),
             ),
           ),
@@ -2028,18 +2383,18 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
-                    color: isEnabled
+                    color: isCategoryEnabled
                         ? (isDark ? Colors.white : const Color(0xFF0F172A))
                         : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  isEnabled ? 'Receiving Leads' : 'Allocation Paused',
+                  isCategoryEnabled ? 'Receiving Leads' : 'Allocation Paused',
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
-                    color: isEnabled ? accentColor : Colors.red.shade400,
+                    color: isCategoryEnabled ? accentColor : Colors.red.shade400,
                   ),
                 ),
               ],
@@ -2052,16 +2407,16 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
               child: CircularProgressIndicator(strokeWidth: 1.5),
             )
           else ...[
-            // Independent allocation toggle
+            // Independent category-level lead allocation toggle
             Transform.scale(
               scale: 0.75,
               child: Switch(
-                value: isEnabled,
+                value: isCategoryEnabled,
                 activeThumbColor: accentColor,
                 onChanged: (newVal) => _toggleCategoryAllocation(allocId, newVal),
               ),
             ),
-            // Remove button
+            // Remove button (unassign from this specific category independently)
             IconButton(
               icon: const Icon(Icons.close, size: 16),
               color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
@@ -2184,5 +2539,54 @@ class _ScrollableAssignedUserListState extends State<_ScrollableAssignedUserList
         ),
       ),
     );
+  }
+}
+
+class _StickyPoolHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  final double height;
+  final bool isDark;
+
+  _StickyPoolHeaderDelegate({
+    required this.child,
+    required this.height,
+    required this.isDark,
+  });
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final isPinned = shrinkOffset > 2.0;
+    return SizedBox.expand(
+      child: Container(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        padding: const EdgeInsets.fromLTRB(24, 6, 24, 6),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: isPinned
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _StickyPoolHeaderDelegate oldDelegate) {
+    return true;
   }
 }

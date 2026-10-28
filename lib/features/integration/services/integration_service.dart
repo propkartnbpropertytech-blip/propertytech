@@ -98,6 +98,7 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
   String _googleSheetUrl = '';
   Timer? _sheetPollTimer;
   String? lastSyncError;
+  String? lastTargetRole;
   List<PropertyModel>? _propertyCache;
   DateTime? _propertyCacheAt;
   int _campaignUiWatchers = 0;
@@ -1061,6 +1062,9 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
 
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
+        if (data['targetRole'] != null && data['targetRole'].toString().trim().isNotEmpty) {
+          lastTargetRole = data['targetRole'].toString().trim();
+        }
         final List<dynamic> leadsList = data['leads'] ?? [];
 
         var incoming = <IntegrationLeadModel>[];

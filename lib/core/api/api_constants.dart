@@ -48,6 +48,7 @@ class ApiConstants {
   static const adminAllocationConfig = "/admin/allocation-config";
   static const adminAllocationConfigUserAvailability = "/admin/allocation-config/user-availability";
   static const adminAllocationConfigRole = "/admin/allocation-config/role";
+  static const campaignAllocationMode = "/integrations/allocation-mode";
   static const adminAllocationConfigUserCampaigns = "/admin/allocation-config/user-campaigns";
   static const adminAllocationCategoryAllocation = "/admin/allocation-config/category-allocation";
   static String adminAllocationCategoryToggle(String id) => "/admin/allocation-config/category-allocation/$id/toggle";

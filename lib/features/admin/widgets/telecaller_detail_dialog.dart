@@ -10,6 +10,7 @@ class TelecallerDetailDialog extends StatefulWidget {
   final String telecallerId;
   final String? telecallerName;
   final List<dynamic> allTelecallers;
+  final bool isSales;
   final VoidCallback? onLeadReassigned;
 
   const TelecallerDetailDialog({
@@ -17,6 +18,7 @@ class TelecallerDetailDialog extends StatefulWidget {
     required this.telecallerId,
     this.telecallerName,
     this.allTelecallers = const [],
+    this.isSales = false,
     this.onLeadReassigned,
   });
 
@@ -25,6 +27,7 @@ class TelecallerDetailDialog extends StatefulWidget {
     required String telecallerId,
     String? telecallerName,
     List<dynamic> allTelecallers = const [],
+    bool isSales = false,
     VoidCallback? onLeadReassigned,
   }) {
     return showDialog(
@@ -34,6 +37,7 @@ class TelecallerDetailDialog extends StatefulWidget {
         telecallerId: telecallerId,
         telecallerName: telecallerName,
         allTelecallers: allTelecallers,
+        isSales: isSales,
         onLeadReassigned: onLeadReassigned,
       ),
     );
@@ -50,6 +54,10 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
   int _selectedCapacity = 10;
   int _savedCapacity = 10;
   bool _savingCapacity = false;
+  String? _selectedCampaignKey;
+  String? _selectedCampaignName;
+  String? _selectedCategoryName;
+
 
   static String _formatDuration(int seconds) {
     if (seconds <= 0) return '0m';
@@ -86,6 +94,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     try {
       final res = await DioClient.dio.get(
         ApiConstants.adminTelecallerDetails(widget.telecallerId),
+        queryParameters: {'_ts': DateTime.now().millisecondsSinceEpoch},
       );
       if (mounted) {
         final data = Map<String, dynamic>.from(res.data['data'] ?? {});
@@ -447,6 +456,13 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     final workload = Map<String, dynamic>.from(_data?['workload'] ?? {});
     final outcomes = Map<String, dynamic>.from(_data?['outcomes'] ?? {});
     final currentLeads = List<dynamic>.from(_data?['currentLeads'] ?? []);
+    final displayedLeads = (widget.isSales && _selectedCategoryName != null)
+        ? _getFilteredCategoryLeads(
+            _selectedCampaignKey ?? '',
+            _selectedCampaignName ?? '',
+            _selectedCategoryName!,
+          )
+        : currentLeads;
     final history = List<dynamic>.from(_data?['history'] ?? []);
 
     final status = profile['availability']?.toString() ?? 'INACTIVE';
@@ -536,11 +552,13 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Workload: $currentLoad / $capacity Leads',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
+                        if (!widget.isSales) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Workload: $currentLoad / $capacity Leads',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
                       ],
                     )
                   else
@@ -596,17 +614,20 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Workload: $currentLoad / $capacity Leads',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
+                        if (!widget.isSales) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            'Workload: $currentLoad / $capacity Leads',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ],
                       ],
                     ),
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
+                  if (!widget.isSales) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
                       value: progress.toDouble(),
                       minHeight: 8,
                       backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
@@ -895,9 +916,11 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                     ],
                   ),
                 ],
+              ],
               ),
             ),
           ),
+          if (!widget.isSales) ...[
           const SizedBox(height: 16),
           // Card 1.5: Active Toggle & 24-Hour OFF Allowance
           Card(
@@ -922,7 +945,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.timer_outlined, size: 18, color: CRMColors.primary),
+                            Icon(widget.isSales ? Icons.toggle_on_outlined : Icons.timer_outlined, size: 18, color: CRMColors.primary),
                             const SizedBox(width: 6),
                             const Text(
                               'Active Toggle',
@@ -975,12 +998,12 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                         Expanded(
                           child: Row(
                             children: [
-                              Icon(Icons.timer_outlined, size: 18, color: CRMColors.primary),
+                              Icon(widget.isSales ? Icons.toggle_on_outlined : Icons.timer_outlined, size: 18, color: CRMColors.primary),
                               const SizedBox(width: 8),
-                              const Flexible(
+                              Flexible(
                                 child: Text(
-                                  'Active Toggle & 24-Hour OFF Allowance',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                  widget.isSales ? 'Active Toggle' : 'Active Toggle & 24-Hour OFF Allowance',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -1026,72 +1049,75 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                         ),
                       ],
                     ),
-                  const SizedBox(height: 12),
-                  if (isMobile)
-                    Column(
-                      children: [
-                        _offAllowanceBox(
-                          title: 'When Turned OFF',
-                          value: !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
-                          isDark: isDark,
-                          isMobile: isMobile,
-                        ),
-                        const SizedBox(height: 8),
-                        _offAllowanceBox(
-                          title: 'How Long Remained OFF',
-                          value: !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
-                          isDark: isDark,
-                          isMobile: isMobile,
-                        ),
-                        const SizedBox(height: 8),
-                        _offAllowanceBox(
-                          title: 'Remaining 24h Allowance',
-                          value: isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
-                          isDark: isDark,
-                          isMobile: isMobile,
-                          valueColor: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
-                        ),
-                      ],
-                    )
-                  else
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _offAllowanceBox(
+                  if (!widget.isSales) ...[
+                    const SizedBox(height: 12),
+                    if (isMobile)
+                      Column(
+                        children: [
+                          _offAllowanceBox(
                             title: 'When Turned OFF',
                             value: !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
                             isDark: isDark,
-                            isMobile: false,
+                            isMobile: isMobile,
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _offAllowanceBox(
+                          const SizedBox(height: 8),
+                          _offAllowanceBox(
                             title: 'How Long Remained OFF',
                             value: !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
                             isDark: isDark,
-                            isMobile: false,
+                            isMobile: isMobile,
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _offAllowanceBox(
+                          const SizedBox(height: 8),
+                          _offAllowanceBox(
                             title: 'Remaining 24h Allowance',
                             value: isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
                             isDark: isDark,
-                            isMobile: false,
+                            isMobile: isMobile,
                             valueColor: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _offAllowanceBox(
+                              title: 'When Turned OFF',
+                              value: !isToggleOn ? _formatTimestamp(manualOffStartedAt) : '— (Active Now)',
+                              isDark: isDark,
+                              isMobile: false,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _offAllowanceBox(
+                              title: 'How Long Remained OFF',
+                              value: !isToggleOn ? _formatDuration(manualOffDurationSeconds) : '0m (Active)',
+                              isDark: isDark,
+                              isMobile: false,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _offAllowanceBox(
+                              title: 'Remaining 24h Allowance',
+                              value: isLimitExpired ? '0m (6h Expired)' : '${_formatDuration(remainingOffSeconds)} / 6h',
+                              isDark: isDark,
+                              isMobile: false,
+                              valueColor: isLimitExpired ? Colors.red : (remainingOffSeconds < 3600 ? Colors.orange : Colors.green.shade700),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
+          ],
 
-          // Row 2: Performance Summary Grid (Strictly 4 KPIs)
+          // Row 2: Performance Summary Grid (Only Allocated Leads for Salesperson, all 5 for Telecaller)
           LayoutBuilder(
             builder: (context, constraints) {
               final metricWidth = isMobile
@@ -1101,92 +1127,173 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  _metricBox(
-                    'Assigned',
-                    _directory.isEmpty
-                        ? '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}'
-                        : '${_callingQueue.length}',
-                    Icons.assignment_outlined,
-                    Colors.blue,
-                    isDark,
-                    width: metricWidth,
-                    onTap: () => _showLeadList(
-                      'Assigned now',
-                      _callingQueue,
-                      subtitle: 'New and follow-up leads still on this telecaller\'s calling queue.',
+                  if (widget.isSales) ...[
+                    _metricBox(
+                      'Allocated Leads',
+                      '${_data?['leadStats']?['allocatedLeads'] ?? _data?['leadStats']?['totalAssigned'] ?? (_directory.isNotEmpty ? _directory.length : currentLeads.length)}',
+                      Icons.assignment_outlined,
+                      CRMColors.primary,
+                      isDark,
+                      width: metricWidth,
+                      onTap: () => _showLeadList(
+                        'Allocated Leads',
+                        _directory.isNotEmpty
+                            ? _directory
+                            : currentLeads
+                                .whereType<Map>()
+                                .map((e) => Map<String, dynamic>.from(e))
+                                .toList(),
+                        subtitle: 'Campaign leads directly allocated to ${widget.telecallerName ?? 'this salesperson'}.',
+                      ),
                     ),
-                  ),
-                  _metricBox(
-                    'Overall Assigned',
-                    _directory.isEmpty
-                        ? '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}'
-                        : '${_directory.length}',
-                    Icons.history_rounded,
-                    Colors.indigo,
-                    isDark,
-                    width: metricWidth,
-                    onTap: () => _showLeadList(
-                      'Every lead assigned to ${widget.telecallerName ?? 'this telecaller'}',
-                      _directory,
-                      subtitle: 'Current status of each lead. One row per customer.',
+                  ] else ...[
+                    _metricBox(
+                      'Assigned',
+                      _directory.isEmpty
+                          ? '${_data?['leadStats']?['activeAssigned'] ?? currentLeads.length}'
+                          : '${_callingQueue.length}',
+                      Icons.assignment_outlined,
+                      Colors.blue,
+                      isDark,
+                      width: metricWidth,
+                      onTap: () => _showLeadList(
+                        'Assigned now',
+                        _callingQueue,
+                        subtitle: 'New and follow-up leads still on this telecaller\'s calling queue.',
+                      ),
                     ),
-                  ),
-                  _metricBox(
-                    'CNR',
-                    '${outcomes['cnr'] ?? 0}',
-                    Icons.phone_missed,
-                    Colors.orange,
-                    isDark,
-                    width: metricWidth,
-                    onTap: () => _openTelecallerQueue('/telecaller/cnr'),
-                  ),
-                  _metricBox(
-                    'Callbacks',
-                    '${outcomes['callbacks'] ?? 0}',
-                    Icons.phone_callback_rounded,
-                    Colors.blue,
-                    isDark,
-                    width: metricWidth,
-                    onTap: () => _openTelecallerQueue('/telecaller/callbacks'),
-                  ),
-                  _metricBox(
-                    'Assigned to Sales',
-                    _directory.isEmpty ? '${outcomes['salesHandoffs'] ?? 0}' : '${_salesHandoffs.length}',
-                    Icons.check_circle_outline,
-                    Colors.green,
-                    isDark,
-                    width: metricWidth,
-                    onTap: () => _showLeadList(
-                      'Handed to sales',
-                      _salesHandoffs,
-                      subtitle: 'The lead and the sales person it was handed to.',
-                      showHandedTo: true,
+                    _metricBox(
+                      'Overall Assigned',
+                      _directory.isEmpty
+                          ? '${_data?['leadStats']?['overallAssigned'] ?? _data?['leadStats']?['totalAssigned'] ?? 0}'
+                          : '${_directory.length}',
+                      Icons.history_rounded,
+                      Colors.indigo,
+                      isDark,
+                      width: metricWidth,
+                      onTap: () => _showLeadList(
+                        'Every lead assigned to ${widget.telecallerName ?? 'this telecaller'}',
+                        _directory,
+                        subtitle: 'Current status of each lead. One row per customer.',
+                      ),
                     ),
-                  ),
+                    _metricBox(
+                      'CNR',
+                      '${outcomes['cnr'] ?? 0}',
+                      Icons.phone_missed,
+                      Colors.orange,
+                      isDark,
+                      width: metricWidth,
+                      onTap: () => _openTelecallerQueue('/telecaller/cnr'),
+                    ),
+                    _metricBox(
+                      'Callbacks',
+                      '${outcomes['callbacks'] ?? 0}',
+                      Icons.phone_callback_rounded,
+                      Colors.blue,
+                      isDark,
+                      width: metricWidth,
+                      onTap: () => _openTelecallerQueue('/telecaller/callbacks'),
+                    ),
+                    _metricBox(
+                      'Assigned to Sales',
+                      _directory.isEmpty ? '${outcomes['salesHandoffs'] ?? 0}' : '${_salesHandoffs.length}',
+                      Icons.check_circle_outline,
+                      Colors.green,
+                      isDark,
+                      width: metricWidth,
+                      onTap: () => _showLeadList(
+                        'Handed to sales',
+                        _salesHandoffs,
+                        subtitle: 'The lead and the sales person it was handed to.',
+                        showHandedTo: true,
+                      ),
+                    ),
+                  ],
                 ],
               );
             },
           ),
           const SizedBox(height: 24),
 
+          if (widget.isSales)
+            _buildCampaignDetailsSection(isDark, isMobile),
+
+
           // Section 3: Active Assigned Leads List
           Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start, 
             children: [
-              Text(
-                'Calling queue (${_directory.isEmpty ? currentLeads.length : _callingQueue.length})',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.isSales
+                          ? (_selectedCategoryName != null
+                              ? 'Allocated Leads: $_selectedCampaignName · $_selectedCategoryName (${displayedLeads.length})'
+                              : 'Allocated Leads (${_directory.isNotEmpty ? _directory.length : currentLeads.length})')
+                          : 'Calling queue (${_directory.isEmpty ? currentLeads.length : _callingQueue.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                  if (widget.isSales && _selectedCategoryName != null) ...[
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          ),
+                          onPressed: () {
+                            _showCategoryLeadsDialog(
+                              campaignName: _selectedCampaignName ?? '',
+                              categoryName: _selectedCategoryName ?? '',
+                              leads: displayedLeads
+                                  .whereType<Map>()
+                                  .map((e) => Map<String, dynamic>.from(e))
+                                  .toList(),
+                              isDark: isDark,
+                            );
+                          },
+                          icon: const Icon(Icons.open_in_new, size: 12),
+                          label: const Text('Popup', style: TextStyle(fontSize: 11)),
+                        ),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _selectedCampaignKey = null;
+                              _selectedCampaignName = null;
+                              _selectedCategoryName = null;
+                            });
+                          },
+                          icon: const Icon(Icons.clear, size: 12),
+                          label: Text('Show All (${currentLeads.length})', style: const TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 2),
-              const Text(
-                'New and follow-up leads still on My Calling Leads. CNR and Callback are counted on their own cards.',
-                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              Text(
+                widget.isSales
+                    ? (_selectedCategoryName != null
+                        ? 'Campaign leads allocated to this salesperson under $_selectedCampaignName ($_selectedCategoryName).'
+                        : 'Campaign leads allocated to this salesperson.')
+                    : 'New and follow-up leads still on My Calling Leads. CNR and Callback are counted on their own cards.',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
             ],
           ),
           const SizedBox(height: 12),
 
-          if (currentLeads.isEmpty)
+          if (displayedLeads.isEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -1195,12 +1302,14 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
               ),
-              child: const Center(
-                child: Text('No active leads currently assigned to this telecaller.'),
+              child: Center(
+                child: Text(widget.isSales
+                    ? (_selectedCategoryName != null ? 'No active leads currently allocated for $_selectedCampaignName ($_selectedCategoryName).' : 'No active leads currently allocated to this salesperson.')
+                    : 'No active leads currently assigned to this telecaller.'),
               ),
             )
           else
-            for (final rawLead in currentLeads)
+            for (final rawLead in displayedLeads)
               Builder(
                 builder: (context) {
                   final lead = Map<String, dynamic>.from(rawLead as Map);
@@ -1721,6 +1830,487 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           ],
         ),
       ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getFilteredCategoryLeads(String campKey, String campName, String catName) {
+    final rawCampaigns = _data?['campaignAllocations'] as List<dynamic>? ?? [];
+    for (final camp in rawCampaigns) {
+      if (camp is! Map) continue;
+      final cKey = (camp['campaignId'] ?? camp['campaignName'] ?? '').toString().toUpperCase();
+      final targetKey = campKey.toUpperCase();
+      final targetName = campName.toUpperCase();
+      if (cKey == targetKey || (targetKey.isNotEmpty && cKey.contains(targetKey)) || (targetName.isNotEmpty && cKey == targetName)) {
+        final rawCats = camp['categories'] as List<dynamic>? ?? [];
+        for (final cat in rawCats) {
+          if (cat is! Map) continue;
+          final cName = (cat['categoryName'] ?? '').toString().toUpperCase();
+          if (cName == catName.toUpperCase()) {
+            final rawLeads = cat['leads'] as List<dynamic>? ?? [];
+            if (rawLeads.isNotEmpty) {
+              return rawLeads.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            }
+          }
+        }
+      }
+    }
+
+    final currentLeads = List<dynamic>.from(_data?['currentLeads'] ?? []);
+    return currentLeads
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((lead) {
+          final leadCamp = (lead['campaignId'] ?? lead['campaign'] ?? lead['source'] ?? '').toString().toUpperCase();
+          final targetCamp = campKey.toUpperCase();
+          final targetName = campName.toUpperCase();
+          final campMatches = targetCamp.isEmpty ||
+              targetCamp == 'ALL' ||
+              leadCamp == targetCamp ||
+              (targetName.isNotEmpty && leadCamp == targetName) ||
+              leadCamp.contains(targetCamp) ||
+              targetCamp.contains(leadCamp);
+          if (!campMatches) return false;
+
+          final targetCat = catName.toUpperCase();
+          if (targetCat.isEmpty || targetCat == 'ALL') return true;
+          final leadCat = (lead['category'] ?? '').toString().toUpperCase();
+          return leadCat == targetCat;
+        })
+        .toList();
+  }
+
+  void _showCategoryLeadsDialog({
+    required String campaignName,
+    required String categoryName,
+    required List<Map<String, dynamic>> leads,
+    required bool isDark,
+  }) {
+    final isMobile = CRMBreakpoints.isPhone(context);
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: CRMColors.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.campaign_outlined, size: 16, color: CRMColors.primary),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '$campaignName · $categoryName',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Allocated leads for ${widget.telecallerName ?? 'this salesperson'} (${leads.length} ${leads.length == 1 ? 'Lead' : 'Leads'}).',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => Navigator.of(ctx).pop(),
+                splashRadius: 18,
+                tooltip: 'Close',
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: isMobile ? double.maxFinite : 560,
+            child: leads.isEmpty
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade400),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No leads currently allocated for $campaignName ($categoryName).',
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : SizedBox(
+                    height: isMobile ? 380 : 440,
+                    child: ListView.builder(
+                      itemCount: leads.length,
+                      itemBuilder: (_, index) {
+                        final lead = leads[index];
+                        final leadId = lead['id']?.toString() ?? '';
+                        final name = lead['name']?.toString() ?? 'Lead';
+                        final phone = lead['phone']?.toString() ?? '';
+                        final campaign = lead['campaign']?.toString() ?? campaignName;
+                        final priority = lead['priority']?.toString() ?? 'NORMAL';
+                        final allocStatus = lead['allocationStatus']?.toString() ?? 'ASSIGNED_TO_SALES';
+                        final ageMinutes = lead['ageMinutes'] ?? 0;
+                        final isStale = lead['isStale'] == true;
+                        final callAttempts = lead['callAttemptCount'] ?? 0;
+
+                        Color priorityColor;
+                        switch (priority) {
+                          case 'HOT':
+                            priorityColor = Colors.red;
+                            break;
+                          case 'OLD_PENDING':
+                            priorityColor = Colors.amber.shade800;
+                            break;
+                          default:
+                            priorityColor = Colors.blue;
+                        }
+
+                        return Card(
+                          elevation: 0,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isStale
+                                  ? Colors.red.shade300
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              width: isStale ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: priorityColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: priorityColor.withValues(alpha: 0.4)),
+                                  ),
+                                  child: Text(
+                                    priority,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: priorityColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              name,
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (phone.isNotEmpty) ...[
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              phone,
+                                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        'Campaign: $campaign · Status: $allocStatus · Assigned: ${ageMinutes}m ago · Calls: $callAttempts',
+                                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.of(ctx).pop();
+                                    _reassignLead(leadId);
+                                  },
+                                  icon: const Icon(Icons.swap_horiz, size: 13),
+                                  label: const Text('Reassign', style: TextStyle(fontSize: 11)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCampaignDetailsSection(bool isDark, bool isMobile) {
+    final rawCampaigns = _data?['campaignAllocations'] as List<dynamic>? ?? [];
+    final campaigns = rawCampaigns.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Campaign Details',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            if (campaigns.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: CRMColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${campaigns.length} ${campaigns.length == 1 ? 'Campaign' : 'Campaigns'}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: CRMColors.primary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        const Text(
+          'Assigned campaigns and property categories with direct lead counts.',
+          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 12),
+        if (campaigns.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: const Center(
+              child: Text(
+                'No campaigns currently assigned to this salesperson.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+            ),
+          )
+        else
+          for (final camp in campaigns)
+            Builder(
+              builder: (context) {
+                final campName = camp['campaignName']?.toString() ?? camp['campaignId']?.toString() ?? 'Campaign';
+                final campId = camp['campaignId']?.toString() ?? camp['campaignName']?.toString() ?? 'META';
+                final rawCats = camp['categories'] as List<dynamic>? ?? [];
+                final categories = rawCats.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                final totalLeads = categories.fold<int>(0, (sum, cat) => sum + ((cat['allocatedCount'] as num?)?.toInt() ?? 0));
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: CRMColors.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(Icons.campaign_outlined, size: 16, color: CRMColors.primary),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                campName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '$totalLeads ${totalLeads == 1 ? 'Lead' : 'Leads'}',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final cat in categories)
+                            Builder(
+                              builder: (context) {
+                                final catName = cat['categoryName']?.toString() ?? 'Category';
+                                final isEnabled = cat['isEnabled'] == true;
+                                final count = (cat['allocatedCount'] as num?)?.toInt() ?? 0;
+                                final rawCatLeads = cat['leads'] as List<dynamic>? ?? [];
+                                final catLeads = rawCatLeads.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                                final isSelected = widget.isSales &&
+                                    _selectedCategoryName?.toUpperCase() == catName.toUpperCase() &&
+                                    (_selectedCampaignKey?.toUpperCase() == campId.toUpperCase() ||
+                                     _selectedCampaignName?.toUpperCase() == campName.toUpperCase());
+
+                                return InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        _selectedCampaignKey = null;
+                                        _selectedCampaignName = null;
+                                        _selectedCategoryName = null;
+                                      } else {
+                                        _selectedCampaignKey = campId;
+                                        _selectedCampaignName = campName;
+                                        _selectedCategoryName = catName;
+                                      }
+                                    });
+                                    final leadsToShow = catLeads.isNotEmpty
+                                        ? catLeads
+                                        : _getFilteredCategoryLeads(campId, campName, catName);
+                                    _showCategoryLeadsDialog(
+                                      campaignName: campName,
+                                      categoryName: catName,
+                                      leads: leadsToShow,
+                                      isDark: isDark,
+                                    );
+                                  },
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? CRMColors.primary.withValues(alpha: isDark ? 0.25 : 0.12)
+                                          : (isDark ? const Color(0xFF0F172A) : Colors.white),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? CRMColors.primary
+                                            : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                                        width: isSelected ? 1.5 : 1.0,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? CRMColors.primary
+                                                : (isEnabled ? Colors.green : Colors.grey),
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          catName,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                            color: isSelected
+                                                ? CRMColors.primary
+                                                : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? CRMColors.primary
+                                                : CRMColors.primary.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            '$count',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: isSelected ? Colors.white : CRMColors.primary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }

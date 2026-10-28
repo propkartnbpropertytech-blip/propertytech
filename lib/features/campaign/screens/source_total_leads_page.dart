@@ -87,6 +87,7 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
         final status = lead.campaignStatus.toLowerCase();
         final remarks = (lead.followupRemarks ?? lead.callbackRemarks ?? '').toLowerCase();
         final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead).toLowerCase();
+        final salesName = (lead.assignedToName ?? '').toLowerCase();
 
         if (!name.contains(query) &&
             !name2.contains(query) &&
@@ -95,7 +96,8 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
             !email.contains(query) &&
             !status.contains(query) &&
             !remarks.contains(query) &&
-            !tcName.contains(query)) {
+            !tcName.contains(query) &&
+            !salesName.contains(query)) {
           return false;
         }
       }
@@ -598,6 +600,11 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
     final dateStr = DateFormat('d MMM y, h:mm a').format(lead.receivedAt);
     final isAssigned = TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead);
     final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead);
+    final hasSalesperson = (lead.assignedToName != null && lead.assignedToName!.trim().isNotEmpty) ||
+        (lead.assignedTo != null && lead.assignedTo!.trim().isNotEmpty);
+    final salesName = lead.assignedToName?.trim().isNotEmpty == true
+        ? lead.assignedToName!.trim()
+        : 'Assigned Sales';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -645,8 +652,34 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                   ],
                 ),
               ),
-              // Telecaller badge if assigned
-              if (isAssigned) ...[
+              // Assigned Salesperson badge (when lead is assigned to a Salesperson)
+              if (hasSalesperson) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.assignment_ind_rounded, size: 12, color: Color(0xFF10B981)),
+                      const SizedBox(width: 4),
+                      Text(
+                        salesName,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ] else if (isAssigned) ...[
+                // Telecaller badge if assigned to telecaller and not yet assigned to sales
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -807,6 +840,11 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
         : lead.getStringValue('Mobile');
     final email = lead.getStringValue('Email');
     final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead);
+    final hasSalesperson = (lead.assignedToName != null && lead.assignedToName!.trim().isNotEmpty) ||
+        (lead.assignedTo != null && lead.assignedTo!.trim().isNotEmpty);
+    final salesName = lead.assignedToName?.trim().isNotEmpty == true
+        ? lead.assignedToName!.trim()
+        : 'Assigned Sales';
 
     showDialog(
       context: context,
@@ -874,6 +912,9 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                           if (email.isNotEmpty) _buildDetailRow('Email', email),
                           _buildDetailRow('Received Date', DateFormat('d MMM y, h:mm:ss a').format(lead.receivedAt)),
                           _buildDetailRow('Campaign Status', lead.campaignStatus),
+                          if (hasSalesperson) ...[
+                            _buildDetailRow('Assigned Salesperson', salesName),
+                          ],
                           if (TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead)) ...[
                             _buildDetailRow('Assigned Telecaller', tcName),
                           ],

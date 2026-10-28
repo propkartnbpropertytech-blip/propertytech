@@ -4357,17 +4357,42 @@ _recomputeFilteredRequirements();
   }
 
   String _getAddedByName(RequirementModel req) {
+    if (req.isCampaignLead) {
+      final fromCreatorId = _liveUserName(req.createdBy);
+      if (fromCreatorId != null && fromCreatorId.toLowerCase().contains("super administrator")) {
+        return "PropKart Admin";
+      }
+      final rawName = req.creatorName?.trim();
+      if (rawName != null && rawName.toLowerCase().contains("super administrator")) {
+        return "PropKart Admin";
+      }
+      if (fromCreatorId != null && fromCreatorId.isNotEmpty) {
+        return fromCreatorId;
+      }
+      if (rawName != null && rawName.isNotEmpty && rawName != "System") {
+        final fromCreatorName = _liveUserName(rawName);
+        if (fromCreatorName != null) {
+          if (fromCreatorName.toLowerCase().contains("super administrator")) {
+            return "PropKart Admin";
+          }
+          return fromCreatorName;
+        }
+        if (!_looksLikeUserId(rawName)) return rawName;
+      }
+      return "PropKart Admin";
+    }
+
     final fromCreatorId = _liveUserName(req.createdBy);
     if (fromCreatorId != null) return fromCreatorId;
 
     final rawName = req.creatorName?.trim();
-    if (rawName != null && rawName.isNotEmpty && rawName != 'System') {
+    if (rawName != null && rawName.isNotEmpty && rawName != "System") {
       final fromCreatorName = _liveUserName(rawName);
       if (fromCreatorName != null) return fromCreatorName;
       if (!_looksLikeUserId(rawName)) return rawName;
     }
 
-    return 'Propkart Admin';
+    return "Propkart Admin";
   }
 
   String? _getReassignedByName(RequirementModel req) {

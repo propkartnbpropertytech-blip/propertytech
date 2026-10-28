@@ -13,6 +13,8 @@ import '../widgets/campaign_column_settings_dialog.dart';
 import '../widgets/lead_reclassify_dialog.dart';
 import '../../../core/config/app_env.dart';
 import '../../../core/utils/file_downloader.dart';
+import '../../../core/api/api_constants.dart';
+import '../../../core/api/dio_client.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -56,6 +58,32 @@ class CampaignLeadsScreen extends StatefulWidget {
 class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   final IntegrationService _service = IntegrationService();
   final UsersRepository _usersRepository = UsersRepository();
+
+  String _allocationTargetRole = 'Telecaller';
+  bool get isSalesAllocationMode => _allocationTargetRole.toLowerCase() == 'sales';
+
+  Future<void> _loadAllocationTargetRole() async {
+    try {
+      final res = await DioClient.dio.get(ApiConstants.campaignAllocationMode);
+      final role = (res.data['targetRole'] ?? res.data['allocationMode'] ?? '').toString().trim();
+      if (mounted && role.isNotEmpty) {
+        setState(() {
+          _allocationTargetRole = role;
+        });
+      }
+    } catch (_) {
+      try {
+        final res = await DioClient.dio.get(ApiConstants.adminAllocationConfig);
+        final data = res.data['data'] as Map<String, dynamic>? ?? {};
+        final role = (data['targetRole'] ?? '').toString().trim();
+        if (mounted && role.isNotEmpty) {
+          setState(() {
+            _allocationTargetRole = role;
+          });
+        }
+      } catch (_) {}
+    }
+  }
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _notInterestedSearchController = TextEditingController();
   final TextEditingController _followupSearchController = TextEditingController();
@@ -164,6 +192,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     });
     unawaited(_bootstrapLockedSource());
     unawaited(_service.fetchHealthAlerts());
+    unawaited(_loadAllocationTargetRole());
     unawaited(_preloadFilterUsers());
     unawaited(_loadFollowups());
     _leadEventsSub = IntegrationService.leadEvents.stream.listen((event) {
@@ -471,6 +500,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   }
 
   void _onServiceUpdate() {
+    if (_service.lastTargetRole != null && _service.lastTargetRole!.isNotEmpty && _service.lastTargetRole != _allocationTargetRole) {
+      _allocationTargetRole = _service.lastTargetRole!;
+    }
     _uiDebounce?.cancel();
     _uiDebounce = Timer(const Duration(milliseconds: 80), () {
       if (!mounted) return;
@@ -3921,7 +3953,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (canTransferLead) ...[
+        if (canTransferLead && !isSalesAllocationMode) ...[
           Tooltip(
             message: isAdminOrSuperAdmin
                 ? 'Assign or transfer this lead to a telecaller'
@@ -4083,9 +4115,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               color: Colors.white,
             ),
             label: Text(
-              isTelecaller
-                  ? (isAssigned ? 'Re-assign' : 'Outcome')
-                  : (isAssigned ? 'Re-transfer' : 'Transfer'),
+              isAssigned
+                  ? (isTelecaller ? 'Re-assign' : 'Re-transfer')
+                  : 'Outcome',
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
@@ -4361,9 +4393,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ? lead.getStringValue('phone_number')
         : lead.getStringValue('phone');
 
-    String selectedStatus = lead.campaignStatus == 'CNR'
-        ? 'CNR'
-        : (lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up' ? 'Callback' : 'Picked Up');
+    String selectedStatus = isSalesAllocationMode
+        ? 'Picked Up'
+        : (lead.campaignStatus == 'CNR'
+            ? 'CNR'
+            : (lead.campaignStatus == 'Follow up' || lead.campaignStatus == 'Follow-up' ? 'Callback' : 'Picked Up'));
     final remarksController = TextEditingController(text: lead.transferRemarks ?? '');
     DateTime selectedCallbackDate = lead.callbackScheduledAt ?? DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedCallbackTime = lead.callbackScheduledAt != null
@@ -4506,112 +4540,116 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
                           // Choice 2: Callback
-                          Expanded(
-                            child: InkWell(
-                              onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'Callback'),
-                              borderRadius: BorderRadius.circular(10),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: selectedStatus == 'Callback'
-                                      ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
-                                      : CRMColors.surfaceElevatedOf(ctx),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
+                          if (!isSalesAllocationMode) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: InkWell(
+                                onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'Callback'),
+                                borderRadius: BorderRadius.circular(10),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                  decoration: BoxDecoration(
                                     color: selectedStatus == 'Callback'
-                                        ? const Color(0xFF3B82F6)
-                                        : CRMColors.borderOf(ctx),
-                                    width: selectedStatus == 'Callback' ? 1.8 : 1.0,
+                                        ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
+                                        : CRMColors.surfaceElevatedOf(ctx),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: selectedStatus == 'Callback'
+                                          ? const Color(0xFF3B82F6)
+                                          : CRMColors.borderOf(ctx),
+                                      width: selectedStatus == 'Callback' ? 1.8 : 1.0,
+                                    ),
                                   ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.event_repeat_rounded,
-                                      size: 18,
-                                      color: selectedStatus == 'Callback' ? const Color(0xFF3B82F6) : Colors.grey,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Callback',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: selectedStatus == 'Callback' ? const Color(0xFF3B82F6) : null,
-                                            ),
-                                          ),
-                                          Text(
-                                            'Schedule call',
-                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
-                                          ),
-                                        ],
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.event_repeat_rounded,
+                                        size: 18,
+                                        color: selectedStatus == 'Callback' ? const Color(0xFF3B82F6) : Colors.grey,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Callback',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: selectedStatus == 'Callback' ? const Color(0xFF3B82F6) : null,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Schedule call',
+                                              style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
+                          ],
                           // Choice 3: CNR
-                          Expanded(
-                            child: InkWell(
-                              onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'CNR'),
-                              borderRadius: BorderRadius.circular(10),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: selectedStatus == 'CNR'
-                                      ? const Color(0xFFD97706).withValues(alpha: 0.12)
-                                      : CRMColors.surfaceElevatedOf(ctx),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
+                          if (!isSalesAllocationMode) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: InkWell(
+                                onTap: isSubmitting ? null : () => setDialogState(() => selectedStatus = 'CNR'),
+                                borderRadius: BorderRadius.circular(10),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                  decoration: BoxDecoration(
                                     color: selectedStatus == 'CNR'
-                                        ? const Color(0xFFD97706)
-                                        : CRMColors.borderOf(ctx),
-                                    width: selectedStatus == 'CNR' ? 1.8 : 1.0,
+                                        ? const Color(0xFFD97706).withValues(alpha: 0.12)
+                                        : CRMColors.surfaceElevatedOf(ctx),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: selectedStatus == 'CNR'
+                                          ? const Color(0xFFD97706)
+                                          : CRMColors.borderOf(ctx),
+                                      width: selectedStatus == 'CNR' ? 1.8 : 1.0,
+                                    ),
                                   ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.phone_missed_rounded,
-                                      size: 18,
-                                      color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : Colors.grey,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'CNR',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : null,
-                                            ),
-                                          ),
-                                          Text(
-                                            'Not received',
-                                            style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
-                                          ),
-                                        ],
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.phone_missed_rounded,
+                                        size: 18,
+                                        color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : Colors.grey,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'CNR',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: selectedStatus == 'CNR' ? const Color(0xFFD97706) : null,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Not received',
+                                              style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -9227,9 +9265,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                 // Primary Action Buttons Row
                 Row(
                   children: [
-                    if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ||
+                    if ((RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ||
                         RoleGuard.currentUser?.role == 'Admin' ||
-                        RoleGuard.currentUser?.role == 'Super Admin') ...[
+                        RoleGuard.currentUser?.role == 'Super Admin') && !isSalesAllocationMode) ...[
                       Expanded(
                         child: SizedBox(
                           height: 34,
@@ -10114,9 +10152,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ||
+                                  if ((RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ||
                                       RoleGuard.currentUser?.role == 'Admin' ||
-                                      RoleGuard.currentUser?.role == 'Super Admin')
+                                      RoleGuard.currentUser?.role == 'Super Admin') && !isSalesAllocationMode)
                                     IconButton(
                                       icon: const Icon(Icons.swap_horiz_rounded, size: 18, color: Color(0xFF0284C7)),
                                       tooltip: (RoleGuard.currentUser?.role == 'Admin' || RoleGuard.currentUser?.role == 'Super Admin')

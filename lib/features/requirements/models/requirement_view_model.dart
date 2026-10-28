@@ -271,36 +271,20 @@ class RequirementListItemViewModel {
     // 2. Must not be manually created by this user
     if (_checkUserCreator(r, user)) return false;
 
-    // 3. Must be a campaign lead or tagged with direct sales allocation
-    final isCamp = r.isCampaignLead ||
-        (r.metaCustomFields != null &&
-            (r.metaCustomFields!['direct_sales_allocated'] == true ||
-             r.metaCustomFields!['direct_sales_allocated'] == 'true'));
-    if (!isCamp) return false;
-
-    // 4. Must NOT be from the Telecaller workflow
-    if (_isTelecallerWorkflowLead(r)) return false;
-
-    return true;
-  }
-
-  static bool _isTelecallerWorkflowLead(RequirementModel r) {
-    if (r.assignedTelecallerId != null && r.assignedTelecallerId!.trim().isNotEmpty) return true;
-
+    // 3. Must have isDirectSalesAllocated set to true (or fallback to metadata tag)
+    if (r.isDirectSalesAllocated) return true;
     final meta = r.metaCustomFields;
-    if (meta != null) {
-      if (meta['_transfer'] != null) return true;
-      if (meta['telecaller_id'] != null && meta['telecaller_id'].toString().trim().isNotEmpty) return true;
-      if (meta['assigned_telecaller_id'] != null && meta['assigned_telecaller_id'].toString().trim().isNotEmpty) return true;
-      if (meta['telecaller_by'] != null && meta['telecaller_by'].toString().trim().isNotEmpty) return true;
-      if (meta['telecaller_by_id'] != null && meta['telecaller_by_id'].toString().trim().isNotEmpty) return true;
-      if (meta['telecaller_name'] != null && meta['telecaller_name'].toString().trim().isNotEmpty) return true;
-      if (meta['interacted_by'] != null && meta['interacted_by'].toString().trim().isNotEmpty) return true;
-      if (meta['telecaller_status'] != null && meta['telecaller_status'].toString().trim().isNotEmpty) return true;
+    if (meta != null &&
+        (meta['direct_sales_allocated'] == true ||
+         meta['direct_sales_allocated'] == 'true' ||
+         meta['is_direct_sales_allocated'] == true ||
+         meta['is_direct_sales_allocated'] == 'true')) {
+      return true;
     }
 
     return false;
   }
+
 
   static bool _checkLeadTransferredAway(RequirementModel r, dynamic currentUser) {
     if (currentUser == null) return false;
