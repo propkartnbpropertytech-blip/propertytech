@@ -59,6 +59,9 @@ import 'mobile_system_back_handler.dart';
 import '../../features/team_messages/screens/team_messages_screen.dart';
 import '../../features/support/screens/support_screen.dart';
 import '../../features/support/screens/super_admin_support_dashboard_screen.dart';
+import '../../features/admin/screens/permission_matrix_studio_screen.dart';
+import '../../features/admin/screens/tier_plans_studio_screen.dart';
+import '../../features/admin/screens/broker_management_screen.dart';
 import 'audit_route_observer.dart';
 
 
@@ -250,6 +253,48 @@ class AppRouter {
                 telecallerName: state.uri.queryParameters['telecallerName'],
                 initialSearch: state.uri.queryParameters['q'],
               ),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/permissions',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isSuperAdmin(role)) {
+                return '/dashboard';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const PermissionMatrixStudioScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/plans',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isSuperAdmin(role)) {
+                return '/dashboard';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const TierPlansStudioScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/admin/brokers',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isSuperAdmin(role)) {
+                return '/dashboard';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const BrokerManagementScreen(),
             ),
           ),
           GoRoute(
@@ -724,6 +769,12 @@ class AppRouter {
           return '/dashboard';
         }
         if (onReports && !RoleGuard.canViewReports(role)) {
+          return '/dashboard';
+        }
+        final onPermissionsStudio = state.matchedLocation.startsWith('/admin/permissions');
+        final onPlansStudio = state.matchedLocation.startsWith('/admin/plans');
+        final onBrokerManagement = state.matchedLocation.startsWith('/admin/brokers');
+        if ((onPermissionsStudio || onPlansStudio || onBrokerManagement) && !RoleGuard.isSuperAdmin(role)) {
           return '/dashboard';
         }
 

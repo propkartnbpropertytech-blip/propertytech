@@ -3,6 +3,7 @@
 /// All KPI metrics computed or displayed here MUST adhere to the
 /// Master KPI Rulebook: lib/core/constants/kpi_rulebook.dart and docs/KPIs.docx.
 /// ============================================================================
+library;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';

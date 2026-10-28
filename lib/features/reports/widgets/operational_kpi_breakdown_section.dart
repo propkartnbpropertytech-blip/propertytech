@@ -5,8 +5,8 @@
 /// Note: Inventory Added by Role displays Available count as primary stat,
 /// and Total count in subtitle. Direct Leads are mapped to table `leads`.
 /// ============================================================================
+library;
 import 'package:flutter/material.dart';
-import '../../../../core/constants/kpi_rulebook.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_typography.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';

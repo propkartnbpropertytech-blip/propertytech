@@ -4,10 +4,10 @@
 /// `lib/core/constants/kpi_rulebook.dart` and `docs/KPIs.docx`.
 /// Ensure drilldown parameters match authoritative database fields and enums.
 /// ============================================================================
+library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/constants/kpi_rulebook.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/utils/currency.dart';
 import '../models/kpi_models.dart';

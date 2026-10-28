@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:http_parser/http_parser.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:typed_data';
-import '../../../core/api/api_constants.dart';
 import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';

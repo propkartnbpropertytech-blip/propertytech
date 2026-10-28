@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'api_constants.dart';
 import '../config/app_env.dart';
 import 'dio_client.dart';

@@ -1,7 +1,5 @@
-import 'dart:ui' as ui;
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,7 +23,6 @@ import '../../../../features/users/models/user_model.dart';
 import '../../../../features/properties/repository/properties_repository.dart';
 import '../../../../features/properties/bloc/properties_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dio/dio.dart';
 import '../../utils/file_downloader.dart';
 import '../../../../core/api/dio_client.dart';
 import 'dart:io' show Platform;

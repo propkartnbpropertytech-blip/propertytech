@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
@@ -19,11 +18,11 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
-import '../../../core/design_system/widgets/crm_embedded_video_player.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../../core/security/crm_control_guard.dart';
 import 'package:flutter/services.dart';
 import '../../auth/models/user_model.dart';
 import '../bloc/properties_bloc.dart';
@@ -37,12 +36,8 @@ import '../../../core/api/dio_client.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../../core/utils/formatters.dart';
-import '../../requirements/utils/property_share_pdf.dart';
-import '../../requirements/widgets/pdf_option_selection_dialog.dart';
 import '../widgets/property_pdf_content_selection_dialog.dart';
 
-import '../../requirements/models/requirement_model.dart';
-import '../../requirements/repository/requirements_repository.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
 import '../../../core/telemetry/audit_dwell_tracker.dart';
@@ -3681,7 +3676,9 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
   Widget _buildPageHeader(PropertyMetadataModel? metadata) {
     return CRMPageHeader(
       title: 'Properties',
-      trailing: CRMButton(
+      trailing: CrmControlGuard(
+        controlKey: 'action.properties.create',
+        child: CRMButton(
         label: 'Add Property',
         prefixIcon: Icons.add_rounded,
         height: 40,
@@ -3696,6 +3693,7 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
           }
           _showAddEditPropertyDialog(context, metadata);
         },
+      ),
       ),
     );
   }

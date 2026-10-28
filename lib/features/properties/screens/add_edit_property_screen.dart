@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../core/api/api_client.dart';
 import '../../../core/design_system/crm_design_system.dart';
-import '../../../core/design_system/widgets/form/crm_date_picker.dart';
-import '../../../core/design_system/widgets/crm_map_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../bloc/properties_bloc.dart';
 import '../models/property_model.dart';
@@ -14,7 +10,6 @@ import '../../../core/storage/crm_draft_repository.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/design_system/widgets/form/crm_video_picker.dart';
 import 'package:dio/dio.dart';
-import '../../settings/screens/location_config_screen.dart';
 import '../../settings/services/upload_limits_manager.dart';
 
 class AddEditPropertyScreen extends StatefulWidget {

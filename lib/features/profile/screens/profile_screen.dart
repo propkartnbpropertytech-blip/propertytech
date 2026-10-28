@@ -1,15 +1,11 @@
-import 'dart:io';
 import 'package:go_router/go_router.dart';
 import '../../../core/security/role_guard.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http_parser/http_parser.dart';
 
-import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/api/cloudinary_uploader.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
@@ -26,6 +22,7 @@ import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../widgets/mfa_security_card.dart';
+import '../../../core/utils/dates.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -58,18 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   String _formatCreatedDate(String? rawDate) {
     final dateStr = (rawDate != null && rawDate.isNotEmpty) ? rawDate : _loadedCreatedAt;
-    if (dateStr == null || dateStr.isEmpty) return 'N/A';
-    try {
-      final dt = DateTime.parse(dateStr);
-      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      final monthStr = months[dt.month - 1];
-      final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-      final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-      final minStr = dt.minute.toString().padLeft(2, '0');
-      return '${dt.day} $monthStr ${dt.year}, $hour:$minStr $ampm';
-    } catch (_) {
-      return dateStr;
-    }
+    return CRMDatesHelper.formatToIST(dateStr);
   }
 
   void _syncUserData(UserModel user) {
@@ -132,18 +118,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
-      final response = await DioClient.dio.get('/users');
-      if (response.data != null && response.data['data'] != null) {
-        final usersList = response.data['data']['users'] as List? ?? [];
+      // 1. Fetch authenticated profile from /auth/me to get the exact created_at timestamp
+      final meRes = await DioClient.dio.get('/auth/me');
+      if (meRes.data != null && meRes.data['data'] != null) {
+        final userData = meRes.data['data']['user'] ?? meRes.data['data'];
+        if (userData is Map) {
+          final serverCreatedAt = userData['created_at']?.toString() ?? userData['createdAt']?.toString();
+          if (serverCreatedAt != null && serverCreatedAt.isNotEmpty) {
+            _loadedCreatedAt = serverCreatedAt;
+          }
+          if (userData['admin'] is Map) {
+            final adm = userData['admin'] as Map;
+            _loadedAdminName = adm['full_name']?.toString() ?? adm['fullName']?.toString();
+            _loadedAdminEmail = adm['email']?.toString();
+            _loadedAdminRole = adm['role']?.toString() ?? adm['roleName']?.toString();
+          }
+        }
+      }
+    } catch (_) {
+      // Non-critical fallback
+    }
 
-        // Look up self details for created_at if missing
-        final selfMatch = usersList.firstWhere(
-          (u) => u['id']?.toString() == user.id,
-          orElse: () => null,
-        );
-
-        if (selfMatch != null && selfMatch['created_at'] != null) {
-          _loadedCreatedAt = selfMatch['created_at']?.toString();
+    try {
+      // 2. Fallback check from /users if created_at was still empty
+      if (_loadedCreatedAt == null || _loadedCreatedAt!.isEmpty) {
+        final response = await DioClient.dio.get('/users');
+        if (response.data != null && response.data['data'] != null) {
+          final usersList = response.data['data']['users'] as List? ?? [];
+          final selfMatch = usersList.firstWhere(
+            (u) => u['id']?.toString() == user.id,
+            orElse: () => null,
+          );
+          if (selfMatch != null && selfMatch['created_at'] != null) {
+            _loadedCreatedAt = selfMatch['created_at']?.toString();
+          }
         }
       }
     } catch (_) {
@@ -853,12 +861,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Account Created Date (Read-only)
             CRMTextField(
               controller: TextEditingController(text: _formatCreatedDate(user.createdAt)),
-              labelText: 'Account Registration Date',
-              hintText: 'Creation timestamp',
+              labelText: 'Account Registration Date (IST)',
+              hintText: 'Creation timestamp in IST',
               prefixIcon: Icons.calendar_today_rounded,
               readOnly: true,
               suffixIcon: Tooltip(
-                message: "System registration timestamp",
+                message: "System registration timestamp in Indian Standard Time (IST, UTC+5:30)",
                 child: Icon(Icons.access_time_filled_rounded, size: 16, color: CRMColors.info),
               ),
             ),
@@ -892,8 +900,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       cardTitle = "Account Hierarchy";
       cardSub = "Primary Enterprise Root Super Administrator Account.";
     } else if (isAdmin) {
-      cardTitle = "Managing Super Admin";
-      cardSub = "Details of the Super Administrator who onboarded this admin profile.";
+      cardTitle = "NB PropertyTech";
+      cardSub = "Enterprise Platform & Technology Infrastructure Provider.";
     }
 
     return CRMCard(
@@ -903,8 +911,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             children: [
               Icon(
-                isSuperAdmin ? Icons.workspace_premium_rounded : Icons.supervisor_account_rounded,
-                color: isSuperAdmin ? CRMColors.secondary : CRMColors.info,
+                isSuperAdmin
+                    ? Icons.workspace_premium_rounded
+                    : (isAdmin ? Icons.verified_rounded : Icons.supervisor_account_rounded),
+                color: isSuperAdmin
+                    ? CRMColors.secondary
+                    : (isAdmin ? CRMColors.primary : CRMColors.info),
                 size: 22,
               ),
               const SizedBox(width: 8),
@@ -982,11 +994,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: (isAdmin ? CRMColors.secondary : CRMColors.info).withOpacity(0.12),
+                    backgroundColor: (isAdmin ? CRMColors.primary : CRMColors.info).withOpacity(0.12),
                     radius: 22,
                     child: Icon(
-                      isAdmin ? Icons.workspace_premium_rounded : Icons.admin_panel_settings_rounded,
-                      color: isAdmin ? CRMColors.secondary : CRMColors.info,
+                      isAdmin ? Icons.business_rounded : Icons.admin_panel_settings_rounded,
+                      color: isAdmin ? CRMColors.primary : CRMColors.info,
                       size: 22,
                     ),
                   ),
@@ -996,35 +1008,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _loadedAdminName ?? (isAdmin ? "Super Administrator" : "Workspace Administrator"),
+                          isAdmin ? "NB PropertyTech" : (_loadedAdminName ?? "Workspace Administrator"),
                           style: CRMTypography.bodyMedium.copyWith(
                             color: CRMColors.textOf(context),
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
                           ),
                         ),
-                        if (_loadedAdminEmail != null && _loadedAdminEmail!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            _loadedAdminEmail!,
-                            style: CRMTypography.caption.copyWith(
-                              color: CRMColors.textSecondaryOf(context),
-                            ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isAdmin ? "broker-support@nbpropertytech.com" : (_loadedAdminEmail ?? ""),
+                          style: CRMTypography.caption.copyWith(
+                            color: CRMColors.textSecondaryOf(context),
                           ),
-                        ],
+                        ),
                       ],
                     ),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: (isAdmin ? CRMColors.secondary : CRMColors.info).withOpacity(0.12),
+                      color: (isAdmin ? CRMColors.primary : CRMColors.info).withOpacity(0.12),
                       borderRadius: BorderRadius.circular(CRMBorderRadius.round),
                     ),
                     child: Text(
-                      _loadedAdminRole ?? (isAdmin ? "Super Admin" : "Admin"),
+                      isAdmin ? "Platform Provider" : (_loadedAdminRole ?? "Admin"),
                       style: CRMTypography.captionBold.copyWith(
-                        color: isAdmin ? CRMColors.secondary : CRMColors.info,
+                        color: isAdmin ? CRMColors.primary : CRMColors.info,
                         fontSize: 11,
                       ),
                     ),
@@ -1044,12 +1054,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 18, color: CRMColors.primary),
+                  Icon(
+                    isAdmin ? Icons.verified_user_rounded : Icons.info_outline_rounded,
+                    size: 18,
+                    color: CRMColors.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       isAdmin
-                          ? "This profile was created & authorized by the workspace Super Administrator."
+                          ? "This broker workspace was onboarded, verified & authorized by NB PropertyTech."
                           : "This sales user account was added & onboarded by the Administrator shown above.",
                       style: CRMTypography.caption.copyWith(
                         color: CRMColors.textOf(context),

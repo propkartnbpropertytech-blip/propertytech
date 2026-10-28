@@ -83,8 +83,8 @@ class SyncTelemetryRecord {
   static String _sanitizeError(String err) {
     // Strip raw SQL queries or sensitive traces if present
     final sanitized = err
-        .replaceAll(RegExp(r'SELECT .* FROM .*', caseSensitive: false), '[SQL QUERY REDACTED]')
-        .replaceAll(RegExp(r'Bearer \S+', caseSensitive: false), 'Bearer [REDACTED]')
+        .replaceAll(RegExp(r'SELECT\s+.*?\s+FROM\s+\S+', caseSensitive: false), '[SQL QUERY REDACTED]')
+        .replaceAll(RegExp(r'Bearer\s+\S+', caseSensitive: false), 'Bearer [REDACTED]')
         .replaceAll(RegExp(r'password=\S+', caseSensitive: false), 'password=[REDACTED]');
     return sanitized.length > 200 ? '${sanitized.substring(0, 200)}...' : sanitized;
   }

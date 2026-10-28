@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "project": {
+    "name": "PropKart",
+    "version": "1.1.2",
+    "description": "Multi-tenant Real Estate CRM & ERP Platform",
+    "type": "hybrid-fullstack",
+    "architecture_pattern": "layered-clean-architecture",
+    "governance_document": "PROPKART_MASTER_ENGINEERING_RULEBOOK.md"
+  },
+  "repositories": {
+    "frontend": {
+      "name": "propkart-client",
+      "path": "c:/NB/propkart",
+      "framework": "Flutter",
+      "language": "Dart",
+      "language_version": "^3.0.0",
+      "state_management": "BLoC / Cubit",
+      "local_storage": "Isar v3 (local-first offline UI store)",
+      "networking": "Dio Client (wrapped with Auth & Logging interceptors)",
+      "realtime": "Supabase / Phoenix WebSockets",
+      "telemetry": "Sentry Flutter + AppLogger",
+      "entry_point": "lib/main.dart",
+      "test_directory": "test/"
+    },
+    "backend": {
+      "name": "propkart-backend",
+      "path": "C:/NB/PropKart-Backend",
+      "runtime": "Node.js 22 LTS",
+      "framework": "Express 5",
+      "module_type": "ECMAScript Modules (ESM)",
+      "authoritative_database": "PostgreSQL 16 (public schema)",
+      "cache_tier": "Redis (fail-open, transient cache-aside, mutexes)",
+      "orm_or_driver": "node-pg (pg.Pool) with additive SQL migrations",
+      "telemetry": "Winston + Pino HTTP + In-Memory Metrics Registry (Prometheus)",
+      "entry_point": "src/server.js",
+      "test_directory": "test/"
+    }
+  },
+  "persistence_tiers": {
+    "authoritative": {
+      "system": "PostgreSQL",
+      "schema": "public",
+      "invariants": [
+        "PostgreSQL is the single authoritative source of truth",
+        "Row-Level Security (RLS) and organization_id isolation must be enforced on every table",
+        "Migrations must be purely additive and registered in ADDITIVE_MIGRATIONS",
+        "Historical ledgers (site_visits, lead_call_attempts) are strictly immutable"
+      ]
+    },
+    "cache": {
+      "system": "Redis",
+      "role": "transient cache-aside, distributed mutexes, rate limiting",
+      "invariants": [
+        "Redis data loss never impacts transactional business integrity",
+        "All Redis operations must fail open and fall back gracefully to PostgreSQL",
+        "KPI cache entries must have explicit TTLs (default 300s)",
+        "Single-flight mutex locks prevent cache stampedes"
+      ]
+    },
+    "client_offline": {
+      "system": "Isar Database (Web/Desktop/Mobile)",
+      "role": "local-first UI presentation storage",
+      "invariants": [
+        "Isar is a downstream read projection and staging area",
+        "Offline mutations must be queued in the Durable Outbox",
+        "Presentation UI widgets must never import Isar collections directly"
+      ]
+    }
+  },
+  "architecture_layers": {
+    "frontend": [
+      {
+        "layer": "Presentation",
+        "path": "lib/features/**/screens, lib/features/**/widgets",
+        "allowed_dependencies": ["BLoC / Cubit", "Domain Use Cases", "Design System"],
+        "forbidden_dependencies": ["DioClient", "package:dio", "IsarCollections", "Direct SQL"]
+      },
+      {
+        "layer": "State Management",
+        "path": "lib/features/**/bloc",
+        "allowed_dependencies": ["Domain Use Cases", "Repositories", "Data Models"],
+        "forbidden_dependencies": ["Widget", "BuildContext", "DioClient", "Direct SQL"]
+      },
+      {
+        "layer": "Domain",
+        "path": "lib/features/**/domain/usecases",
+        "allowed_dependencies": ["Repositories", "Domain Entities"],
+        "forbidden_dependencies": ["UI Framework", "Storage Frameworks"]
+      },
+      {
+        "layer": "Data",
+        "path": "lib/core/api, lib/core/storage, lib/core/network",
+        "allowed_dependencies": ["Dio", "Isar", "WebSockets"],
+        "forbidden_dependencies": ["UI Framework"]
+      }
+    ],
+    "backend": [
+      {
+        "layer": "Routes",
+        "path": "src/modules/**/*.routes.js",
+        "allowed_dependencies": ["Middleware", "Controllers"],
+        "forbidden_dependencies": ["dbPool", "supabase", "Raw SQL"]
+      },
+      {
+        "layer": "Controllers",
+        "path": "src/modules/**/*.controller.js",
+        "allowed_dependencies": ["Services", "Input Validators", "Error Formatters"],
+        "forbidden_dependencies": ["dbPool.query", "Direct SQL", "Redis Clients"]
+      },
+      {
+        "layer": "Services",
+        "path": "src/modules/**/*.service.js",
+        "allowed_dependencies": ["Repositories", "CacheService", "Other Services"],
+        "forbidden_dependencies": ["HTTP Request/Response objects"]
+      },
+      {
+        "layer": "Repositories",
+        "path": "src/modules/**/*.repository.js",
+        "allowed_dependencies": ["dbPool", "supabase", "SQL Statements"],
+        "forbidden_dependencies": ["HTTP Express context", "Presentation logic"]
+      }
+    ]
+  },
+  "protected_boundaries": {
+    "generated_files": [
+      {
+        "file_pattern": "lib/**/*.g.dart",
+        "generator_command": "flutter pub run build_runner build --delete-conflicting-outputs",
+        "manual_edit_allowed": false,
+        "action_on_change": "Update source schema (*.dart) and execute build_runner"
+      }
+    ],
+    "authoritative_kpis": {
+      "repository": "src/modules/dashboard/kpi/canonicalKpi.repository.js",
+      "service": "src/modules/dashboard/kpi.service.js",
+      "cache": "src/modules/dashboard/kpi/kpiCache.service.js",
+      "rule": "Authoritative calculations reside exclusively in PostgreSQL via CanonicalKpiRepository"
+    },
+    "tenant_isolation": {
+      "key": "organization_id",
+      "rule": "Client-supplied tenant IDs must never be trusted; resolve from verified JWT claims only"
+    }
+  },
+  "standard_commands": {
+    "backend": {
+      "install": "npm ci",
+      "test": "npm test",
+      "test_all": "npm run test:all",
+      "audit": "npm audit --omit=dev --audit-level=high",
+      "smoke_test": "node scripts/smoke_test.js",
+      "start": "node src/server.js"
+    },
+    "frontend": {
+      "install": "flutter pub get",
+      "analyze": "flutter analyze --no-fatal-infos",
+      "test": "flutter test",
+      "build_runner": "flutter pub run build_runner build --delete-conflicting-outputs",
+      "build_web": "flutter build web --release --pwa-strategy=offline-first"
+    }
+  }
+}
