@@ -28,6 +28,21 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  Future<String> getAllocationTargetRole() async {
+    try {
+      final res = await _apiClient.get(ApiConstants.campaignAllocationMode);
+      final role = (res.data['targetRole'] ?? res.data['allocationMode'] ?? '').toString().trim();
+      if (role.isNotEmpty) return role;
+    } catch (_) {}
+    try {
+      final res = await _apiClient.get(ApiConstants.adminAllocationConfig);
+      final data = res.data['data'] as Map<String, dynamic>? ?? {};
+      return (data['targetRole'] ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
@@ -2273,8 +2288,9 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
         });
       }
 
-      final isSuccess = res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300;
-      if (isSuccess) {
+      final statusCode = res?.statusCode;
+      final isSuccess = statusCode != null && statusCode >= 200 && statusCode < 300;
+      if (isSuccess && res != null) {
         if (res.data is Map && res.data['lead'] is Map) {
           try {
             final updatedLead = IntegrationLeadModel.fromJson(Map<String, dynamic>.from(res.data['lead']));
