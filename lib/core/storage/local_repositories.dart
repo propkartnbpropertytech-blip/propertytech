@@ -26,10 +26,6 @@ class PropertyLocalRepository {
   }
 
   Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
-    return getPropertyById(idOrCode);
-  }
-
-  Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
     final byId = await getPropertyById(idOrCode);
     if (byId != null) return byId;
     if (kIsWeb) {
