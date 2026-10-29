@@ -161,42 +161,6 @@ class PropertySharePdf {
   }) async {
     final config = filterConfig ?? PropertyPdfFilterConfig.allEnabled();
     final doc = pw.Document();
-    final dio = Dio();
-
-    // Fetch images in parallel for all properties to speed up execution
-    final Map<String, List<Uint8List>> propertyImagesMap = {};
-    for (final p in properties) {
-      final List<Uint8List> imageBytesList = [];
-      if (p.images.isNotEmpty) {
-        // Limit to 6 images per property to prevent giant PDF file sizes
-        final urls = p.images.take(6).toList();
-        final futures = urls.map((url) async {
-          try {
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-              return null;
-            }
-            final response = await dio.get<List<int>>(
-              url,
-              options: Options(responseType: ResponseType.bytes),
-            );
-            if (response.data != null) {
-              return Uint8List.fromList(response.data!);
-            }
-          } catch (e) {
-            debugPrint('Failed to fetch image $url: $e');
-          }
-          return null;
-        });
-        
-        final results = await Future.wait(futures);
-        for (final bytes in results) {
-          if (bytes != null) {
-            imageBytesList.add(bytes);
-          }
-        }
-      }
-      propertyImagesMap[p.id] = imageBytesList;
-    }
 
     // Load PropKart brand logo asset
     Uint8List? logoBytes;

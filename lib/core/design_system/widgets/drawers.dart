@@ -2150,57 +2150,6 @@ Widget _buildAmenitiesCard(BuildContext context, List<String> amenities) {
         const SizedBox(height: CRMSpacing.s),
         Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
         const SizedBox(height: CRMSpacing.m),
-        _buildAmenitiesSection(context, '', amenities),
-      ],
-    ),
-  );
-}
-
-Widget _buildDescriptionRemarksCard(BuildContext context, PropertyModel p) {
-  final hasDesc = _isValidValue(p.description);
-  final hasRemarks = _isValidValue(p.remarks);
-
-  if (!hasDesc && !hasRemarks) return const SizedBox.shrink();
-
-  return CRMCard(
-    padding: const EdgeInsets.all(CRMSpacing.m),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Description & Remarks',
-          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: CRMSpacing.s),
-        Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
-        const SizedBox(height: CRMSpacing.s),
-        if (hasDesc) ...[
-          _buildTextSection(context, 'Description', p.description!),
-          const SizedBox(height: CRMSpacing.m),
-        ],
-        if (hasRemarks) ...[
-          _buildTextSection(context, 'Operational CRM Remarks', p.remarks!),
-        ],
-      ],
-    ),
-  );
-}
-
-Widget _buildAmenitiesCard(BuildContext context, List<String> amenities) {
-  if (amenities.isEmpty) return const SizedBox.shrink();
-
-  return CRMCard(
-    padding: const EdgeInsets.all(CRMSpacing.m),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Amenities',
-          style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: CRMSpacing.s),
-        Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
-        const SizedBox(height: CRMSpacing.m),
         _buildAmenitiesSection(context, 'Furnishings & Features', amenities),
       ],
     ),

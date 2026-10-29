@@ -1442,73 +1442,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   }
 
   @override
-  void didUpdateWidget(covariant RequirementsScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialTab != oldWidget.initialTab && widget.initialTab != null) {
-      final tabLower = widget.initialTab!.toLowerCase();
-      if (tabLower == 'follow-ups' || tabLower == 'followups') {
-        setState(() {
-          _activeMainTab = 'Follow-ups';
-        });
-        _refreshFollowupsFuture();
-      } else if (tabLower == 'my won' || tabLower == 'won') {
-        setState(() {
-          _activeMainTab = 'My Won';
-        });
-        _triggerFetch();
-      } else if (tabLower == 'leads') {
-        setState(() {
-          _activeMainTab = 'Leads';
-        });
-        _triggerFetch();
-      }
-    }
-    if (widget.initialSubTab != oldWidget.initialSubTab &&
-        widget.initialSubTab != null &&
-        widget.initialSubTab!.isNotEmpty) {
-      setState(() {
-        _selectedFollowupSubTab = widget.initialSubTab!;
-      });
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    try {
-      final uri = GoRouterState.of(context).uri;
-      final tabParam = uri.queryParameters['tab'];
-      if (tabParam != null) {
-        final tabLower = tabParam.toLowerCase();
-        String? targetTab;
-        if (tabLower == 'follow-ups' || tabLower == 'followups') {
-          targetTab = 'Follow-ups';
-        } else if (tabLower == 'my won' || tabLower == 'won') {
-          targetTab = 'My Won';
-        } else if (tabLower == 'leads') {
-          targetTab = 'Leads';
-        }
-        if (targetTab != null && targetTab != _activeMainTab) {
-          setState(() {
-            _activeMainTab = targetTab!;
-          });
-          if (targetTab == 'Follow-ups') {
-            _refreshFollowupsFuture();
-          } else {
-            _triggerFetch();
-          }
-        }
-      }
-      final subTabParam = uri.queryParameters['subTab'];
-      if (subTabParam != null && subTabParam.isNotEmpty && subTabParam != _selectedFollowupSubTab) {
-        setState(() {
-          _selectedFollowupSubTab = subTabParam;
-        });
-      }
-    } catch (_) {}
-  }
-
-  @override
   void dispose() {
     _searchDebounceTimer?.cancel();
     _searchController.removeListener(_onSearchChangedDebounced);
@@ -1921,9 +1854,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             context.read<RequirementsBloc>().add(
               PatchRequirementStatusEvent(baseReq.copyWith(status: 'Won')),
             );
-            await RequirementsRepository().updateRequirementFields(req.id, {
-              'status': 'Won',
-            });
 
             final selectedIds = selectedProperties.map((p) => p.id).toList();
             await PropertyDealClientStore.setWonRequirementProperties(req.id, selectedIds);
@@ -1986,9 +1916,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       context.read<RequirementsBloc>().add(
         PatchRequirementStatusEvent(updatedReq),
       );
-      RequirementsRepository().updateRequirementFields(req.id, {
-        'status': newStatus,
-      });
     }
   }
 
@@ -2016,6 +1943,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
   }
 
+  bool _sameStoredStatus(String localStatus, String serverStatus) {
+    String key(String value) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'assigned' || normalized == 'assigned to sales') return 'assigned';
+      if (normalized == 'site visit' || normalized == 'site visit sche.' || normalized == 'site visit scheduled') {
+        return 'site visit';
+      }
+      if (normalized == 'live' || normalized == 'active' || normalized == 'interested') return 'interested';
+      if (normalized == 'won' || normalized == 'closed' || normalized == 'deal won') return 'won';
+      return normalized;
+    }
+
+    return key(localStatus) == key(serverStatus);
+  }
+
+  RequirementModel _withServerAuthority(RequirementModel server, RequirementModel local) {
+    final serverName = server.assigneeName?.trim() ?? '';
+    if (serverName.isEmpty && (local.assigneeName?.trim().isNotEmpty ?? false)) {
+      return server.copyWith(assigneeName: local.assigneeName);
+    }
+    return server;
+  }
+
   List<RequirementModel> _withLocalRequirementOverrides(List<RequirementModel> source) {
     if (_localRequirementOverrides.isEmpty) return source;
     return source.map((r) {
@@ -2029,13 +1979,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       final remoteRemark = r.rejectionRemark ?? RequirementLocalRepository.getRejectionRemark(r.id);
       final bool remarkMatches = (localRemark == null || localRemark.trim().isEmpty) ||
           (remoteRemark != null && remoteRemark.trim() == localRemark.trim());
-      if (local.status == r.status &&
-          local.assignedTo == r.assignedTo &&
+      final serverStatus = r.status.trim();
+      final statusSettled = serverStatus.isEmpty || _sameStoredStatus(local.status, serverStatus);
+      final assignedSettled = (r.assignedTo ?? '') == (local.assignedTo ?? '');
+      if (statusSettled &&
+          assignedSettled &&
           localHandled == remoteHandled &&
           localReassign == remoteReassign &&
           remarkMatches) {
         _localRequirementOverrides.remove(r.id);
-        return r;
+        return _withServerAuthority(r, local);
+      }
+      if (serverStatus.isNotEmpty && !statusSettled) {
+        _localRequirementOverrides.remove(r.id);
+        return _withServerAuthority(r, local);
       }
       return local;
     }).toList();
@@ -4534,20 +4491,13 @@ _recomputeFilteredRequirements();
       salesAssignedAt: now,
     );
     _patchCachedRequirement(updated);
-    context.read<RequirementsBloc>().add(UpdateRequirementEvent(updated));
-
-    // Direct targeted field patch ensures immediate database persistence
-    RequirementsRepository().updateRequirementFields(req.id, {
-      'assigned_to': cleanAssigneeId,
-      'assignee_name': newSalesmanName ?? '',
-      'meta_custom_fields': nextCustomFields,
-      'sales_assigned_at': nowIso,
-    });
-
     final message = (cleanAssigneeId != null && newSalesmanName != null && newSalesmanName.isNotEmpty)
         ? 'Lead assigned to $newSalesmanName successfully.'
         : 'Lead unassigned successfully.';
-    AppStatusSnackBar.show(context, message: message, isSuccess: true);
+    context.read<RequirementsBloc>().add(UpdateRequirementEvent(
+      updated,
+      successMessage: message,
+    ));
   }
 
   bool _isLeadAssignedToSales(RequirementModel req) {
@@ -5879,8 +5829,7 @@ _recomputeFilteredRequirements();
     if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return 'Call Attempted';
     if (status == 'Not Interested') return 'Not Interested';
     if (status == 'Active' || status == 'Live' || status == 'Interested') return 'Interested';
-    if (status == 'Site Visit' || status == 'Site Visit Sche.') return 'Site Visit Sche.';
-    if (status == 'Site Visit Scheduled') return 'Site Visit Scheduled';
+    if (status == 'Site Visit' || status == 'Site Visit Sche.' || status == 'Site Visit Scheduled') return 'Site Visit Sche.';
     if (status == 'Site Visit Done') return 'Site Visit Done';
     if (status == 'Negotiation') return 'Negotiation';
     if (status == 'Closed' || status == 'Won' || status == 'Deal Won') return 'Won';
@@ -7170,12 +7119,9 @@ _recomputeFilteredRequirements();
                                   anchorContext.read<RequirementsBloc>().add(
                                     UpdateRequirementEvent(
                                       req.copyWith(notes: updatedNotes),
+                                      patch: {'notes': updatedNotes, 'new_note': formattedEntry},
+                                      successMessage: 'Note saved.',
                                     ),
-                                  );
-
-                                  await RequirementsRepository().updateRequirementFields(
-                                    req.id,
-                                    {'notes': updatedNotes, 'new_note': formattedEntry},
                                   );
 
                                   if (Navigator.of(sheetContext).canPop()) {
@@ -7416,12 +7362,9 @@ _recomputeFilteredRequirements();
                                                 context.read<RequirementsBloc>().add(
                                                   UpdateRequirementEvent(
                                                     req.copyWith(notes: updatedNotes),
+                                                    patch: {'notes': updatedNotes, 'new_note': formattedEntry},
+                                                    successMessage: 'Note saved.',
                                                   ),
-                                                );
-
-                                                await RequirementsRepository().updateRequirementFields(
-                                                  req.id,
-                                                  {'notes': updatedNotes, 'new_note': formattedEntry},
                                                 );
 
                                                 _removeNotesPopover();
@@ -7504,15 +7447,15 @@ _recomputeFilteredRequirements();
           requirement: req,
           onSave: (updatedNotes, updatedReqModel, newNote, [deletedNote]) async {
             context.read<RequirementsBloc>().add(
-              UpdateRequirementEvent(updatedReqModel),
-            );
-            await RequirementsRepository().updateRequirementFields(
-              req.id,
-              {
-                'notes': updatedNotes,
-                if (newNote != null && newNote.isNotEmpty) 'new_note': newNote,
-                if (deletedNote != null && deletedNote.isNotEmpty) 'deleted_note': deletedNote,
-              },
+              UpdateRequirementEvent(
+                updatedReqModel,
+                patch: {
+                  'notes': updatedNotes,
+                  if (newNote != null && newNote.isNotEmpty) 'new_note': newNote,
+                  if (deletedNote != null && deletedNote.isNotEmpty) 'deleted_note': deletedNote,
+                },
+                successMessage: 'Note saved.',
+              ),
             );
             if (mounted) {
               setState(() {
@@ -10297,7 +10240,16 @@ _recomputeFilteredRequirements();
         } else if (status == 'Interested') {
           _changeStatus(req, 'Interested');
           if (f.id.isNotEmpty && !f.id.startsWith('local_') && !f.id.startsWith('fallback_')) {
-            RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError((_) {});
+            RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError((e) {
+              debugPrint('Follow-up could not be marked complete: $e');
+              if (mounted) {
+                AppStatusSnackBar.show(
+                  context,
+                  message: 'Lead status saved, but the follow-up could not be marked complete.',
+                  isSuccess: false,
+                );
+              }
+            });
           }
           _refreshFollowupsFuture();
           if (mounted) setState(() {});
@@ -10309,7 +10261,16 @@ _recomputeFilteredRequirements();
           } else {
             _changeStatus(req, status);
             if (f.id.isNotEmpty && !f.id.startsWith('local_') && !f.id.startsWith('fallback_')) {
-              RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError((_) {});
+              RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError((e) {
+              debugPrint('Follow-up could not be marked complete: $e');
+              if (mounted) {
+                AppStatusSnackBar.show(
+                  context,
+                  message: 'Lead status saved, but the follow-up could not be marked complete.',
+                  isSuccess: false,
+                );
+              }
+            });
             }
             _refreshFollowupsFuture();
             if (mounted) setState(() {});
@@ -14410,8 +14371,7 @@ String displayStatusLabel(String status) {
   if (status == 'New') return 'New';
   if (status == 'Not Interested') return 'Not Interested';
   if (status == 'Live' || status == 'Active' || status == 'Interested') return 'Interested';
-  if (status == 'Site Visit' || status == 'Site Visit Sche.') return 'Site Visit Sche.';
-  if (status == 'Site Visit Scheduled') return 'Site Visit Scheduled';
+  if (status == 'Site Visit' || status == 'Site Visit Sche.' || status == 'Site Visit Scheduled') return 'Site Visit Sche.';
   if (status == 'Site Visit Done') return 'Site Visit Done';
   if (status == 'Negotiation') return 'Negotiation';
   if (status == 'Dead' || status == 'Suspended') return 'Not Interested';

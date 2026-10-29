@@ -1310,7 +1310,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
       );
     }
-  }
 
     // 2. Total Leads (Independent of filters: Clickable Drilldown)
     if (enableLeads) {

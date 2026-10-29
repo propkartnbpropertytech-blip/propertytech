@@ -370,11 +370,8 @@ class RequirementsRepository {
       };
     }
 
-    final submittedStatus = submitted.status.trim();
     final incomingStatus = incoming.status.trim();
-    final preservedStatus = submittedStatus.isNotEmpty
-        ? submitted.status
-        : (incomingStatus.isNotEmpty ? incoming.status : submitted.status);
+    final preservedStatus = incomingStatus.isNotEmpty ? incoming.status : submitted.status;
 
     final merged = incoming.copyWith(
       adminId: keep(incoming.adminId, submitted.adminId),
@@ -481,7 +478,11 @@ class RequirementsRepository {
       if (freshJson != null) {
         final fresh = RequirementModel.fromJson(freshJson);
         final localItem = fresh.toLocal();
-        _applyRequirementFieldPatch(localItem, data);
+        final patch = Map<String, dynamic>.from(data);
+        if (fresh.status.trim().isNotEmpty) {
+          patch.remove('status');
+        }
+        _applyRequirementFieldPatch(localItem, patch);
         await _coordinator.requirementLocal.saveRequirements([localItem]);
       } else {
         final existingList = await _coordinator.requirementLocal.getRequirements();
@@ -503,6 +504,7 @@ class RequirementsRepository {
         await _coordinator.requirementLocal.saveRequirements([match]);
       }
       _coordinator.refreshRequirements();
+      rethrow;
     }
   }
 
