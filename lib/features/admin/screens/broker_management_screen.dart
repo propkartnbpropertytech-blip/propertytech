@@ -36,10 +36,22 @@ class _BrokerManagementScreenState extends State<BrokerManagementScreen> {
 
     try {
       final orgsFuture = DioClient.dio.get('/subscriptions/organizations');
-      final plansFuture = DioClient.dio.get('/subscriptions/plans');
-      final controlsFuture = DioClient.dio.get('/permissions/controls');
-      final requestsFuture = DioClient.dio.get('/subscriptions/requests');
-      final contactsFuture = DioClient.dio.get('/subscriptions/support-contacts');
+      final plansFuture = DioClient.dio.get('/subscriptions/plans').catchError((e) {
+        debugPrint('Error loading plans: $e');
+        return Response(requestOptions: RequestOptions(path: '/subscriptions/plans'), statusCode: 500);
+      });
+      final controlsFuture = DioClient.dio.get('/permissions/controls').catchError((e) {
+        debugPrint('Error loading controls: $e');
+        return Response(requestOptions: RequestOptions(path: '/permissions/controls'), statusCode: 500);
+      });
+      final requestsFuture = DioClient.dio.get('/subscriptions/requests').catchError((e) {
+        debugPrint('Error loading onboarding requests: $e');
+        return Response(requestOptions: RequestOptions(path: '/subscriptions/requests'), statusCode: 500);
+      });
+      final contactsFuture = DioClient.dio.get('/subscriptions/support-contacts').catchError((e) {
+        debugPrint('Error loading support contacts: $e');
+        return Response(requestOptions: RequestOptions(path: '/subscriptions/support-contacts'), statusCode: 500);
+      });
 
       final results = await Future.wait([orgsFuture, plansFuture, controlsFuture, requestsFuture, contactsFuture]);
 
@@ -718,12 +730,12 @@ class _BrokerManagementScreenState extends State<BrokerManagementScreen> {
   Widget _buildRequestCard(Map<String, dynamic> req) {
     final id = (req['id'] ?? '').toString();
     final ref = id.length >= 8 ? id.substring(0, 8).toUpperCase() : id;
-    final fullName = req['full_name'] ?? 'Prospective Broker';
-    final brokerageName = req['brokerage_name'] ?? 'Unnamed Agency';
-    final email = req['email'] ?? '—';
-    final mobile = req['mobile'] ?? '—';
+    final fullName = req['full_name'] ?? req['admin_name'] ?? 'Prospective Broker';
+    final brokerageName = req['brokerage_name'] ?? req['organization_name'] ?? 'Unnamed Agency';
+    final email = req['email'] ?? req['admin_email'] ?? '—';
+    final mobile = req['mobile'] ?? req['admin_phone'] ?? '—';
     final city = req['city'] ?? '—';
-    final planName = req['plan_name'] ?? 'Standard Tier';
+    final planName = req['plan_name'] ?? req['selected_plan_name'] ?? 'Standard Tier';
     final price = req['price'] != null ? '₹${req['price']}/mo' : '';
     final status = (req['status'] ?? 'PENDING').toString().toUpperCase();
     final emailStatus = (req['email_status'] ?? 'QUEUED').toString().toUpperCase();
