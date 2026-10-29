@@ -1226,4 +1226,43 @@ class RequirementModel {
 
   /// Exact date and time to display: transfer date for transferred leads, else creation date.
   DateTime get effectiveDate => (salesAssignedAt ?? createdAt).toLocal();
+}
+
+String _requirementStatusKey(String value) {
+  final normalized = value.trim().toLowerCase();
+  if (normalized == 'assigned' || normalized == 'assigned to sales') return 'assigned';
+  if (normalized == 'site visit' || normalized == 'site visit sche.' || normalized == 'site visit scheduled') {
+    return 'site visit';
+  }
+  if (normalized == 'live' || normalized == 'active' || normalized == 'interested') return 'interested';
+  if (normalized == 'won' || normalized == 'closed' || normalized == 'deal won') return 'won';
+  return normalized;
+}
+
+bool _isAssignedRequirementStatus(String value) {
+  final normalized = value.trim().toLowerCase();
+  return normalized == 'assigned' || normalized == 'assigned to sales';
+}
+
+bool _isTerminalRequirementStatus(String value) {
+  final normalized = value.trim().toLowerCase();
+  return normalized.contains('won') ||
+      normalized.contains('closed') ||
+      normalized.contains('reject') ||
+      normalized.contains('not interested');
+}
+
+/// A sales status change must not be replaced by the generic Assigned value
+/// that the lead sync writes. A terminal server status still wins.
+String resolveStoredRequirementStatus(String chosen, String incoming) {
+  final chosenTrim = chosen.trim();
+  final incomingTrim = incoming.trim();
+  if (chosenTrim.isEmpty) return incomingTrim;
+  if (incomingTrim.isEmpty) return chosenTrim;
+  if (_requirementStatusKey(chosenTrim) == _requirementStatusKey(incomingTrim)) return incomingTrim;
+  if (_isTerminalRequirementStatus(incomingTrim)) return incomingTrim;
+  if (_isAssignedRequirementStatus(incomingTrim) && !_isAssignedRequirementStatus(chosenTrim)) {
+    return chosenTrim;
+  }
+  return incomingTrim;
 }

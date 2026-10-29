@@ -370,8 +370,7 @@ class RequirementsRepository {
       };
     }
 
-    final incomingStatus = incoming.status.trim();
-    final preservedStatus = incomingStatus.isNotEmpty ? incoming.status : submitted.status;
+    final preservedStatus = resolveStoredRequirementStatus(submitted.status, incoming.status);
 
     final merged = incoming.copyWith(
       adminId: keep(incoming.adminId, submitted.adminId),
@@ -427,7 +426,7 @@ class RequirementsRepository {
       await _coordinator.outboxLocal.queueRequest(outboxItem);
 
       _coordinator.refreshRequirements();
-      return req;
+      rethrow;
     }
   }
 

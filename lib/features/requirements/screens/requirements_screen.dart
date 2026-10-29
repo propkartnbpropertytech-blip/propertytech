@@ -1980,6 +1980,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       final bool remarkMatches = (localRemark == null || localRemark.trim().isEmpty) ||
           (remoteRemark != null && remoteRemark.trim() == localRemark.trim());
       final serverStatus = r.status.trim();
+      final resolvedStatus = resolveStoredRequirementStatus(local.status, serverStatus);
       final statusSettled = serverStatus.isEmpty || _sameStoredStatus(local.status, serverStatus);
       final assignedSettled = (r.assignedTo ?? '') == (local.assignedTo ?? '');
       if (statusSettled &&
@@ -1990,7 +1991,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _localRequirementOverrides.remove(r.id);
         return _withServerAuthority(r, local);
       }
-      if (serverStatus.isNotEmpty && !statusSettled) {
+      if (serverStatus.isNotEmpty && !statusSettled && _sameStoredStatus(resolvedStatus, serverStatus)) {
         _localRequirementOverrides.remove(r.id);
         return _withServerAuthority(r, local);
       }
