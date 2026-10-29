@@ -4572,6 +4572,35 @@ function onFormSubmit(e) {
     }
   }
 
+  Future<Map<String, dynamic>> transferCampaignLeadToSales(
+    String leadId, {
+    required String toSalesUserId,
+    required String toSalesUserName,
+    String? reason,
+  }) async {
+    try {
+      await _apiClient.post(ApiConstants.adminTransferCampaignLeadToSales, {
+        'leadId': leadId,
+        'toSalesUserId': toSalesUserId,
+        if ((reason ?? '').trim().isNotEmpty) 'reason': reason!.trim(),
+      });
+      await fetchServerLeads(resetWithServer: true);
+      return {'success': true, 'message': 'Lead transferred to $toSalesUserName'};
+    } catch (e) {
+      debugPrint('[IntegrationService] sales transfer failed for $leadId: $e');
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null && data['message'].toString().trim().isNotEmpty) {
+          return {'success': false, 'message': data['message'].toString()};
+        }
+        if (e.response?.statusCode != null) {
+          return {'success': false, 'message': 'Failed to transfer lead (HTTP ${e.response!.statusCode}).'};
+        }
+      }
+      return {'success': false, 'message': 'Failed to transfer lead. Please try again.'};
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getSalesUsersForTransfer() async {
     try {
       final res = await _apiClient.get('/telecaller/sales-users');

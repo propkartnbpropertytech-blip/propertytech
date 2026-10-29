@@ -768,11 +768,19 @@ class RequirementFilterEngine {
     // Sort: Rejected tab uses sortDateMillis (rejectedAt ?? salesAssignedAt ?? createdAt)
     // Other tabs use normalSortDateMillis (salesAssignedAt ?? createdAt)
     if (isRejectedTab) {
-      filtered.sort((a, b) => b.sortDateMillis.compareTo(a.sortDateMillis));
+      filtered.sort((a, b) => _thenStableOrder(a, b, b.sortDateMillis.compareTo(a.sortDateMillis)));
     } else {
-      filtered.sort((a, b) => b.normalSortDateMillis.compareTo(a.normalSortDateMillis));
+      filtered.sort((a, b) => _thenStableOrder(a, b, b.normalSortDateMillis.compareTo(a.normalSortDateMillis)));
     }
 
     return filtered;
+  }
+
+  // List.sort is not stable, so equal dates need a fixed tie-break or rows swap between loads.
+  static int _thenStableOrder(RequirementListItemViewModel a, RequirementListItemViewModel b, int primary) {
+    if (primary != 0) return primary;
+    final created = b.requirement.createdAt.compareTo(a.requirement.createdAt);
+    if (created != 0) return created;
+    return a.requirement.id.compareTo(b.requirement.id);
   }
 }

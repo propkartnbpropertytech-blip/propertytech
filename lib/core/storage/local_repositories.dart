@@ -482,6 +482,8 @@ class RequirementLocalRepository {
         'metaCustomFields': metaCustomFieldsById[item.id],
       if (rejectionRemarksById[item.id] != null)
         'rejectionRemark': rejectionRemarksById[item.id],
+      if (salesAssignedAtById[item.id] != null)
+        'salesAssignedAt': salesAssignedAtById[item.id]!.toIso8601String(),
     };
   }
 
@@ -531,6 +533,10 @@ class RequirementLocalRepository {
     }
     if (map['rejectionRemark'] != null) {
       rememberRejectionRemark(r.id, map['rejectionRemark']?.toString());
+    }
+    final rawSalesAssignedAt = map['salesAssignedAt']?.toString().trim() ?? '';
+    if (rawSalesAssignedAt.isNotEmpty) {
+      rememberSalesAssignedAt(r.id, DateTime.tryParse(rawSalesAssignedAt));
     }
     return r;
   }

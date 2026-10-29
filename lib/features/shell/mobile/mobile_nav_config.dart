@@ -328,7 +328,7 @@ class MobileNavConfig {
           if (RoleGuard.isSuperAdmin(role)) ...[
             const MobileMoreEntry(
               id: 'permissions_studio',
-              label: 'Permissions Studio',
+              label: 'Permission Matrix',
               icon: Icons.security_rounded,
               route: '/admin/permissions',
             ),

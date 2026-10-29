@@ -17,7 +17,6 @@ import '../../../core/theme/theme_presets.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
 import 'kpi_config_screen.dart';
-import '../widgets/permission_matrix_card.dart';
 import '../widgets/backup_management_card.dart';
 import '../widgets/page_control_settings_card.dart';
 import '../services/page_control_service.dart';
@@ -1691,8 +1690,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (isAdminOrSuperAdmin)
         const _SettingsNavItem(id: 'kpi_config', label: 'KPI Configuration', icon: Icons.dashboard_customize_outlined),
       if (isSuperAdmin)
-        const _SettingsNavItem(id: 'permissions', label: 'Permission Matrix', icon: Icons.admin_panel_settings_rounded),
-      if (isSuperAdmin)
         const _SettingsNavItem(id: 'backups', label: 'Automated Backups', icon: Icons.cloud_download_rounded),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
@@ -1741,9 +1738,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildUploadLimitsSection();
         case 'kpi_config':
           return const KpiConfigScreen(isEmbedded: true);
-        case 'permissions':
-          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
-          return const PermissionMatrixCard();
         case 'backups':
           if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
           return const BackupManagementCard();
@@ -1985,16 +1979,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             if (isSuperAdmin) ...[
-              const Divider(height: 1, indent: 48),
-              _buildMobileSettingsTile(
-                icon: Icons.admin_panel_settings_rounded,
-                title: 'Permission Matrix',
-                subtitle: 'Role-based access permissions',
-                onTap: () {
-                  _setActiveSection('permissions');
-                  setState(() => _mobileActiveSection = 'permissions');
-                },
-              ),
               const Divider(height: 1, indent: 48),
               _buildMobileSettingsTile(
                 icon: Icons.cloud_download_rounded,

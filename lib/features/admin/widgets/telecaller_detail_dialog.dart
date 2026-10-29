@@ -2210,6 +2210,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                                         _selectedCategoryName = catName;
                                       }
                                     });
+                                    if (widget.isSales) return;
                                     final leadsToShow = catLeads.isNotEmpty
                                         ? catLeads
                                         : _getFilteredCategoryLeads(campId, campName, catName);
@@ -2525,9 +2526,36 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     );
   }
 
+  /// Lead ids the backend counted for the selected campaign category chip, or null if not found.
+  Set<String>? _selectedCategoryLeadIds() {
+    final targetKey = (_selectedCampaignKey ?? '').toUpperCase();
+    final targetName = (_selectedCampaignName ?? '').toUpperCase();
+    final targetCat = (_selectedCategoryName ?? '').toUpperCase();
+    final rawCampaigns = _data?['campaignAllocations'] as List<dynamic>? ?? [];
+    for (final camp in rawCampaigns) {
+      if (camp is! Map) continue;
+      final cId = (camp['campaignId'] ?? '').toString().toUpperCase();
+      final cName = (camp['campaignName'] ?? '').toString().toUpperCase();
+      if (!((targetKey.isNotEmpty && cId == targetKey) || (targetName.isNotEmpty && cName == targetName))) continue;
+      for (final cat in (camp['categories'] as List<dynamic>? ?? [])) {
+        if (cat is! Map || (cat['categoryName'] ?? '').toString().toUpperCase() != targetCat) continue;
+        return (cat['leads'] as List<dynamic>? ?? [])
+            .whereType<Map>()
+            .map((l) => l['id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
+      }
+    }
+    return null;
+  }
+
   List<Map<String, dynamic>> _filterSalesDirectLeads(List<dynamic> leadsList) {
     final list = leadsList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     if (_selectedCategoryName == null) return list;
+    final categoryLeadIds = _selectedCategoryLeadIds();
+    if (categoryLeadIds != null) {
+      return list.where((lead) => categoryLeadIds.contains(lead['id']?.toString())).toList();
+    }
     return list.where((lead) {
       final leadCamp = (lead['campaignId'] ?? lead['campaign'] ?? lead['source'] ?? '').toString().toUpperCase();
       final targetCampKey = (_selectedCampaignKey ?? '').toUpperCase();

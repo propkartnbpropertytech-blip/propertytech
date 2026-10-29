@@ -3,6 +3,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/security/access_control_bloc.dart';
+import '../../settings/widgets/permission_matrix_card.dart';
 
 class PermissionMatrixStudioScreen extends StatefulWidget {
   const PermissionMatrixStudioScreen({super.key});
@@ -22,9 +23,8 @@ class _PermissionMatrixStudioScreenState
   // Role Matrix Data
   List<dynamic> _controls = [];
   Map<String, dynamic> _roleAssignments = {};
-  final List<String> _roles = ['Broker', 'Admin', 'Telecaller', 'Sales'];
-  String _searchQuery = '';
-  String _selectedModule = 'All';
+  final String _searchQuery = '';
+  final String _selectedModule = 'All';
 
   // Specific User Overrides Data
   List<dynamic> _usersList = [];
@@ -113,34 +113,6 @@ class _PermissionMatrixStudioScreenState
     }
   }
 
-  Future<void> _toggleRoleControl(
-      String role, String controlKey, bool currentValue) async {
-    final newValue = !currentValue;
-    // Optimistic UI update
-    setState(() {
-      if (_roleAssignments[role] == null) {
-        _roleAssignments[role] = <String, dynamic>{};
-      }
-      _roleAssignments[role][controlKey] = newValue;
-    });
-
-    try {
-      await DioClient.dio.post('/permissions/matrix/role-control', data: {
-        'roleName': role,
-        'controlKey': controlKey,
-        'isEnabled': newValue,
-      });
-      // Refresh current user's local controls if impacted
-      AccessControlBloc.instance.add(const RefreshAccessControlsEvent());
-    } catch (e) {
-      // Revert on error
-      setState(() {
-        _roleAssignments[role][controlKey] = currentValue;
-      });
-      _showSnackbar('Failed to update $role control: $e', isError: true);
-    }
-  }
-
   Future<void> _toggleUserOverride(
       String userId, String controlKey, bool effectiveValue) async {
     final newEnabled = !effectiveValue;
@@ -217,15 +189,6 @@ class _PermissionMatrixStudioScreenState
     }).toList();
   }
 
-  Set<String> get _modulesList {
-    final set = <String>{'All'};
-    for (final c in _controls) {
-      final m = (c['module'] ?? '').toString();
-      if (m.isNotEmpty) set.add(m);
-    }
-    return set;
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -276,202 +239,9 @@ class _PermissionMatrixStudioScreenState
 
   // ── Tab 1: Role Permission Matrix ──────────────────────────────────────────
   Widget _buildRoleMatrixTab(bool isDark) {
-    return Column(
-      children: [
-        _buildFilterHeader(isDark),
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(CRMSpacing.m),
-            itemCount: _filteredControls.length,
-            separatorBuilder: (_, __) => const SizedBox(height: CRMSpacing.xs),
-            itemBuilder: (context, index) {
-              final control = _filteredControls[index];
-              return _buildControlRow(control, isDark);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterHeader(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(CRMSpacing.m),
-      color: isDark ? const Color(0xFF1E242C) : Colors.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Search any page, action, button, filter, or engine...',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    filled: true,
-                    fillColor: isDark ? const Color(0xFF14181E) : const Color(0xFFF1F3F5),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                  ),
-                  onChanged: (val) => setState(() => _searchQuery = val),
-                ),
-              ),
-              const SizedBox(width: CRMSpacing.m),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded),
-                tooltip: 'Reload Matrix',
-                onPressed: _loadMatrixData,
-              ),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.s),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _modulesList.map((mod) {
-                final isSelected = _selectedModule.toLowerCase() == mod.toLowerCase();
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: FilterChip(
-                    label: Text(mod.toUpperCase()),
-                    selected: isSelected,
-                    onSelected: (_) => setState(() => _selectedModule = mod),
-                    selectedColor: CRMColors.primary.withValues(alpha: 0.2),
-                    checkmarkColor: CRMColors.primary,
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControlRow(dynamic control, bool isDark) {
-    final key = (control['control_key'] ?? '').toString();
-    final title = (control['title'] ?? '').toString();
-    final type = (control['control_type'] ?? 'action').toString();
-    final desc = (control['description'] ?? '').toString();
-
-    return Container(
-      padding: const EdgeInsets.all(CRMSpacing.m),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E242C) : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isDark ? const Color(0xFF2E3844) : const Color(0xFFE9ECEF),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _buildTypeBadge(type),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                ),
-              ),
-              Text(
-                key,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontFamily: 'monospace',
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-          if (desc.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              desc,
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? Colors.grey[400] : Colors.grey[600],
-              ),
-            ),
-          ],
-          const Divider(height: 20),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                // Super Admin is locked 100% on
-                _buildRoleTogglePill('Super Admin', true, isLocked: true),
-                const SizedBox(width: 12),
-                for (final role in _roles) ...[
-                  _buildRoleTogglePill(
-                    role,
-                    _roleAssignments[role]?[key] == true,
-                    onTap: () => _toggleRoleControl(
-                      role,
-                      key,
-                      _roleAssignments[role]?[key] == true,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleTogglePill(
-    String role,
-    bool isEnabled, {
-    VoidCallback? onTap,
-    bool isLocked = false,
-  }) {
-    return InkWell(
-      onTap: isLocked ? null : onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isEnabled
-              ? CRMColors.success.withValues(alpha: 0.15)
-              : Colors.grey.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isEnabled ? CRMColors.success : Colors.grey,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isLocked
-                  ? Icons.lock_rounded
-                  : (isEnabled
-                      ? Icons.check_circle_rounded
-                      : Icons.cancel_outlined),
-              size: 16,
-              color: isEnabled ? CRMColors.success : Colors.grey,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              role,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: isEnabled ? CRMColors.success : Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const SingleChildScrollView(
+      padding: EdgeInsets.all(CRMSpacing.m),
+      child: PermissionMatrixCard(),
     );
   }
 
@@ -537,10 +307,25 @@ class _PermissionMatrixStudioScreenState
     );
   }
 
+  String _roleOf(Map? u) {
+    final roles = u?['roles'];
+    final role = (roles is Map ? roles['name'] : null) ?? u?['role'] ?? u?['role_name'];
+    final s = role?.toString().trim() ?? '';
+    return s.isEmpty ? 'Sales' : s;
+  }
+
   Widget _buildUserSelector(bool isDark) {
-    final userRole = _selectedUser?['role']?.toString() ??
-        _selectedUser?['role_name']?.toString() ??
-        'Sales';
+    final userRole = _roleOf(_selectedUser);
+    final seenIds = <String>{};
+    final userItems = <DropdownMenuItem<String>>[];
+    for (final raw in _usersList) {
+      if (raw is! Map) continue;
+      final id = raw['id']?.toString() ?? '';
+      if (id.isEmpty || !seenIds.add(id)) continue;
+      final name = raw['full_name'] ?? raw['email'] ?? 'User';
+      userItems.add(DropdownMenuItem<String>(value: id, child: Text('$name (${_roleOf(raw)})')));
+    }
+    final selectedId = _selectedUser?['id']?.toString();
 
     return Container(
       padding: const EdgeInsets.all(CRMSpacing.m),
@@ -551,27 +336,31 @@ class _PermissionMatrixStudioScreenState
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<Map<String, dynamic>>(
-                  value: _selectedUser,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('user_select_${userItems.length}'),
+                  initialValue: seenIds.contains(selectedId) ? selectedId : null,
+                  isExpanded: true,
                   decoration: InputDecoration(
                     labelText: 'Select Employee / User',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
-                  items: _usersList.map((raw) {
-                    final u = Map<String, dynamic>.from(raw as Map);
-                    final name = u['full_name'] ?? u['email'] ?? 'User';
-                    final role = u['role'] ?? u['role_name'] ?? '';
-                    return DropdownMenuItem<Map<String, dynamic>>(
-                      value: u,
-                      child: Text('$name ($role)'),
-                    );
-                  }).toList(),
-                  onChanged: (u) {
-                    setState(() => _selectedUser = u);
-                    if (u != null && u['id'] != null) {
-                      _loadUserOverrides(u['id'].toString());
+                  items: userItems,
+                  onChanged: (id) {
+                    if (id == null) return;
+                    Map? raw;
+                    for (final u in _usersList) {
+                      if (u is Map && u['id']?.toString() == id) {
+                        raw = u;
+                        break;
+                      }
                     }
+                    if (raw == null) return;
+                    setState(() {
+                      _selectedUser = Map<String, dynamic>.from(raw!);
+                      _userOverrides = {};
+                    });
+                    _loadUserOverrides(id);
                   },
                 ),
               ),
@@ -617,9 +406,7 @@ class _PermissionMatrixStudioScreenState
     final type = (control['control_type'] ?? 'action').toString();
     final desc = (control['description'] ?? '').toString();
 
-    final userRole = _selectedUser?['role']?.toString() ??
-        _selectedUser?['role_name']?.toString() ??
-        'Sales';
+    final userRole = _roleOf(_selectedUser);
 
     final roleDefaultEnabled = _roleAssignments[userRole]?[key] == true;
     final hasOverride = _userOverrides.containsKey(key);

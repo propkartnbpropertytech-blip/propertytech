@@ -16,6 +16,7 @@ import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
 import '../../features/users/screens/employee_detail_screen.dart';
+import '../../features/users/screens/user_tree_screen.dart';
 import '../../features/requirements/screens/requirements_screen.dart';
 import '../../splash.dart';
 import '../../get_started_screen.dart';
@@ -344,6 +345,20 @@ class AppRouter {
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
               child: const UsersScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/users/tree',
+            redirect: (context, state) {
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (!RoleGuard.isAdmin(role)) {
+                return '/users';
+              }
+              return null;
+            },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const UserTreeScreen(),
             ),
           ),
           GoRoute(

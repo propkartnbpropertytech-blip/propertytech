@@ -54,12 +54,14 @@ class ApiConstants {
   static String adminAllocationCategoryToggle(String id) => "/admin/allocation-config/category-allocation/$id/toggle";
   static String adminAllocationCategoryDelete(String id) => "/admin/allocation-config/category-allocation/$id";
   static const adminAllocationCategoryBatch = "/admin/allocation-config/category-allocations-batch";
+  static const adminAllocationCategoryCopy = "/admin/allocation-config/category-allocations-copy";
   static const salesAvailability = "/sales/availability";
   static const salesHeartbeat = "/sales/heartbeat";
   static const adminAllocationMonitor = "/admin/allocation-monitor";
   static const adminAllocationEngineToggle = "/admin/allocation-engine/toggle";
   static const adminAllocationEngineStatus = "/admin/allocation-engine/status";
   static const adminReassignLead = "/admin/reassign-lead";
+  static const adminTransferCampaignLeadToSales = "/admin/campaign-leads/transfer-to-sales";
   static const adminAllocateOldLeads = "/admin/allocate-old-leads";
   static const adminTokenExpiration = "/admin/token-expiration";
   static const adminRecoverStaleLeads = "/admin/recover-stale-leads";

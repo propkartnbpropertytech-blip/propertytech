@@ -3280,7 +3280,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                     controlKey: 'page.settings.audit_logs',
                     child: _buildSidebarItem(
                       Icons.security_rounded,
-                      'Permissions Studio',
+                      'Permission Matrix',
                       '/admin/permissions',
                       currentPath,
                       isMobile,

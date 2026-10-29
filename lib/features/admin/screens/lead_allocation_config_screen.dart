@@ -307,6 +307,163 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     }
   }
 
+  int _salesAllocationCount(String campaignId) {
+    final camp = campaignId.trim().toUpperCase();
+    return _categoryAllocations.where((a) {
+      return (a['role'] ?? '').toString().toUpperCase() == 'SALES' &&
+          (a['campaign_id'] ?? '').toString().toUpperCase() == camp;
+    }).length;
+  }
+
+  /// "Same As": pick another campaign and copy its Salesperson allocation to this campaign.
+  Future<void> _showSameAsDialog(String targetCampaignId, String targetCampaignName) async {
+    final sources = _campaigns
+        .where((c) => (c['id'] ?? '').toString().trim().toUpperCase() != targetCampaignId.trim().toUpperCase())
+        .toList();
+    String? selectedId;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          String selectedName = '';
+          for (final c in sources) {
+            if ((c['id'] ?? '').toString() == selectedId) {
+              selectedName = c['name']?.toString() ?? selectedId!;
+            }
+          }
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('Same As — $targetCampaignName'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Select a campaign to copy its Salesperson allocation from.',
+                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+                  if (sources.isEmpty)
+                    const Text(
+                      'No other campaign is available.',
+                      style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: sources.map((c) {
+                            final id = (c['id'] ?? '').toString();
+                            final name = c['name']?.toString() ?? id;
+                            final count = _salesAllocationCount(id);
+                            final hasAssignments = count > 0;
+                            final isSelected = selectedId == id;
+                            return ListTile(
+                              onTap: hasAssignments ? () => setDialogState(() => selectedId = id) : null,
+                              enabled: hasAssignments,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                                color: isSelected ? const Color(0xFF10B981) : Colors.grey,
+                              ),
+                              title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              subtitle: Text(
+                                hasAssignments ? '$count Salesperson assignment${count == 1 ? '' : 's'}' : 'No Salesperson assigned',
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  if (selectedId != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Salesperson assignments of $targetCampaignName will be replaced with those of $selectedName. Telecaller settings are not changed.',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFFB45309), height: 1.35),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: selectedId == null ? null : () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                child: const Text('Apply'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true || selectedId == null || !mounted) return;
+    await _copySalesAllocationFrom(selectedId!, targetCampaignId, targetCampaignName);
+  }
+
+  Future<void> _copySalesAllocationFrom(String sourceCampaignId, String targetCampaignId, String targetCampaignName) async {
+    final pendingKey = 'same_as_$targetCampaignId';
+    setState(() => _pendingActionIds.add(pendingKey));
+    try {
+      final res = await DioClient.dio.post(
+        ApiConstants.adminAllocationCategoryCopy,
+        data: {
+          'sourceCampaignId': sourceCampaignId,
+          'targetCampaignId': targetCampaignId,
+        },
+      );
+      final payload = res.data is Map ? res.data as Map : {};
+      final data = payload['data'] is Map ? payload['data'] as Map : {};
+      final copied = (data['allocations'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (!mounted) return;
+      final target = targetCampaignId.trim().toUpperCase();
+      setState(() {
+        _categoryAllocations.removeWhere((a) =>
+            (a['role'] ?? '').toString().toUpperCase() == 'SALES' &&
+            (a['campaign_id'] ?? '').toString().toUpperCase() == target);
+        _categoryAllocations.addAll(copied);
+        _pendingActionIds.remove(pendingKey);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Salesperson allocation copied to $targetCampaignName.'),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _pendingActionIds.remove(pendingKey));
+      var message = 'Failed to copy Salesperson allocation.';
+      if (e is DioException) {
+        final body = e.response?.data;
+        if (body is Map && (body['message']?.toString().trim().isNotEmpty ?? false)) {
+          message = body['message'].toString();
+        }
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
 
   /// Toggle a salesperson's individual lead allocation availability ON / OFF
   Future<void> _toggleSalespersonAvailability(String userId, String userName, bool newStatus) async {
@@ -1965,6 +2122,27 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       color: totalAssigned > 0 ? const Color(0xFF10B981) : Colors.grey,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Copy Salesperson allocation from another campaign',
+                  child: OutlinedButton.icon(
+                    onPressed: _pendingActionIds.contains('same_as_$campId')
+                        ? null
+                        : () => _showSameAsDialog(campId, campName),
+                    icon: _pendingActionIds.contains('same_as_$campId')
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.copy_all_rounded, size: 14),
+                    label: const Text('Same As', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF10B981),
+                      side: BorderSide(color: const Color(0xFF10B981).withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ),

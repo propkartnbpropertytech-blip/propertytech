@@ -711,6 +711,18 @@ class _UsersScreenState extends State<UsersScreen> {
 
               // 2. Statistics Overview Cards
               _buildStatisticsRow(),
+              if (authState is Authenticated &&
+                  (authState.user.role == 'Super Admin' || authState.user.role == 'Admin')) ...[
+                const SizedBox(height: CRMSpacing.s),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    onPressed: () => context.go('/users/tree'),
+                    icon: const Icon(Icons.account_tree_rounded, size: 18),
+                    label: Text(authState.user.role == 'Super Admin' ? 'User Tree' : 'Employee Tree'),
+                  ),
+                ),
+              ],
               const SizedBox(height: CRMSpacing.l),
 
               // TabBar for Admin & Super Admin

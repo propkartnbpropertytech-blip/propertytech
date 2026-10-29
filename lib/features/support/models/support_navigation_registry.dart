@@ -722,7 +722,7 @@ class SupportNavigationRegistry {
         settingsSubpages.add(const SupportSubpageItem(
           key: 'settings_permissions',
           title: 'Permission Matrix',
-          route: '/settings?section=permissions',
+          route: '/admin/permissions',
           icon: Icons.admin_panel_settings_rounded,
           description: 'Granular role-based capability matrix and action permissions',
           functions: [

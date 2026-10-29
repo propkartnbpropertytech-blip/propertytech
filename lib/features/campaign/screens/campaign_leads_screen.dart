@@ -3929,10 +3929,34 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final isTelecaller = RoleGuard.isTelecaller(userRole);
     final isAdminOrSuperAdmin = userRole == 'Admin' || userRole == 'Super Admin';
     final canTransferLead = isTelecaller || isAdminOrSuperAdmin;
+    final canTransferToSales = isAdminOrSuperAdmin && isSalesAllocationMode && isPropertyListing;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (canTransferToSales) ...[
+          Tooltip(
+            message: 'Transfer this lead to a salesperson',
+            child: ElevatedButton.icon(
+              onPressed: () => _showSalesTransferDialog(context, lead),
+              icon: const Icon(Icons.swap_horiz_rounded, size: 14, color: Colors.white),
+              label: const Text(
+                'Transfer',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                elevation: 0.5,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
         if (canTransferLead && !isSalesAllocationMode) ...[
           Tooltip(
             message: isAdminOrSuperAdmin
@@ -4116,7 +4140,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
             ),
           ),
-        ] else if (!hasBadge) ...[
+        ] else if (!hasBadge && !canTransferToSales) ...[
           const Text('—', style: TextStyle(color: Colors.grey, fontSize: 13)),
         ],
       ],
@@ -4363,6 +4387,159 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     return [];
+  }
+
+  Future<void> _showSalesTransferDialog(BuildContext context, IntegrationLeadModel lead) async {
+    final clientName = lead.getStringValue('full_name').isNotEmpty
+        ? lead.getStringValue('full_name')
+        : (lead.getStringValue('name').isNotEmpty ? lead.getStringValue('name') : 'Lead');
+    final phone = lead.getStringValue('phone_number').isNotEmpty
+        ? lead.getStringValue('phone_number')
+        : lead.getStringValue('phone');
+    final currentSalesId = lead.assignedTo?.trim() ?? '';
+    final noteController = TextEditingController();
+    String? selectedId;
+    var salesUsers = <Map<String, dynamic>>[];
+    var loading = true;
+    var started = false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          if (!started) {
+            started = true;
+            _fetchSalesUsersForTransfer().then((users) {
+              if (!dialogCtx.mounted) return;
+              setDialogState(() {
+                salesUsers = users
+                    .where((u) => (u['role_name']?.toString() ?? '').toLowerCase().contains('sales'))
+                    .toList();
+                loading = false;
+                if (salesUsers.isNotEmpty) {
+                  final alternatives = salesUsers.where((u) => u['id']?.toString() != currentSalesId).toList();
+                  selectedId = (alternatives.isNotEmpty ? alternatives.first['id'] : salesUsers.first['id'])?.toString();
+                }
+              });
+            });
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Transfer Lead to Salesperson'),
+            content: SizedBox(
+              width: CRMBreakpoints.adaptiveWidth(ctx, 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$clientName${phone.isNotEmpty ? ' · $phone' : ''}',
+                    style: TextStyle(fontSize: 13, color: CRMColors.textSecondaryOf(ctx)),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'This lead will be assigned to the selected salesperson and appear in their Campaign Leads → Property Listing Leads.',
+                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  ),
+                  const SizedBox(height: 14),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (salesUsers.isEmpty)
+                    const Text(
+                      'No active salesperson is available.',
+                      style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Salesperson',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final u in salesUsers)
+                          DropdownMenuItem<String>(
+                            value: u['id']?.toString(),
+                            child: Text(
+                              (u['full_name']?.toString().trim().isNotEmpty == true)
+                                  ? (u['id']?.toString() == currentSalesId
+                                      ? '${u['full_name']} (Currently Assigned)'
+                                      : u['full_name'].toString())
+                                  : (u['email']?.toString() ?? 'Salesperson'),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) => setDialogState(() => selectedId = value),
+                    ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Transfer Note (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: loading || salesUsers.isEmpty || selectedId == null
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                child: const Text('Confirm Transfer'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true || selectedId == null || !context.mounted) {
+      noteController.dispose();
+      return;
+    }
+
+    var destName = 'Salesperson';
+    for (final u in salesUsers) {
+      if (u['id']?.toString() == selectedId) {
+        final name = u['full_name']?.toString().trim() ?? '';
+        if (name.isNotEmpty) destName = name;
+        break;
+      }
+    }
+
+    final result = await _service.transferCampaignLeadToSales(
+      lead.id,
+      toSalesUserId: selectedId!,
+      toSalesUserName: destName,
+      reason: noteController.text,
+    );
+    noteController.dispose();
+    if (!context.mounted) return;
+    final ok = result['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text((result['message'] ?? (ok ? 'Lead transferred.' : 'Transfer failed.')).toString()),
+        backgroundColor: ok ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+      ),
+    );
+    if (ok && mounted) {
+      setState(() {
+        _cachedFilteredLeads = null;
+      });
+    }
   }
 
   Future<void> _showTransferDialog(BuildContext context, IntegrationLeadModel lead) async {

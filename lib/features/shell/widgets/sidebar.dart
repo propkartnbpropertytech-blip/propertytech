@@ -233,7 +233,7 @@ class _ModernSidebarState extends State<ModernSidebar> {
                     if (RoleGuard.isSuperAdmin(widget.userRole)) ...[
                       _buildNavItem(
                         context,
-                        title: 'Permissions Studio',
+                        title: 'Permission Matrix',
                         icon: Icons.security_rounded,
                         route: '/admin/permissions',
                         isActive: currentPath.startsWith('/admin/permissions'),
