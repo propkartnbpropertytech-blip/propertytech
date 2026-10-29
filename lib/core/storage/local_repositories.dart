@@ -26,7 +26,18 @@ class PropertyLocalRepository {
   }
 
   Future<PropertyLocal?> getPropertyByIdOrCode(String idOrCode) async {
-    return getPropertyById(idOrCode);
+    final byId = await getPropertyById(idOrCode);
+    if (byId != null) return byId;
+    if (kIsWeb) {
+      for (final p in inMemory.values) {
+        if (p.propertyCode == idOrCode) return p;
+      }
+      return null;
+    }
+    return await _isar.propertyLocals
+        .filter()
+        .propertyCodeEqualTo(idOrCode)
+        .findFirst();
   }
 
   Future<List<PropertyLocal>> getProperties({

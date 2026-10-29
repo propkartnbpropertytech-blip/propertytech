@@ -32,7 +32,9 @@ class CreateRequirementEvent extends RequirementsEvent {
 
 class UpdateRequirementEvent extends RequirementsEvent {
   final RequirementModel requirement;
-  UpdateRequirementEvent(this.requirement);
+  final Map<String, dynamic>? patch;
+  final String? successMessage;
+  UpdateRequirementEvent(this.requirement, {this.patch, this.successMessage});
 }
 
 class PatchRequirementStatusEvent extends RequirementsEvent {
@@ -193,7 +195,13 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     Emitter<RequirementsState> emit,
   ) async {
     try {
-      final updated = await requirementsRepository.updateRequirement(event.requirement);
+      final RequirementModel updated;
+      if (event.patch != null) {
+        await requirementsRepository.updateRequirementFields(event.requirement.id, event.patch!);
+        updated = event.requirement;
+      } else {
+        updated = await requirementsRepository.updateRequirement(event.requirement);
+      }
 
       // Optimistically patch the in-memory list so My Won status UI updates immediately.
       List<RequirementModel> next = [updated];
@@ -210,7 +218,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
       }
 
       emit(RequirementsSuccess(
-        "Requirement updated successfully.",
+        event.successMessage ?? "Requirement updated successfully.",
         requirement: updated,
         requirements: next,
       ));

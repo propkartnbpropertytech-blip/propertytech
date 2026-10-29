@@ -1160,6 +1160,7 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // FULL-WIDTH Property Images Slider at Top (Matching Image 3)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2149,7 +2150,7 @@ Widget _buildAmenitiesCard(BuildContext context, List<String> amenities) {
         const SizedBox(height: CRMSpacing.s),
         Divider(color: CRMColors.borderOf(context).withOpacity(0.6), thickness: 0.5),
         const SizedBox(height: CRMSpacing.m),
-        _buildAmenitiesSection(context, '', amenities),
+        _buildAmenitiesSection(context, 'Furnishings & Features', amenities),
       ],
     ),
   );

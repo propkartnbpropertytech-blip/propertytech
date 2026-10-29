@@ -114,7 +114,8 @@ class RequirementListItemViewModel {
           final hasReassigned = meta != null && (meta['reassigned_by'] != null || meta['reassigned_by_name'] != null);
           final hasFollowup = r.nextFollowupDate != null && r.nextFollowupDate!.trim().isNotEmpty;
           final salesHandled = _checkSalesHasHandledLead(r);
-          if (!hasReassigned && !hasFollowup && !salesHandled && !won && !rej) {
+          final progressed = _isSalesPipelineStatus(r.status);
+          if (!hasReassigned && !hasFollowup && !salesHandled && !won && !rej && !progressed) {
             unhandledAssigned = true;
           }
         }
@@ -285,6 +286,24 @@ class RequirementListItemViewModel {
     return false;
   }
 
+
+  static bool _isSalesPipelineStatus(String status) {
+    final value = status.trim();
+    if (value == 'Not Started' ||
+        value == 'Follow-up' ||
+        value == 'Re-Followup' ||
+        value == 'Interested' ||
+        value == 'Active' ||
+        value == 'Live' ||
+        value == 'Site Visit' ||
+        value == 'Site Visit Done' ||
+        value == 'Site Visit Scheduled' ||
+        value == 'Site Visit Sche.' ||
+        value == 'Negotiation') {
+      return true;
+    }
+    return value.startsWith('Call Attempted') || value.startsWith('Call attempted');
+  }
 
   static bool _checkLeadTransferredAway(RequirementModel r, dynamic currentUser) {
     if (currentUser == null) return false;

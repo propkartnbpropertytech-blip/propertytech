@@ -11,7 +11,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/config/app_env.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../../core/api/api_constants.dart';
-import '../../../core/api/dio_client.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -58,25 +57,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   bool get isSalesAllocationMode => _allocationTargetRole.toLowerCase() == 'sales';
 
   Future<void> _loadAllocationTargetRole() async {
-    try {
-      final res = await DioClient.dio.get(ApiConstants.campaignAllocationMode);
-      final role = (res.data['targetRole'] ?? res.data['allocationMode'] ?? '').toString().trim();
-      if (mounted && role.isNotEmpty) {
-        setState(() {
-          _allocationTargetRole = role;
-        });
-      }
-    } catch (_) {
-      try {
-        final res = await DioClient.dio.get(ApiConstants.adminAllocationConfig);
-        final data = res.data['data'] as Map<String, dynamic>? ?? {};
-        final role = (data['targetRole'] ?? '').toString().trim();
-        if (mounted && role.isNotEmpty) {
-          setState(() {
-            _allocationTargetRole = role;
-          });
-        }
-      } catch (_) {}
+    final role = await _service.getAllocationTargetRole();
+    if (mounted && role.isNotEmpty) {
+      setState(() {
+        _allocationTargetRole = role;
+      });
     }
   }
   final TextEditingController _searchController = TextEditingController();

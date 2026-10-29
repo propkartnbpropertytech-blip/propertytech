@@ -648,7 +648,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               Text('Recycle Bin', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
               const SizedBox(height: 4),
               Text(
-                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Leads',
+                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
                 style: CRMTypography.pageTitle.copyWith(
                   color: CRMColors.textOf(context),
                   fontWeight: FontWeight.bold,
@@ -678,7 +678,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                     },
                   ),
                   ChoiceChip(
-                    label: const Text('Leads'),
+                    label: const Text('Requirements'),
                     selected: _selectedTab == 'Requirements',
                     selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
                     labelStyle: TextStyle(
@@ -717,7 +717,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       runSpacing: CRMSpacing.s,
                       children: [
                         Text(
-                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Leads',
+                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
                           style: CRMTypography.pageTitle.copyWith(
                             color: CRMColors.textOf(context),
                             fontWeight: FontWeight.bold,
@@ -742,7 +742,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                           },
                         ),
                         ChoiceChip(
-                          label: const Text('Leads'),
+                          label: const Text('Requirements'),
                           selected: _selectedTab == 'Requirements',
                           selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
                           labelStyle: TextStyle(
