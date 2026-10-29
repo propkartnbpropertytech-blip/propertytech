@@ -35,6 +35,75 @@ class TelecallerShiftManager {
   Timer? _manualOffCountdownTimer;
   DateTime? _countdownAnchorTime;
   int _countdownAnchorSeconds = kMaxManualOffSeconds;
+  Timer? _dailyResetTimer;
+  DateTime? _lastSeenWindowStart;
+
+  static DateTime getIstNow([DateTime? now]) {
+    final utc = (now ?? DateTime.now()).toUtc();
+    return utc.add(const Duration(hours: 5, minutes: 30));
+  }
+
+  static DateTime getCurrentWindowStartIst([DateTime? now]) {
+    final utcNow = (now ?? DateTime.now()).toUtc();
+    final istNow = utcNow.add(const Duration(hours: 5, minutes: 30));
+    DateTime istWindowDate;
+    if (istNow.hour < 10) {
+      istWindowDate = DateTime.utc(istNow.year, istNow.month, istNow.day - 1, 10, 0, 0);
+    } else {
+      istWindowDate = DateTime.utc(istNow.year, istNow.month, istNow.day, 10, 0, 0);
+    }
+    return istWindowDate.subtract(const Duration(hours: 5, minutes: 30));
+  }
+
+  static DateTime getNextWindowResetIst([DateTime? now]) {
+    final utcNow = (now ?? DateTime.now()).toUtc();
+    final istNow = utcNow.add(const Duration(hours: 5, minutes: 30));
+    DateTime nextResetIst;
+    if (istNow.hour < 10) {
+      nextResetIst = DateTime.utc(istNow.year, istNow.month, istNow.day, 10, 0, 0);
+    } else {
+      nextResetIst = DateTime.utc(istNow.year, istNow.month, istNow.day + 1, 10, 0, 0);
+    }
+    return nextResetIst.subtract(const Duration(hours: 5, minutes: 30));
+  }
+
+  void _scheduleDailyResetTimer() {
+    _dailyResetTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    final nextReset = getNextWindowResetIst();
+    final diff = nextReset.difference(now);
+    final delay = diff.isNegative ? const Duration(seconds: 1) : diff + const Duration(milliseconds: 500);
+    _dailyResetTimer = Timer(delay, () {
+      debugPrint('[TelecallerShiftManager] 10:00 AM IST daily reset triggered automatically.');
+      _triggerDailyWindowReset();
+      _scheduleDailyResetTimer();
+    });
+  }
+
+  void _triggerDailyWindowReset() {
+    _lastSeenWindowStart = getCurrentWindowStartIst();
+    isOffLimitExpiredNotifier.value = false;
+    remainingOffSecondsNotifier.value = kMaxManualOffSeconds;
+    _countdownAnchorSeconds = kMaxManualOffSeconds;
+    _countdownAnchorTime = DateTime.now();
+
+    final isOff = currentStatusNotifier.value == 'INACTIVE' || isManualOffNotifier.value;
+    if (isOff && !isOnInactivityBreakNotifier.value) {
+      _startManualOffCountdown(initialRemaining: kMaxManualOffSeconds);
+    } else {
+      _stopManualOffCountdown();
+    }
+    unawaited(_persistLocalState());
+    unawaited(_checkAvailabilityStatus());
+  }
+
+  void _checkDailyWindowRollover() {
+    final currentWindowStart = getCurrentWindowStartIst();
+    if (_lastSeenWindowStart == null || currentWindowStart.isAfter(_lastSeenWindowStart!)) {
+      debugPrint('[TelecallerShiftManager] 10:00 AM IST window rollover detected in periodic check.');
+      _triggerDailyWindowReset();
+    }
+  }
 
   static const int kInactivityTimeoutSeconds = 300; // 5 minutes
   static const int kShiftMaxDurationMillis = 9 * 3600 * 1000; // 9 hours
@@ -124,7 +193,21 @@ class TelecallerShiftManager {
         manualOffStartedAtNotifier.value = DateTime.tryParse(savedStartedAt);
       }
 
-      if (savedRemaining != null) {
+      final currentWindowStart = getCurrentWindowStartIst();
+      final isSavedStateFromPreviousWindow = savedTimestamp != null &&
+          DateTime.fromMillisecondsSinceEpoch(savedTimestamp).toUtc().isBefore(currentWindowStart);
+
+      if (isSavedStateFromPreviousWindow) {
+        // Saved state is from before 10:00 AM IST today. Reset to fresh 6 hours daily allowance.
+        remainingOffSecondsNotifier.value = kMaxManualOffSeconds;
+        isOffLimitExpiredNotifier.value = false;
+        _countdownAnchorSeconds = kMaxManualOffSeconds;
+        _countdownAnchorTime = DateTime.now();
+        final isOff = currentStatusNotifier.value == 'INACTIVE' || isManualOffNotifier.value;
+        if (isOff) {
+          _startManualOffCountdown(initialRemaining: kMaxManualOffSeconds);
+        }
+      } else if (savedRemaining != null) {
         int liveRemaining = savedRemaining;
         final isOff = currentStatusNotifier.value == 'INACTIVE' || isManualOffNotifier.value;
         if (isOff && savedTimestamp != null && !savedLimitExpired) {
@@ -212,9 +295,15 @@ class TelecallerShiftManager {
       _resetInactivityTimer();
     }
 
+    _lastSeenWindowStart = getCurrentWindowStartIst();
+    if (!isSales) {
+      _scheduleDailyResetTimer();
+    }
+
     _shiftCheckTimer?.cancel();
     if (!isSales) {
       _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        _checkDailyWindowRollover();
         _checkShiftLockout();
         _checkAvailabilityStatus();
       });
@@ -446,6 +535,8 @@ class TelecallerShiftManager {
     _manualOffCountdownTimer = null;
     _shiftCheckTimer?.cancel();
     _shiftCheckTimer = null;
+    _dailyResetTimer?.cancel();
+    _dailyResetTimer = null;
   }
 
   /// Resume periodic timers and perform stale recalculations upon returning to foreground.
@@ -470,8 +561,11 @@ class TelecallerShiftManager {
     }
 
     // 2. Resume 1-min shift check and trigger immediate stale check
+    _checkDailyWindowRollover();
+    _scheduleDailyResetTimer();
     _shiftCheckTimer?.cancel();
     _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _checkDailyWindowRollover();
       _checkShiftLockout();
       _checkAvailabilityStatus();
     });
@@ -485,6 +579,9 @@ class TelecallerShiftManager {
   }
 
   void dispose() {
+    _dailyResetTimer?.cancel();
+    _dailyResetTimer = null;
+    _lastSeenWindowStart = null;
     _inactivityTimer?.cancel();
     _shiftCheckTimer?.cancel();
     _stopManualOffCountdown();

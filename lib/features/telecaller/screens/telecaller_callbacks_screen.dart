@@ -42,7 +42,14 @@ class TelecallerCallbacksScreen extends StatelessWidget {
 class _LeadQueueFilters extends StatefulWidget {
   final void Function({String? search, String? source, DateTimeRange? range}) onChanged;
   final String? initialSearch;
-  const _LeadQueueFilters({required this.onChanged, this.initialSearch});
+  final DateTimeRange? initialRange;
+  final String? initialSource;
+  const _LeadQueueFilters({
+    required this.onChanged,
+    this.initialSearch,
+    this.initialRange,
+    this.initialSource,
+  });
 
   @override
   State<_LeadQueueFilters> createState() => _LeadQueueFiltersState();
@@ -57,6 +64,19 @@ class _LeadQueueFiltersState extends State<_LeadQueueFilters> {
   void initState() {
     super.initState();
     _search = TextEditingController(text: widget.initialSearch ?? '');
+    if (widget.initialSource != null) _source = widget.initialSource!;
+    _range = widget.initialRange;
+  }
+
+  @override
+  void didUpdateWidget(covariant _LeadQueueFilters oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialRange != oldWidget.initialRange) {
+      _range = widget.initialRange;
+    }
+    if (widget.initialSource != null && widget.initialSource != oldWidget.initialSource) {
+      _source = widget.initialSource!;
+    }
   }
 
   @override
@@ -1647,6 +1667,19 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
   String _loadedSource = 'All';
   DateTimeRange? _loadedRange;
 
+  void _reloadCnr() {
+    context.read<TelecallerCnrBloc>().add(
+      TelecallerCnrRequested(
+        source: _loadedSource,
+        from: _loadedRange?.start.toIso8601String(),
+        to: _loadedRange != null
+            ? DateTime(_loadedRange!.end.year, _loadedRange!.end.month, _loadedRange!.end.day, 23, 59, 59, 999).toIso8601String()
+            : null,
+        clearDateRange: _loadedRange == null,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1676,7 +1709,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
 
         return RefreshIndicator(
           onRefresh: () async {
-            context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+            _reloadCnr();
           },
           child: ListView(
             padding: const EdgeInsets.all(20),
@@ -1696,6 +1729,8 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
               ),
               _LeadQueueFilters(
                 initialSearch: _query,
+                initialRange: _loadedRange,
+                initialSource: _loadedSource,
                 onChanged: ({search, source, range}) {
                   setState(() => _query = search ?? '');
                   final nextSource = source ?? 'All';
@@ -1704,13 +1739,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                   if (sameSource && sameRange) return;
                   _loadedSource = nextSource;
                   _loadedRange = range;
-                  context.read<TelecallerCnrBloc>().add(
-                    TelecallerCnrRequested(
-                      source: nextSource,
-                      from: range?.start.toIso8601String(),
-                      to: range?.end.toIso8601String(),
-                    ),
-                  );
+                  _reloadCnr();
                 },
               ),
               _QueueSectionSwitch(
@@ -1758,7 +1787,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                   key: ValueKey(_campaignLeadId(raw is Map ? raw : {})),
                   lead: Map<String, dynamic>.from(raw as Map),
                   onOutcomeRecorded: () {
-                    context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                    _reloadCnr();
                   },
                 ),
             ],
@@ -1787,7 +1816,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
           : null,
       body: RefreshIndicator(
         onRefresh: () async {
-          context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+          _reloadCnr();
         },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -1810,6 +1839,8 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
             const SizedBox(height: 12),
             _LeadQueueFilters(
               initialSearch: _query,
+              initialRange: _loadedRange,
+              initialSource: _loadedSource,
               onChanged: ({search, source, range}) {
                 setState(() => _query = search ?? '');
                 final nextSource = source ?? 'All';
@@ -1818,13 +1849,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                 if (sameSource && sameRange) return;
                 _loadedSource = nextSource;
                 _loadedRange = range;
-                context.read<TelecallerCnrBloc>().add(
-                  TelecallerCnrRequested(
-                    source: nextSource,
-                    from: range?.start.toIso8601String(),
-                    to: range?.end.toIso8601String(),
-                  ),
-                );
+                _reloadCnr();
               },
             ),
             const SizedBox(height: 8),
@@ -1946,7 +1971,7 @@ class _TelecallerCnrViewState extends State<_TelecallerCnrView> {
                   key: ValueKey(_campaignLeadId(raw is Map ? raw : {})),
                   lead: Map<String, dynamic>.from(raw as Map),
                   onOutcomeRecorded: () {
-                    context.read<TelecallerCnrBloc>().add(TelecallerCnrRequested());
+                    _reloadCnr();
                   },
                 ),
           ],

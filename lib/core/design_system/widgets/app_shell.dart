@@ -3213,7 +3213,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                   controlKey: 'page.users',
                   child: _buildSidebarItem(
                     Icons.people_outline_rounded,
-                    'Employees',
+                    RoleGuard.isSuperAdmin(userRole) ? 'Users' : 'Employees',
                     '/users',
                     currentPath,
                     isMobile,

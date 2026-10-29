@@ -65,6 +65,9 @@ class ApiConstants {
   static const adminRecoverStaleLeads = "/admin/recover-stale-leads";
   static String adminTelecallerDetails(String id) => "/admin/telecallers/$id/details";
   static String adminTelecallerCapacity(String id) => "/admin/telecallers/$id/capacity";
+  static const allocationSalesLeads = "/allocation/sales-leads";
+  static String allocationSalesLeadStatus(String id) => "/allocation/sales-leads/$id/status";
+  static const allocationSalesLeadBulkStatus = "/allocation/sales-leads/bulk-status";
   static const salesDashboardSummary = "/sales/dashboard-summary";
   static const superAdminMetrics = "/super-admin/metrics";
 

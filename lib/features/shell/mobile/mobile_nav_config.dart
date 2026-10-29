@@ -305,9 +305,9 @@ class MobileNavConfig {
           ),
         ]),
         MobileMoreSection(title: 'Team', entries: [
-          const MobileMoreEntry(
+          MobileMoreEntry(
             id: 'employees',
-            label: 'Employees',
+            label: RoleGuard.isSuperAdmin(role) ? 'Users' : 'Employees',
             icon: Icons.badge_outlined,
             route: '/users',
           ),

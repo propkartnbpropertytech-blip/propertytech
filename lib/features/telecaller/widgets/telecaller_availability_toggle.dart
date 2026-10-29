@@ -181,7 +181,7 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                                         if (!val && offLimitReached) {
                                           AppStatusSnackBar.show(
                                             context,
-                                            message: '6-hour OFF allowance has expired for this 24-hour cycle. You must turn the toggle ON to receive leads.',
+                                            message: '6-hour OFF allowance has expired for today. It will reset at 10:00 AM. You must turn the toggle ON to receive leads.',
                                             isSuccess: false,
                                           );
                                           return;
@@ -191,7 +191,7 @@ class TelecallerAvailabilityToggle extends StatelessWidget {
                                           AppStatusSnackBar.show(
                                             context,
                                             message: shiftManager.isOffLimitExpiredNotifier.value
-                                                ? '6-hour OFF allowance expired. Toggle must remain ON.'
+                                                ? '6-hour OFF allowance expired. Toggle must remain ON until 10:00 AM reset.'
                                                 : (shiftManager.isShiftLockedOutNotifier.value
                                                     ? 'Daily 9-hour shift limit reached.'
                                                     : 'Action failed. Please try again.'),

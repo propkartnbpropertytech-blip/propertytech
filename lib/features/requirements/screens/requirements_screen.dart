@@ -4,6 +4,9 @@ import '../../../core/services/notification_center.dart';
 import '../../../core/security/crm_control_guard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import '../../../core/api/api_constants.dart';
+import '../../../core/api/dio_client.dart';
 import '../../../core/theme/theme_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -784,6 +787,17 @@ class RequirementsScreen extends StatefulWidget {
 }
 
 class _RequirementsScreenState extends State<RequirementsScreen> {
+  String _salesCampaignSubTab = 'Property Listing';
+  String _salesRejectedSubTab = 'Requirement';
+  List<Map<String, dynamic>> _salesPropertyListingLeads = [];
+  bool _isLoadingSalesPropertyListingLeads = false;
+  bool _salesDirectLeadsLoaded = false;
+  final Set<String> _directPropertyListingIds = {};
+  final Set<String> _directRequirementIds = {};
+  final Map<String, bool> _salesUpdatingStatusLeads = {};
+  final Set<String> _selectedCampaignLeadIds = {};
+  String _campaignSalespersonFilter = 'All';
+  bool _campaignBulkUpdating = false;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _wonSearchController = TextEditingController();
 
@@ -806,7 +820,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         '$tcKey|$_selectedReadiness|$query|${_selectedLeadDateFilter.name}|'
         '${_customStartDate?.millisecondsSinceEpoch}|${_customEndDate?.millisecondsSinceEpoch}|'
         '${currentUser?.id}|${currentUser?.role}|'
-        '$_wonCategoryId|$_wonPropertyTypeId|$wonConfigKey';
+        '$_wonCategoryId|$_wonPropertyTypeId|$wonConfigKey|'
+        '$_salesDirectLeadsLoaded|${_directRequirementIds.length}|${_directPropertyListingIds.length}|$_salesRejectedSubTab|$_salesCampaignSubTab';
   }
 
   List<RequirementModel> _getEffectiveFilteredRequirements(UserModel? currentUser, [List<RequirementModel>? rawList]) {
@@ -891,6 +906,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ? _wonConfigurationIds
         : _selectedConfigIds).toSet();
 
+    final campaignRequirementTab = _salesLeadGroupFilter == 'campaign' &&
+        _salesCampaignSubTab == 'Requirement' &&
+        _activeMainTab == 'Leads';
     _filteredViewModels = RequirementFilterEngine.filterAndSort(
       items: _allViewModels,
       currentUser: user,
@@ -899,7 +917,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       selectedCategoryId: effectiveCategoryId,
       selectedConfigIds: effectiveConfigIds,
       selectedStatus: _selectedStatus,
-      salesLeadGroupFilter: _salesLeadGroupFilter,
+      salesLeadGroupFilter: campaignRequirementTab ? 'all' : _salesLeadGroupFilter,
       selectedSalesFilterId: _selectedSalesFilterId,
       selectedTelecallerFilterIds: _selectedTelecallerFilterIds.toSet(),
       selectedReadiness: _selectedReadiness,
@@ -912,6 +930,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       knownUsers: allKnownUsers,
       metadata: _metadata,
     );
+
+    final keepTelecallerList = user.role == 'Telecaller';
+    if (!keepTelecallerList && _salesDirectLeadsLoaded && _directPropertyListingIds.isNotEmpty) {
+      _filteredViewModels = _filteredViewModels
+          .where((vm) => !_directPropertyListingIds.contains(vm.requirement.id))
+          .toList();
+    }
+    if (!keepTelecallerList && _activeMainTab == 'Leads' && _salesLeadGroupFilter != 'campaign' && _salesDirectLeadsLoaded) {
+      _filteredViewModels = _filteredViewModels
+          .where((vm) => !_directRequirementIds.contains(vm.requirement.id))
+          .toList();
+    }
+    if (_salesLeadGroupFilter == 'campaign' && _activeMainTab == 'Leads') {
+      _filteredViewModels = _filteredViewModels
+          .where((vm) => _isShownCampaignRequirement(vm.requirement))
+          .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
+          .toList();
+    }
+    if (_activeMainTab == 'Rejected' && _campaignSalespersonFilter != 'All') {
+      _filteredViewModels = _filteredViewModels
+          .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
+          .toList();
+    }
 
     _filteredRequirements = _filteredViewModels.map((vm) => vm.requirement).toList();
     _lastComputedFilterKey = _buildFilterCacheKey(user, rawLoadedList);
@@ -953,7 +994,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   DateTime? _customEndDate;
   String get _activeListingTab => ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
   set _activeListingTab(String value) {
-    ThemeManager().setRentMode(value == 'Rent');
+    final nextRent = value == 'Rent';
+    if (ThemeManager().isRentMode != nextRent) {
+      _selectedCampaignLeadIds.clear();
+    }
+    ThemeManager().setRentMode(nextRent);
   }
   String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
@@ -1128,6 +1173,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       context.read<UsersBloc>().add(const FetchUsers());
     }
     unawaited(_loadAssignUsers());
+    final roleName = RoleGuard.currentUser?.role ?? '';
+    if (roleName == 'Sales' || roleName == 'Admin' || roleName == 'Super Admin') {
+      unawaited(_fetchSalesPropertyListingLeads(orgWide: roleName != 'Sales'));
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -2185,12 +2234,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               const SizedBox(height: CRMSpacing.l),
 
               if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected') ...[
+                if (_activeMainTab == 'Rejected' &&
+                    currentUser != null &&
+                    currentUser.role != 'Telecaller') ...[
+                  _buildRejectedLeadTypeSelector(currentUser),
+                  const SizedBox(height: CRMSpacing.m),
+                ],
                 if (_activeMainTab == 'Leads') ...[
                   if (currentUser != null && currentUser.role == 'Sales') ...[
                     _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
                     const SizedBox(height: CRMSpacing.m),
                   ] else if (currentUser != null && (currentUser.role == 'Admin' || currentUser.role == 'Super Admin')) ...[
                     _buildSalesTeamOverviewBar(currentUser, _cachedRequirements),
+                    if (_selectedUserFilterId == 'All' || _selectedUserFilterId.isEmpty)
+                      _buildAdminCampaignLeadsBar(),
                     if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) ...[
                       Builder(builder: (context) {
                         final selUser = _getSalesUsers().firstWhereOrNull((u) => u.id == _selectedUserFilterId);
@@ -2207,6 +2264,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 ],
 
                 // Filters & Search Card
+                if (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing')
+                  const SizedBox.shrink()
+                else
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final bool isMobile = constraints.maxWidth < 600;
@@ -2310,7 +2370,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               !_isUserCreator(r, selectedSales) &&
               !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales))) return false;
         } else if (_salesLeadGroupFilter == 'campaign') {
-          if (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales)) return false;
+          if (!_isShownCampaignRequirement(r, selectedSales)) return false;
         } else if (_salesLeadGroupFilter == 'added') {
           if (!_isUserCreator(r, selectedSales)) return false;
         }
@@ -2431,6 +2491,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: _buildSalesTeamOverviewBar(currentUser, _cachedRequirements),
             ),
+            if (_selectedUserFilterId == 'All' || _selectedUserFilterId.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: _buildAdminCampaignLeadsBar(),
+              ),
             if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) ...[
               Builder(builder: (context) {
                 final selUser = _getSalesUsers().firstWhereOrNull((u) => u.id == _selectedUserFilterId);
@@ -2497,64 +2562,84 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ),
                   ),
-                  if (_selectedRequirementIds.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: _buildMobileBulkSelectionBar(filteredLeads),
-                    ),
-                  if (isLoading)
-                    const SliverToBoxAdapter(
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(48),
-                          child: CircularProgressIndicator(),
-                        ),
-                      ),
-                    )
-                  else if (hasError)
-                    const SliverToBoxAdapter(
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(48),
-                          child: Text(
-                            'Error loading leads',
-                            style: TextStyle(color: CRMColors.danger),
-                          ),
-                        ),
-                      ),
-                    )
-                  else if (filteredLeads.isEmpty)
+                  if (_activeMainTab == 'Rejected' && currentUser?.role != 'Telecaller')
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-                        child: MobileEmptyState(
-                          icon: Icons.folder_open_rounded,
-                          title: _activeMainTab == 'Rejected'
-                              ? 'No Rejected Leads'
-                              : ((_activeMainTab == 'Won' || _activeMainTab == 'My Won')
-                                  ? 'No Won Deals'
-                                  : 'No Leads Found'),
-                          description: 'No leads match the active filters or search criteria.',
-                          actionLabel: 'Reset Filters',
-                          onAction: _clearFilters,
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                        child: _buildRejectedLeadTypeSelector(currentUser),
+                      ),
+                    ),
+                  if ((_activeMainTab == 'Leads' && _salesLeadGroupFilter == 'campaign' && _salesCampaignSubTab == 'Property Listing') ||
+                      (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing'))
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
+                        child: _buildSalesPropertyListingSpreadsheetView(
+                          isMobile: true,
+                          rejectedOnly: _activeMainTab == 'Rejected',
                         ),
                       ),
                     )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => KeyedSubtree(
-                            key: ValueKey(filteredLeads[index].id),
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: _buildMobileLeadCard(context, filteredLeads[index], currentUser),
+                  else ...[
+                    if (_selectedRequirementIds.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: _buildMobileBulkSelectionBar(filteredLeads),
+                      ),
+                    if (isLoading)
+                      const SliverToBoxAdapter(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(48),
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                      )
+                    else if (hasError)
+                      const SliverToBoxAdapter(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(48),
+                            child: Text(
+                              'Error loading leads',
+                              style: TextStyle(color: CRMColors.danger),
                             ),
                           ),
-                          childCount: filteredLeads.length,
+                        ),
+                      )
+                    else if (filteredLeads.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+                          child: MobileEmptyState(
+                            icon: Icons.folder_open_rounded,
+                            title: _activeMainTab == 'Rejected'
+                                ? 'No Rejected Leads'
+                                : ((_activeMainTab == 'Won' || _activeMainTab == 'My Won')
+                                    ? 'No Won Deals'
+                                    : 'No Leads Found'),
+                            description: 'No leads match the active filters or search criteria.',
+                            actionLabel: 'Reset Filters',
+                            onAction: _clearFilters,
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => KeyedSubtree(
+                              key: ValueKey(filteredLeads[index].id),
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildMobileLeadCard(context, filteredLeads[index], currentUser),
+                              ),
+                            ),
+                            childCount: filteredLeads.length,
+                          ),
                         ),
                       ),
-                    ),
+                  ],
                 ],
               ),
             ),
@@ -5557,6 +5642,110 @@ _recomputeFilteredRequirements();
     );
   }
 
+  Widget _buildCampaignSalespersonFilter() {
+    if (!_isCampaignLeadAdmin) return const SizedBox.shrink();
+    final users = _getSalesUsers();
+    final known = users.any((user) => user.id == _campaignSalespersonFilter);
+    final value = known || _campaignSalespersonFilter == 'All' ? _campaignSalespersonFilter : 'All';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isDense: true,
+          items: [
+            const DropdownMenuItem(value: 'All', child: Text('All Salespersons')),
+            ...users.map(
+              (user) => DropdownMenuItem(
+                value: user.id,
+                child: Text(user.fullName, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ],
+          onChanged: (next) {
+            setState(() {
+              _campaignSalespersonFilter = next ?? 'All';
+              _selectedCampaignLeadIds.clear();
+              _lastComputedFilterKey = null;
+            });
+            _recomputeFilteredRequirements(notify: false);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminCampaignLeadsBar() {
+    final listingCount = _propertyListingLeadsFor(ownerId: _campaignSalespersonFilter == 'All' ? null : _campaignSalespersonFilter, rejected: false).length;
+    final requirementCount = _cachedRequirements.where((requirement) {
+      if (getListingTypeLabel(requirement) != _activeListingTab) return false;
+      if (!_isShownCampaignRequirement(requirement)) return false;
+      if (!_campaignLeadMatchesSalesperson(requirement)) return false;
+      return requirement.status != 'Won' && requirement.status != 'Closed' && !_isLeadRejected(requirement);
+    }).length;
+    final selected = _salesLeadGroupFilter == 'campaign';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSalesGroupFilterButton(
+            label: 'Campaign Leads',
+            icon: Icons.campaign_rounded,
+            value: 'campaign',
+            count: listingCount + requirementCount,
+          ),
+          if (selected) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _buildCampaignSubTabChip(
+                  label: 'Property Listing Leads',
+                  count: listingCount,
+                  isSelected: _salesCampaignSubTab == 'Property Listing',
+                  icon: Icons.holiday_village_outlined,
+                  onTap: () {
+                    setState(() {
+                      _salesCampaignSubTab = 'Property Listing';
+                      _selectedCampaignLeadIds.clear();
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+                _buildCampaignSubTabChip(
+                  label: 'Requirement Leads',
+                  count: requirementCount,
+                  isSelected: _salesCampaignSubTab == 'Requirement',
+                  icon: Icons.person_search_outlined,
+                  onTap: () {
+                    setState(() => _salesCampaignSubTab = 'Requirement');
+                    _lastComputedFilterKey = null;
+                    _recomputeFilteredRequirements(notify: false);
+                  },
+                ),
+              ],
+            ),
+            if (_salesCampaignSubTab == 'Requirement') ...[
+              const SizedBox(height: 8),
+              _buildCampaignSalespersonFilter(),
+            ],
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _salesLeadGroupFilter = 'all';
+                  _selectedCampaignLeadIds.clear();
+                });
+                _lastComputedFilterKey = null;
+                _recomputeFilteredRequirements(notify: false);
+              },
+              child: const Text('Back to all leads'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSalesLeadGroupSelector(
     dynamic targetSalesUser,
     List<RequirementModel> allLoadedReqs, {
@@ -5571,6 +5760,8 @@ _recomputeFilteredRequirements();
         !_isUserCreator(r, targetSalesUser) &&
         !_isLeadTransferredAway(r, targetSalesUser) &&
         !RequirementListItemViewModel.isDirectSalesCampaignLead(r, targetSalesUser) &&
+        !_directPropertyListingIds.contains(r.id) &&
+        !_directRequirementIds.contains(r.id) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
@@ -5578,64 +5769,107 @@ _recomputeFilteredRequirements();
         (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
         _isUserCreator(r, targetSalesUser) &&
         !_isLeadTransferredAway(r, targetSalesUser) &&
+        !_directPropertyListingIds.contains(r.id) &&
+        !_directRequirementIds.contains(r.id) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
     final campaignCount = activeTabReqs.where((r) =>
         (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
-        RequirementListItemViewModel.isDirectSalesCampaignLead(r, targetSalesUser) &&
+        _isShownCampaignRequirement(r, targetSalesUser) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
+    final listingCount = _propertyListingLeadsFor(
+      ownerId: targetSalesUser.id,
+      rejected: false,
+    ).length;
+    final totalCampaignCount = campaignCount + listingCount;
 
     final allCount = activeTabReqs.where((r) =>
         (isForOtherUser || _salesCanViewRequirement(r, targetSalesUser)) &&
         TeamUserVisibility.requirementBelongsToUser(r, targetSalesUser) &&
         !_isLeadTransferredAway(r, targetSalesUser) &&
+        !_directPropertyListingIds.contains(r.id) &&
+        !_directRequirementIds.contains(r.id) &&
         r.status != 'Won' && r.status != 'Closed' && !_isLeadRejected(r)
     ).length;
 
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: CRMColors.cardBgOf(context),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
-        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildSalesGroupFilterButton(
-              label: isForOtherUser ? 'All Leads ($firstName)' : 'My Active Leads',
-              icon: Icons.dashboard_customize_rounded,
-              value: 'all',
-              count: allCount,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: CRMColors.cardBgOf(context),
+            borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+            border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildSalesGroupFilterButton(
+                  label: isForOtherUser ? 'All Leads ($firstName)' : 'My Active Leads',
+                  icon: Icons.dashboard_customize_rounded,
+                  value: 'all',
+                  count: allCount,
+                ),
+                const SizedBox(width: 6),
+                _buildSalesGroupFilterButton(
+                  label: isForOtherUser ? 'Assigned to $firstName' : 'Assigned to Me',
+                  icon: Icons.assignment_ind_rounded,
+                  value: 'assigned',
+                  count: assignedCount,
+                ),
+                const SizedBox(width: 6),
+                _buildSalesGroupFilterButton(
+                  label: isForOtherUser ? 'Added by $firstName' : 'Added by Me',
+                  icon: Icons.person_add_alt_1_rounded,
+                  value: 'added',
+                  count: addedCount,
+                ),
+                const SizedBox(width: 6),
+                _buildSalesGroupFilterButton(
+                  label: isForOtherUser ? 'Campaign Leads ($firstName)' : 'Campaign Leads',
+                  icon: Icons.campaign_rounded,
+                  value: 'campaign',
+                  count: totalCampaignCount,
+                ),
+              ],
             ),
-            const SizedBox(width: 6),
-            _buildSalesGroupFilterButton(
-              label: isForOtherUser ? 'Assigned to $firstName' : 'Assigned to Me',
-              icon: Icons.assignment_ind_rounded,
-              value: 'assigned',
-              count: assignedCount,
-            ),
-            const SizedBox(width: 6),
-            _buildSalesGroupFilterButton(
-              label: isForOtherUser ? 'Added by $firstName' : 'Added by Me',
-              icon: Icons.person_add_alt_1_rounded,
-              value: 'added',
-              count: addedCount,
-            ),
-            const SizedBox(width: 6),
-            _buildSalesGroupFilterButton(
-              label: isForOtherUser ? 'Campaign Leads ($firstName)' : 'Campaign Leads',
-              icon: Icons.campaign_rounded,
-              value: 'campaign',
-              count: campaignCount,
-            ),
-          ],
+          ),
         ),
-      ),
+        if (_salesLeadGroupFilter == 'campaign') ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _buildCampaignSubTabChip(
+                label: 'Property Listing Leads',
+                count: listingCount,
+                isSelected: _salesCampaignSubTab == 'Property Listing',
+                icon: Icons.holiday_village_outlined,
+                onTap: () {
+                  setState(() => _salesCampaignSubTab = 'Property Listing');
+                  if (_salesPropertyListingLeads.isEmpty) {
+                    _fetchSalesPropertyListingLeads(orgWide: isForOtherUser);
+                  }
+                },
+              ),
+              const SizedBox(width: 8),
+              _buildCampaignSubTabChip(
+                label: 'Requirement Leads',
+                count: campaignCount,
+                isSelected: _salesCampaignSubTab == 'Requirement',
+                icon: Icons.person_search_outlined,
+                onTap: () {
+                  setState(() => _salesCampaignSubTab = 'Requirement');
+                },
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 
@@ -7594,6 +7828,13 @@ _recomputeFilteredRequirements();
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 700;
+        if ((_activeMainTab == 'Leads' && _salesLeadGroupFilter == 'campaign' && _salesCampaignSubTab == 'Property Listing') ||
+            (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing' && currentUser?.role != 'Telecaller')) {
+          return _buildSalesPropertyListingSpreadsheetView(
+            isMobile: isMobile,
+            rejectedOnly: _activeMainTab == 'Rejected',
+          );
+        }
 
         if (isMobile || !_isTableView) {
           return Column(
@@ -12520,6 +12761,982 @@ _recomputeFilteredRequirements();
     );
     showCRMRequirementDrawer(context, req);
   }
+
+  bool _isShownCampaignRequirement(RequirementModel r, [dynamic user]) {
+    if (!_salesDirectLeadsLoaded || !_directRequirementIds.contains(r.id)) return false;
+    if (_directPropertyListingIds.contains(r.id)) return false;
+    if (user != null && !_isUserAssignee(r, user)) return false;
+    return true;
+  }
+
+  bool get _isCampaignLeadAdmin {
+    final role = RoleGuard.currentUser?.role ?? '';
+    return role == 'Admin' || role == 'Super Admin';
+  }
+
+  bool _campaignLeadMatchesListingTab(Map<String, dynamic> lead) {
+    final mode = (lead['listingMode'] ?? 'Rent').toString();
+    final isResale = mode == 'Re-Sale' || mode == 'Resale' || mode == 'Sale';
+    return isResale ? _activeListingTab != 'Rent' : _activeListingTab == 'Rent';
+  }
+
+  bool _campaignLeadMatchesSalesperson(RequirementModel requirement) {
+    if (!_isCampaignLeadAdmin || _campaignSalespersonFilter == 'All') return true;
+    final selected = _getSalesUsers().firstWhereOrNull((user) => user.id == _campaignSalespersonFilter);
+    if (selected == null) return false;
+    return _isUserAssignee(requirement, selected);
+  }
+
+  List<Map<String, dynamic>> _propertyListingLeadsFor({
+    String? ownerId,
+    required bool rejected,
+  }) {
+    return _salesPropertyListingLeads.where((lead) {
+      final status = (lead['status'] ?? 'None').toString().trim().toLowerCase();
+      final isRejected = status == 'rejected';
+      if (rejected != isRejected) return false;
+      if (!_campaignLeadMatchesListingTab(lead)) return false;
+      if (ownerId != null && ownerId.isNotEmpty && lead['assignedTo']?.toString() != ownerId) return false;
+      return true;
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _visiblePropertyListingLeads({required bool rejectedOnly}) {
+    UserModel? user;
+    try {
+      final authState = context.read<AuthBloc>().state;
+      if (authState is Authenticated) user = authState.user;
+    } catch (_) {}
+    String? ownerId;
+    if (user?.role == 'Sales') {
+      ownerId = user?.id;
+    } else if (_campaignSalespersonFilter != 'All') {
+      ownerId = _campaignSalespersonFilter;
+    } else if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
+      ownerId = _selectedUserFilterId;
+    }
+    return _propertyListingLeadsFor(ownerId: ownerId, rejected: rejectedOnly);
+  }
+
+  List<Map<String, dynamic>> _displayedCampaignLeads({required bool rejectedOnly}) {
+    final rows = _visiblePropertyListingLeads(rejectedOnly: rejectedOnly);
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return rows;
+    return rows.where((lead) {
+      final blob = [
+        lead['clientName'],
+        lead['phone'],
+        lead['email'],
+        lead['city'],
+        lead['propertyLocation'],
+        lead['campaignName'],
+        lead['propertyType'],
+        lead['assignedToName'],
+        lead['source'],
+      ].map((value) => (value ?? '').toString().toLowerCase()).join(' ');
+      return blob.contains(query);
+    }).toList();
+  }
+
+  int _rejectedRequirementCount(UserModel? user) {
+    return _cachedRequirements.where((r) {
+      if (!_isLeadRejected(r)) return false;
+      if (_directPropertyListingIds.contains(r.id)) return false;
+      if (user?.role == 'Sales') {
+        return _isUserAssignee(r, user) || _isUserCreator(r, user);
+      }
+      if (_campaignSalespersonFilter != 'All') {
+        return _campaignLeadMatchesSalesperson(r);
+      }
+      if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
+        final selected = _getAllKnownUsers().firstWhereOrNull((u) => u.id == _selectedUserFilterId);
+        if (selected == null) return false;
+        return _isUserAssignee(r, selected) || _isUserCreator(r, selected);
+      }
+      return true;
+    }).length;
+  }
+
+  Widget _buildRejectedLeadTypeSelector(UserModel? user) {
+    String? rejectedOwnerId;
+    if (user?.role == 'Sales') {
+      rejectedOwnerId = user?.id;
+    } else if (_campaignSalespersonFilter != 'All') {
+      rejectedOwnerId = _campaignSalespersonFilter;
+    } else if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
+      rejectedOwnerId = _selectedUserFilterId;
+    }
+    final listingCount = _propertyListingLeadsFor(
+      ownerId: rejectedOwnerId,
+      rejected: true,
+    ).length;
+    final requirementCount = _rejectedRequirementCount(user);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+      children: [
+        _buildCampaignSubTabChip(
+          label: 'Property Listing Leads',
+          count: listingCount,
+          isSelected: _salesRejectedSubTab == 'Property Listing',
+          icon: Icons.holiday_village_outlined,
+          onTap: () {
+            setState(() => _salesRejectedSubTab = 'Property Listing');
+            _lastComputedFilterKey = null;
+          },
+        ),
+        const SizedBox(width: 8),
+        _buildCampaignSubTabChip(
+          label: 'Requirement Leads',
+          count: requirementCount,
+          isSelected: _salesRejectedSubTab == 'Requirement',
+          icon: Icons.person_search_outlined,
+          onTap: () {
+            setState(() => _salesRejectedSubTab = 'Requirement');
+            _lastComputedFilterKey = null;
+            _recomputeFilteredRequirements(notify: false);
+          },
+        ),
+      ],
+        ),
+        if (_isCampaignLeadAdmin && _salesRejectedSubTab == 'Requirement') ...[
+          const SizedBox(height: 8),
+          _buildCampaignSalespersonFilter(),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _fetchSalesPropertyListingLeads({String? userId, bool orgWide = false}) async {
+    if (_isLoadingSalesPropertyListingLeads) return;
+    setState(() => _isLoadingSalesPropertyListingLeads = true);
+    try {
+      final res = await DioClient.dio.get(
+        ApiConstants.allocationSalesLeads,
+        queryParameters: {
+          if (userId != null && userId.isNotEmpty) 'userId': userId,
+          if (orgWide && (userId == null || userId.isEmpty)) 'scope': 'org',
+        },
+      );
+      if (res.data['success'] == true && mounted) {
+        final list = res.data['propertyListingLeads'] as List<dynamic>? ?? [];
+        final reqList = res.data['requirementLeads'] as List<dynamic>? ?? [];
+        final listingIds = <String>{};
+        final mapped = list.map((e) {
+          final lead = Map<String, dynamic>.from(e as Map);
+          final id = lead['id']?.toString() ?? '';
+          if (id.isNotEmpty) listingIds.add(id);
+          return lead;
+        }).toList();
+        final requirementIds = <String>{};
+        for (final raw in reqList) {
+          if (raw is! Map) continue;
+          final id = raw['id']?.toString() ?? '';
+          final legacy = raw['legacyRequirementId']?.toString() ?? '';
+          if (id.isNotEmpty) requirementIds.add(id);
+          if (legacy.isNotEmpty) requirementIds.add(legacy);
+        }
+        for (final lead in mapped) {
+          final legacy = lead['legacyRequirementId']?.toString() ?? '';
+          if (legacy.isNotEmpty) listingIds.add(legacy);
+        }
+        final apiIds = res.data['requirementIds'];
+        if (apiIds is List) {
+          for (final id in apiIds) {
+            final text = id?.toString() ?? '';
+            if (text.isNotEmpty) requirementIds.add(text);
+          }
+        }
+        final apiListingIds = res.data['propertyListingIds'];
+        if (apiListingIds is List) {
+          for (final id in apiListingIds) {
+            final text = id?.toString() ?? '';
+            if (text.isNotEmpty) listingIds.add(text);
+          }
+        }
+        setState(() {
+          _salesPropertyListingLeads = mapped;
+          _directPropertyListingIds
+            ..clear()
+            ..addAll(listingIds);
+          _directRequirementIds
+            ..clear()
+            ..addAll(requirementIds);
+          _salesDirectLeadsLoaded = true;
+          _isLoadingSalesPropertyListingLeads = false;
+          _lastComputedFilterKey = null;
+        });
+        _recomputeFilteredRequirements(notify: false);
+      } else {
+        if (mounted) setState(() => _isLoadingSalesPropertyListingLeads = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingSalesPropertyListingLeads = false);
+    }
+  }
+
+  Future<void> _confirmCampaignBulkStatus(List<String> displayedIds, String newStatus) async {
+    final ids = displayedIds.where(_selectedCampaignLeadIds.contains).toList();
+    if (ids.isEmpty || _campaignBulkUpdating) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Mark as $newStatus'),
+        content: Text('Update ${ids.length} selected property listing lead${ids.length == 1 ? '' : 's'} to $newStatus?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Update')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _campaignBulkUpdating = true);
+    try {
+      final res = await DioClient.dio.patch(
+        ApiConstants.allocationSalesLeadBulkStatus,
+        data: {'ids': ids, 'status': newStatus},
+      );
+      final updated = res.data['updatedIds'];
+      final updatedIds = updated is List ? updated.map((id) => id.toString()).toSet() : ids.toSet();
+      if (res.data['success'] == true && mounted) {
+        setState(() {
+          for (final item in _salesPropertyListingLeads) {
+            final id = item['id']?.toString() ?? '';
+            if (!updatedIds.contains(id)) continue;
+            item['status'] = newStatus;
+            item['sales_listing_status'] = newStatus;
+            _selectedCampaignLeadIds.remove(id);
+          }
+          _campaignBulkUpdating = false;
+        });
+        AppStatusSnackBar.show(
+          context,
+          message: '${updatedIds.length} lead${updatedIds.length == 1 ? '' : 's'} marked "$newStatus".',
+          isSuccess: true,
+        );
+      } else if (mounted) {
+        setState(() => _campaignBulkUpdating = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _campaignBulkUpdating = false);
+        var message = 'Failed to update the selected leads.';
+        if (e is DioException) {
+          final data = e.response?.data;
+          final serverMessage = data is Map ? data['message']?.toString() : null;
+          if (serverMessage != null && serverMessage.trim().isNotEmpty) message = serverMessage.trim();
+        }
+        AppStatusSnackBar.show(context, message: message, isSuccess: false);
+      }
+    }
+  }
+
+  Future<void> _updateSalesPropertyListingStatus(String leadId, String newStatus) async {
+    if (leadId.isEmpty) return;
+    setState(() => _salesUpdatingStatusLeads[leadId] = true);
+    try {
+      final res = await DioClient.dio.patch(
+        ApiConstants.allocationSalesLeadStatus(leadId),
+        data: {'status': newStatus},
+      );
+      if (res.data['success'] == true && mounted) {
+        setState(() {
+          for (final item in _salesPropertyListingLeads) {
+            if (item['id']?.toString() == leadId) {
+              item['status'] = newStatus;
+              item['sales_listing_status'] = newStatus;
+            }
+          }
+          _salesUpdatingStatusLeads.remove(leadId);
+        });
+        AppStatusSnackBar.show(
+          context,
+          message: 'Lead status updated to "$newStatus" successfully.',
+          isSuccess: true,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _salesUpdatingStatusLeads.remove(leadId));
+        var message = 'Failed to update status.';
+        if (e is DioException) {
+          final data = e.response?.data;
+          final serverMessage = data is Map ? data['message']?.toString() : null;
+          if (serverMessage != null && serverMessage.trim().isNotEmpty) {
+            message = serverMessage.trim();
+          }
+        }
+        AppStatusSnackBar.show(
+          context,
+          message: message,
+          isSuccess: false,
+        );
+      }
+    }
+  }
+
+  Widget _buildCampaignSubTabChip({
+    required String label,
+    required int count,
+    required bool isSelected,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final primaryColor = CRMColors.primaryOf(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          border: Border.all(
+            color: isSelected ? primaryColor : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? Colors.white : (isDark ? Colors.white70 : const Color(0xFF475569)),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : (isDark ? Colors.white : const Color(0xFF1E293B)),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : primaryColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : primaryColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesSourceBadge(String source) {
+    final s = source.toUpperCase();
+    Color bg;
+    Color fg;
+    IconData icon;
+    String display = source;
+
+    if (s.contains('HOUSING')) {
+      bg = const Color(0xFFFF5A5F).withValues(alpha: 0.15);
+      fg = const Color(0xFFE02B30);
+      icon = Icons.home_work_outlined;
+      display = 'Housing';
+    } else if (s.contains('META') || s.contains('FACEBOOK') || s.contains('INSTAGRAM')) {
+      bg = const Color(0xFF1877F2).withValues(alpha: 0.15);
+      fg = const Color(0xFF1877F2);
+      icon = Icons.campaign_outlined;
+      display = 'Meta';
+    } else {
+      bg = CRMColors.primary.withValues(alpha: 0.15);
+      fg = CRMColors.primary;
+      icon = Icons.shield_outlined;
+      if (s.contains('SUPER') || s.contains('ADMIN')) {
+        display = 'PropKart Admin';
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fg.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            display,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesPropertyListingStatusDropdown(Map<String, dynamic> lead) {
+    final leadId = lead['id']?.toString() ?? '';
+    final isUpdating = _salesUpdatingStatusLeads[leadId] == true;
+    final currentStatus = (lead['status']?.toString() ?? 'None').trim().toLowerCase();
+    final displayStatus = currentStatus == 'interested'
+        ? 'Interested'
+        : currentStatus == 'rejected'
+            ? 'Rejected'
+            : 'None';
+    final isInterested = displayStatus == 'Interested';
+    final isRejected = displayStatus == 'Rejected';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (isUpdating) {
+      return Container(
+        height: 28,
+        width: 80,
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: isRejected
+            ? const Color(0xFFEF4444).withValues(alpha: 0.15)
+            : isInterested
+                ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isRejected
+              ? const Color(0xFFEF4444)
+              : isInterested
+                  ? const Color(0xFF10B981)
+                  : (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+        ),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: displayStatus,
+          isDense: true,
+          icon: Icon(
+            Icons.arrow_drop_down,
+            size: 16,
+            color: isRejected
+                ? const Color(0xFFEF4444)
+                : isInterested
+                    ? const Color(0xFF10B981)
+                    : (isDark ? Colors.white70 : Colors.black87),
+          ),
+          dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: (isInterested || isRejected) ? FontWeight.bold : FontWeight.w600,
+            color: isRejected
+                ? const Color(0xFFEF4444)
+                : isInterested
+                    ? const Color(0xFF10B981)
+                    : (isDark ? Colors.white : Colors.black87),
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: 'None',
+              child: Text('None', style: TextStyle(fontSize: 11.5)),
+            ),
+            DropdownMenuItem(
+              value: 'Interested',
+              child: Text(
+                'Interested',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+              ),
+            ),
+            DropdownMenuItem(
+              value: 'Rejected',
+              child: Text(
+                'Rejected',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFEF4444)),
+              ),
+            ),
+          ],
+          onChanged: (newVal) {
+            if (newVal != null && newVal != displayStatus && leadId.isNotEmpty) {
+              _updateSalesPropertyListingStatus(leadId, newVal);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  String _formatLeadReceivedDate(String? iso) {
+    if (iso == null || iso.isEmpty) return '—';
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return '—';
+    return DateFormat("dd MMM ''yy, h:mm a").format(dt);
+  }
+
+  String _formatLeadTimeAgo(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return '';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'just now';
+  }
+
+  String _listingValue(Map<String, dynamic> lead, String key) {
+    final text = lead[key]?.toString().trim() ?? '';
+    if (text.isEmpty || text == 'null' || text == 'N/A' || text == 'Lead') return '—';
+    return text;
+  }
+
+  Widget _listingTextCell(String value, {FontWeight weight = FontWeight.w500, double size = 12}) {
+    final empty = value == '—';
+    return Text(
+      value,
+      style: TextStyle(
+        fontSize: size,
+        fontWeight: empty ? FontWeight.w500 : weight,
+        color: empty ? const Color(0xFF94A3B8) : null,
+      ),
+    );
+  }
+
+  Widget _buildSalesPropertyListingSpreadsheetView({required bool isMobile, bool rejectedOnly = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rows = _displayedCampaignLeads(rejectedOnly: rejectedOnly);
+    final rowIds = rows.map((lead) => lead['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
+    final selectedCount = rowIds.where(_selectedCampaignLeadIds.contains).length;
+    final allSelected = rowIds.isNotEmpty && selectedCount == rowIds.length;
+    final emptyTitle = rejectedOnly
+        ? 'No Rejected Property Listing Leads'
+        : 'No Property Listing Leads currently allocated to you.';
+    final emptyBody = rejectedOnly
+        ? 'Property listing leads marked Rejected will appear here.'
+        : 'Property listing leads directly allocated from campaign sources will appear here.';
+
+    final toolbar = Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildCampaignSalespersonFilter(),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    tristate: true,
+                    value: rowIds.isEmpty ? false : (allSelected ? true : (selectedCount > 0 ? null : false)),
+                    onChanged: rowIds.isEmpty
+                        ? null
+                        : (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selectedCampaignLeadIds.addAll(rowIds);
+                              } else {
+                                _selectedCampaignLeadIds.removeAll(rowIds);
+                              }
+                            });
+                          },
+                  ),
+                  Text(
+                    selectedCount == 0 ? 'Select all' : '$selectedCount selected',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              OutlinedButton(
+                onPressed: selectedCount == 0 || _campaignBulkUpdating
+                    ? null
+                    : () => _confirmCampaignBulkStatus(rowIds, 'Interested'),
+                child: const Text('Mark Interested', style: TextStyle(fontSize: 12)),
+              ),
+              OutlinedButton(
+                onPressed: selectedCount == 0 || _campaignBulkUpdating
+                    ? null
+                    : () => _confirmCampaignBulkStatus(rowIds, 'Rejected'),
+                child: const Text('Mark Rejected', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (_isLoadingSalesPropertyListingLeads && rows.isEmpty) {
+      return Column(
+        children: [
+          toolbar,
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      );
+    }
+
+    if (rows.isEmpty) {
+      return Column(
+        children: [
+          toolbar,
+          Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.holiday_village_outlined, size: 40, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            Text(
+              emptyTitle,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              emptyBody,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _fetchSalesPropertyListingLeads(),
+              icon: const Icon(Icons.refresh, size: 14),
+              label: const Text('Refresh Leads', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+          ),
+        ],
+      );
+    }
+
+    if (isMobile) {
+      return Column(
+        children: [
+          toolbar,
+          for (int i = 0; i < rows.length; i++)
+            _buildSalesPropertyListingMobileCard(rows[i], i + 1, isDark),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        toolbar,
+        Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(
+              isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            ),
+            dataRowMinHeight: 46,
+            dataRowMaxHeight: 56,
+            horizontalMargin: 14,
+            columnSpacing: 18,
+            columns: [
+              const DataColumn(label: Text('', style: TextStyle(fontSize: 12))),
+              const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              const DataColumn(label: Text('Source', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              const DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              if (_isCampaignLeadAdmin)
+                const DataColumn(label: Text('Salesperson', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              const DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Phone Number', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Received On', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Property Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Expected Rent', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Property Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('City', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Email ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              DataColumn(label: Text('Campaign Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+            ],
+            rows: rows.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final lead = entry.value;
+              final source = lead['source']?.toString() ?? lead['rawSource']?.toString() ?? '';
+              final clientName = _listingValue(lead, 'clientName');
+              final phone = lead['phone']?.toString().trim() ?? '';
+              final receivedOn = lead['receivedOn']?.toString();
+              final propType = _listingValue(lead, 'propertyType');
+              final expectedRent = _listingValue(lead, 'expectedRent');
+              final propertyLocation = _listingValue(lead, 'propertyLocation');
+              final city = _listingValue(lead, 'city');
+              final email = _listingValue(lead, 'email');
+              final campaignName = _listingValue(lead, 'campaignName');
+              final leadId = lead['id']?.toString() ?? '';
+              final salespersonName = _listingValue(lead, 'assignedToName');
+
+              return DataRow(
+                color: WidgetStateProperty.resolveWith<Color?>((states) {
+                  final status = (lead['status']?.toString() ?? '').toLowerCase();
+                  if (status == 'rejected') {
+                    return const Color(0xFFEF4444).withValues(alpha: 0.08);
+                  }
+                  if (status == 'interested') {
+                    return const Color(0xFF10B981).withValues(alpha: 0.08);
+                  }
+                  return idx.isEven
+                      ? (isDark ? const Color(0xFF1E293B) : const Color(0xFFFAFAFA))
+                      : (isDark ? const Color(0xFF0F172A).withValues(alpha: 0.5) : Colors.white);
+                }),
+                cells: [
+                  DataCell(
+                    Checkbox(
+                      value: leadId.isNotEmpty && _selectedCampaignLeadIds.contains(leadId),
+                      onChanged: leadId.isEmpty
+                          ? null
+                          : (checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  _selectedCampaignLeadIds.add(leadId);
+                                } else {
+                                  _selectedCampaignLeadIds.remove(leadId);
+                                }
+                              });
+                            },
+                    ),
+                  ),
+                  DataCell(Text('${idx + 1}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
+                  DataCell(source.trim().isEmpty
+                      ? _listingTextCell('—')
+                      : _buildSalesSourceBadge(source)),
+                  DataCell(_buildSalesPropertyListingStatusDropdown(lead)),
+                  if (_isCampaignLeadAdmin) DataCell(_listingTextCell(salespersonName, weight: FontWeight.w600)),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 160),
+                      child: Text(
+                        clientName,
+                        style: TextStyle(
+                          fontWeight: clientName == '—' ? FontWeight.w500 : FontWeight.bold,
+                          fontSize: 12.5,
+                          color: clientName == '—' ? const Color(0xFF94A3B8) : null,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    phone.isNotEmpty
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _makePhoneCall(phone),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(Icons.phone_outlined, size: 14, color: CRMColors.primaryOf(context)),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _sendWhatsAppMessage(phone),
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(2),
+                                  child: Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF25D366)),
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Text('—', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+                  DataCell(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _formatLeadReceivedDate(receivedOn),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          _formatLeadTimeAgo(receivedOn),
+                          style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : const Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                      ),
+                      child: Text(
+                        propType,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: propType == '—'
+                              ? const Color(0xFF94A3B8)
+                              : (isDark ? Colors.white : const Color(0xFF334155)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(_listingTextCell(expectedRent)),
+                  DataCell(_listingTextCell(propertyLocation)),
+                  DataCell(_listingTextCell(city)),
+                  DataCell(_listingTextCell(email)),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      child: _listingTextCell(campaignName, weight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSalesPropertyListingMobileCard(Map<String, dynamic> lead, int index, bool isDark) {
+    final source = lead['source']?.toString() ?? lead['rawSource']?.toString() ?? '';
+    final clientName = _listingValue(lead, 'clientName');
+    final phone = lead['phone']?.toString().trim() ?? '';
+    final receivedOn = lead['receivedOn']?.toString();
+    final propType = _listingValue(lead, 'propertyType');
+    final expectedRent = _listingValue(lead, 'expectedRent');
+    final propertyLocation = _listingValue(lead, 'propertyLocation');
+    final city = _listingValue(lead, 'city');
+    final email = _listingValue(lead, 'email');
+    final campaignName = _listingValue(lead, 'campaignName');
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Checkbox(
+                  value: (lead['id']?.toString() ?? '').isNotEmpty && _selectedCampaignLeadIds.contains(lead['id']?.toString()),
+                  onChanged: (lead['id']?.toString() ?? '').isEmpty
+                      ? null
+                      : (checked) {
+                          final leadId = lead['id'].toString();
+                          setState(() {
+                            if (checked == true) {
+                              _selectedCampaignLeadIds.add(leadId);
+                            } else {
+                              _selectedCampaignLeadIds.remove(leadId);
+                            }
+                          });
+                        },
+                ),
+                Text('#$index', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                const SizedBox(width: 8),
+                source.trim().isEmpty ? _listingTextCell('—') : _buildSalesSourceBadge(source),
+                const Spacer(),
+                if (_isCampaignLeadAdmin)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      _listingValue(lead, 'assignedToName'),
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                    ),
+                  ),
+                _buildSalesPropertyListingStatusDropdown(lead),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              clientName,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (phone.isNotEmpty)
+                  InkWell(
+                    onTap: () => _sendWhatsAppMessage(phone),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.chat_bubble_outline, size: 12, color: Color(0xFF25D366)),
+                        const SizedBox(width: 4),
+                        Text(phone, style: const TextStyle(fontSize: 12, color: Color(0xFF25D366), fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                Text('• Type: $propType', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text('• Rent: $expectedRent', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text('• $propertyLocation, $city', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text('• $email', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text('• $campaignName', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Received: ${_formatLeadReceivedDate(receivedOn)} (${_formatLeadTimeAgo(receivedOn)})',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 
 

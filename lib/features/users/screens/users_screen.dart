@@ -736,8 +736,10 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildPageHeader() {
+    final authState = context.read<AuthBloc>().state;
+    final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
     return CRMPageHeader(
-      title: "Employees",
+      title: isSuperAdmin ? "Users" : "Employees",
       trailing: CRMButton(
         label: "Add Employee",
         prefixIcon: Icons.add_rounded,
@@ -1735,7 +1737,7 @@ class _UsersScreenState extends State<UsersScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildTabItem(0, "Employees", Icons.people_rounded),
+              _buildTabItem(0, isSuperAdmin ? "Users" : "Employees", Icons.people_rounded),
               const SizedBox(width: 4),
               _buildTabItem(
                 1,

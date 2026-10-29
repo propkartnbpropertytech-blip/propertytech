@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
@@ -57,6 +58,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
   String? _selectedCampaignKey;
   String? _selectedCampaignName;
   String? _selectedCategoryName;
+  String _salesSelectedLeadTypeTab = "Property Listing";
 
 
   static String _formatDuration(int seconds) {
@@ -464,6 +466,8 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           )
         : currentLeads;
     final history = List<dynamic>.from(_data?['history'] ?? []);
+    final rawPropertyLeads = List<dynamic>.from(_data?['propertyListingLeads'] ?? []);
+    final rawReqLeads = List<dynamic>.from(_data?['requirementLeads'] ?? []);
 
     final status = profile['availability']?.toString() ?? 'INACTIVE';
     final isFresh = profile['heartbeatFresh'] == true;
@@ -1129,22 +1133,45 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 children: [
                   if (widget.isSales) ...[
                     _metricBox(
-                      'Allocated Leads',
+                      'Total Allocated',
                       '${_data?['leadStats']?['allocatedLeads'] ?? _data?['leadStats']?['totalAssigned'] ?? (_directory.isNotEmpty ? _directory.length : currentLeads.length)}',
                       Icons.assignment_outlined,
                       CRMColors.primary,
                       isDark,
                       width: metricWidth,
-                      onTap: () => _showLeadList(
-                        'Allocated Leads',
-                        _directory.isNotEmpty
-                            ? _directory
-                            : currentLeads
-                                .whereType<Map>()
-                                .map((e) => Map<String, dynamic>.from(e))
-                                .toList(),
-                        subtitle: 'Campaign leads directly allocated to ${widget.telecallerName ?? 'this salesperson'}.',
-                      ),
+                      onTap: () {
+                        setState(() {
+                          _selectedCampaignKey = null;
+                          _selectedCampaignName = null;
+                          _selectedCategoryName = null;
+                        });
+                      },
+                    ),
+                    _metricBox(
+                      'Property Listing Leads',
+                      '${_data?['propertyListingCount'] ?? (_data?['propertyListingLeads'] as List?)?.length ?? 0}',
+                      Icons.holiday_village_outlined,
+                      const Color(0xFF0D9488),
+                      isDark,
+                      width: metricWidth,
+                      onTap: () {
+                        setState(() {
+                          _salesSelectedLeadTypeTab = 'Property Listing';
+                        });
+                      },
+                    ),
+                    _metricBox(
+                      'Requirement Leads',
+                      '${_data?['requirementCount'] ?? (_data?['requirementLeads'] as List?)?.length ?? 0}',
+                      Icons.person_search_outlined,
+                      const Color(0xFF2563EB),
+                      isDark,
+                      width: metricWidth,
+                      onTap: () {
+                        setState(() {
+                          _salesSelectedLeadTypeTab = 'Requirement';
+                        });
+                      },
                     ),
                   ] else ...[
                     _metricBox(
@@ -1221,7 +1248,15 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
 
 
           // Section 3: Active Assigned Leads List
-          Column(
+          if (widget.isSales)
+            _buildSalesAllocatedLeadsSection(
+              rawPropertyLeads: rawPropertyLeads,
+              rawReqLeads: rawReqLeads,
+              isDark: isDark,
+              isMobile: isMobile,
+            )
+          else ...[
+            Column(
             crossAxisAlignment: CrossAxisAlignment.start, 
             children: [
               Row(
@@ -1512,8 +1547,10 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 },
               ),
           const SizedBox(height: 20),
-
-          // Section 4: Recent Assignment History
+          ],
+          if (!widget.isSales) ...[
+            const SizedBox(height: 20),
+            // Section 4: Recent Assignment History
           const Text('Recent Assignment History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           if (history.isEmpty)
@@ -1616,6 +1653,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                   );
                 },
               ),
+          ],
         ],
       ),
     );
@@ -1886,200 +1924,132 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
     required bool isDark,
   }) {
     final isMobile = CRMBreakpoints.isPhone(context);
+    final pLeads = leads.where((l) => (l['leadType'] ?? '').toString() == 'Property Listing').toList();
+    final rLeads = leads.where((l) => (l['leadType'] ?? '').toString() != 'Property Listing').toList();
+    String activeSubTab = pLeads.isNotEmpty ? 'Property Listing' : (rLeads.isNotEmpty ? 'Requirement' : 'Property Listing');
+
     showDialog(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: CRMColors.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.campaign_outlined, size: 16, color: CRMColors.primary),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: CRMColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(Icons.campaign_outlined, size: 16, color: CRMColors.primary),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                '$campaignName · $categoryName',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            '$campaignName · $categoryName',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Allocated leads for ${widget.telecallerName ?? 'this salesperson'} (${leads.length} ${leads.length == 1 ? 'Lead' : 'Leads'}).',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Allocated leads for ${widget.telecallerName ?? 'this salesperson'} (${leads.length} ${leads.length == 1 ? 'Lead' : 'Leads'}).',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                    ),
-                  ],
-                ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    splashRadius: 18,
+                    tooltip: 'Close',
+                  ),
+                ],
               ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                onPressed: () => Navigator.of(ctx).pop(),
-                splashRadius: 18,
-                tooltip: 'Close',
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: isMobile ? double.maxFinite : 560,
-            child: leads.isEmpty
-                ? Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(28),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                    ),
-                    child: Center(
-                      child: Column(
+              content: SizedBox(
+                width: isMobile ? double.maxFinite : 760,
+                child: leads.isEmpty
+                    ? Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(28),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade400),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No leads currently allocated for $campaignName ($categoryName).',
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Column(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade400),
-                          const SizedBox(height: 8),
-                          Text(
-                            'No leads currently allocated for $campaignName ($categoryName).',
-                            style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                            textAlign: TextAlign.center,
+                          Row(
+                            children: [
+                              _buildLeadTypeTabButton(
+                                label: 'Property Listing Leads',
+                                count: pLeads.length,
+                                isSelected: activeSubTab == 'Property Listing',
+                                icon: Icons.holiday_village_outlined,
+                                onTap: () => setDialogState(() => activeSubTab = 'Property Listing'),
+                                isDark: isDark,
+                              ),
+                              const SizedBox(width: 8),
+                              _buildLeadTypeTabButton(
+                                label: 'Requirement Leads',
+                                count: rLeads.length,
+                                isSelected: activeSubTab == 'Requirement',
+                                icon: Icons.person_search_outlined,
+                                onTap: () => setDialogState(() => activeSubTab = 'Requirement'),
+                                isDark: isDark,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Flexible(
+                            child: SingleChildScrollView(
+                              child: activeSubTab == 'Property Listing'
+                                  ? _buildPropertyListingLeadsTable(pLeads, isDark, isMobile)
+                                  : _buildRequirementLeadsTable(rLeads, isDark, isMobile),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  )
-                : SizedBox(
-                    height: isMobile ? 380 : 440,
-                    child: ListView.builder(
-                      itemCount: leads.length,
-                      itemBuilder: (_, index) {
-                        final lead = leads[index];
-                        final leadId = lead['id']?.toString() ?? '';
-                        final name = lead['name']?.toString() ?? 'Lead';
-                        final phone = lead['phone']?.toString() ?? '';
-                        final campaign = lead['campaign']?.toString() ?? campaignName;
-                        final priority = lead['priority']?.toString() ?? 'NORMAL';
-                        final allocStatus = lead['allocationStatus']?.toString() ?? 'ASSIGNED_TO_SALES';
-                        final ageMinutes = lead['ageMinutes'] ?? 0;
-                        final isStale = lead['isStale'] == true;
-                        final callAttempts = lead['callAttemptCount'] ?? 0;
-
-                        Color priorityColor;
-                        switch (priority) {
-                          case 'HOT':
-                            priorityColor = Colors.red;
-                            break;
-                          case 'OLD_PENDING':
-                            priorityColor = Colors.amber.shade800;
-                            break;
-                          default:
-                            priorityColor = Colors.blue;
-                        }
-
-                        return Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.only(bottom: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: BorderSide(
-                              color: isStale
-                                  ? Colors.red.shade300
-                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                              width: isStale ? 1.5 : 1.0,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: priorityColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: priorityColor.withValues(alpha: 0.4)),
-                                  ),
-                                  child: Text(
-                                    priority,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: priorityColor,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              name,
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (phone.isNotEmpty) ...[
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              phone,
-                                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        'Campaign: $campaign · Status: $allocStatus · Assigned: ${ageMinutes}m ago · Calls: $callAttempts',
-                                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  ),
-                                  onPressed: () {
-                                    Navigator.of(ctx).pop();
-                                    _reassignLead(leadId);
-                                  },
-                                  icon: const Icon(Icons.swap_horiz, size: 13),
-                                  label: const Text('Reassign', style: TextStyle(fontSize: 11)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close'),
-            ),
-          ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -2147,7 +2117,19 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                 final campId = camp['campaignId']?.toString() ?? camp['campaignName']?.toString() ?? 'META';
                 final rawCats = camp['categories'] as List<dynamic>? ?? [];
                 final categories = rawCats.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-                final totalLeads = categories.fold<int>(0, (sum, cat) => sum + ((cat['allocatedCount'] as num?)?.toInt() ?? 0));
+                final uniqueLeadIds = <String>{};
+                for (final cat in categories) {
+                  final rawCatLeads = cat['leads'] as List<dynamic>? ?? [];
+                  for (final lead in rawCatLeads) {
+                    if (lead is Map && lead['id'] != null) {
+                      uniqueLeadIds.add(lead['id'].toString());
+                    }
+                  }
+                }
+                final totalLeads = (camp['leadCount'] as num?)?.toInt() ??
+                    (uniqueLeadIds.isNotEmpty
+                        ? uniqueLeadIds.length
+                        : categories.fold<int>(0, (sum, cat) => sum + ((cat['allocatedCount'] as num?)?.toInt() ?? 0)));
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -2313,4 +2295,1084 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
       ],
     );
   }
+
+  Future<void> _makePhoneCall(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'\D'), '');
+    if (clean.isEmpty) return;
+    final uri = Uri.parse('tel:$clean');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> _sendWhatsAppMessage(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'\D'), '');
+    if (clean.isEmpty) return;
+    final formatted = clean.length == 10 ? '91$clean' : clean;
+    final uri = Uri.parse('https://wa.me/$formatted');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  static String _formatDateTimeDisplay(String? iso) {
+    if (iso == null || iso.isEmpty) return '—';
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return '—';
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = _monthAbbr(dt.month);
+    final year = dt.year.toString().substring(2);
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final min = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    return "$day $month '$year, $hour:$min $ampm";
+  }
+
+  static String _monthAbbr(int m) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return (m >= 1 && m <= 12) ? months[m - 1] : '';
+  }
+
+  static String _formatTimeAgoDisplay(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return '';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'just now';
+  }
+
+  Widget _buildSourceBadge(String source) {
+    final s = source.toUpperCase();
+    Color bg;
+    Color fg;
+    IconData? icon;
+    String display = source;
+
+    if (s.contains('HOUSING')) {
+      bg = const Color(0xFFFF5A5F).withValues(alpha: 0.15);
+      fg = const Color(0xFFE02B30);
+      icon = Icons.home_work_outlined;
+      display = 'Housing';
+    } else if (s.contains('META') || s.contains('FACEBOOK') || s.contains('INSTAGRAM')) {
+      bg = const Color(0xFF1877F2).withValues(alpha: 0.15);
+      fg = const Color(0xFF1877F2);
+      icon = Icons.campaign_outlined;
+      display = 'Meta';
+    } else {
+      bg = CRMColors.primary.withValues(alpha: 0.15);
+      fg = CRMColors.primary;
+      icon = Icons.shield_outlined;
+      if (s.contains('SUPER') || s.contains('ADMIN')) {
+        display = 'PropKart Admin';
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fg.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            display,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAllocatedLeadDetails(Map<String, dynamic> lead) {
+    final fields = <Map<String, String>>[];
+    final rawFields = lead['detailFields'];
+    if (rawFields is List) {
+      for (final item in rawFields) {
+        if (item is! Map) continue;
+        final label = item['label']?.toString().trim() ?? '';
+        final value = item['value']?.toString().trim() ?? '';
+        if (label.isEmpty || value.isEmpty) continue;
+        fields.add({'label': label, 'value': value});
+      }
+    }
+    if (fields.isEmpty) {
+      void add(String label, String? value) {
+        final text = (value ?? '').trim();
+        if (text.isEmpty) return;
+        fields.add({'label': label, 'value': text});
+      }
+      add('Client / Owner Name', lead['clientName']?.toString() ?? lead['name']?.toString());
+      add('Phone', lead['phone']?.toString());
+      add('Email', lead['email']?.toString());
+      add('Source', lead['source']?.toString() ?? lead['rawSource']?.toString());
+      add('Campaign', lead['campaign']?.toString());
+      add('Category', lead['category']?.toString());
+      add('Property Type', lead['propertyType']?.toString());
+      add('Status', lead['status']?.toString() ?? lead['salesListingStatus']?.toString());
+      add('Notes', lead['notes']?.toString());
+      final raw = lead['rawJson'];
+      if (raw is Map) {
+        raw.forEach((key, value) {
+          if (value == null || value is Map || value is List) return;
+          add(key.toString().replaceAll('_', ' '), value.toString());
+        });
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(lead['clientName']?.toString() ?? lead['name']?.toString() ?? 'Lead details'),
+        content: SizedBox(
+          width: 460,
+          child: fields.isEmpty
+              ? const Text('No additional campaign details are stored for this lead.')
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final field in fields)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(field['label'] ?? '', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                              Text(field['value'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLeadTypeTabButton({
+    required String label,
+    required int count,
+    required bool isSelected,
+    required IconData icon,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? CRMColors.primary
+              : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? CRMColors.primary : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? Colors.white : (isDark ? Colors.white70 : const Color(0xFF475569)),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : (isDark ? Colors.white : const Color(0xFF1E293B)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : CRMColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : CRMColors.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _filterSalesDirectLeads(List<dynamic> leadsList) {
+    final list = leadsList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    if (_selectedCategoryName == null) return list;
+    return list.where((lead) {
+      final leadCamp = (lead['campaignId'] ?? lead['campaign'] ?? lead['source'] ?? '').toString().toUpperCase();
+      final targetCampKey = (_selectedCampaignKey ?? '').toUpperCase();
+      final targetCampName = (_selectedCampaignName ?? '').toUpperCase();
+      final campMatches = targetCampKey.isEmpty ||
+          targetCampKey == 'ALL' ||
+          leadCamp == targetCampKey ||
+          (targetCampName.isNotEmpty && leadCamp == targetCampName) ||
+          leadCamp.contains(targetCampKey) ||
+          targetCampKey.contains(leadCamp);
+      if (!campMatches) return false;
+
+      final leadCat = (lead['category'] ?? '').toString().toUpperCase();
+      final targetCat = (_selectedCategoryName ?? '').toUpperCase();
+      return targetCat.isEmpty || targetCat == 'ALL' || leadCat == targetCat || leadCat.contains(targetCat) || targetCat.contains(leadCat);
+    }).toList();
+  }
+
+  Widget _buildSalesAllocatedLeadsSection({
+    required List<dynamic> rawPropertyLeads,
+    required List<dynamic> rawReqLeads,
+    required bool isDark,
+    required bool isMobile,
+  }) {
+    final filteredPropertyLeads = _filterSalesDirectLeads(rawPropertyLeads);
+    final filteredReqLeads = _filterSalesDirectLeads(rawReqLeads);
+    final totalFiltered = filteredPropertyLeads.length + filteredReqLeads.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    _selectedCategoryName != null
+                        ? 'Allocated Leads: $_selectedCampaignName · $_selectedCategoryName'
+                        : 'Allocated Leads ($totalFiltered)',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  if (_selectedCategoryName != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: CRMColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: CRMColors.primary.withValues(alpha: 0.4)),
+                      ),
+                      child: Text(
+                        '$totalFiltered Leads',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (_selectedCategoryName != null) ...[
+              Wrap(
+                spacing: 6,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    ),
+                    onPressed: () {
+                      final allLeads = [...filteredPropertyLeads, ...filteredReqLeads];
+                      _showCategoryLeadsDialog(
+                        campaignName: _selectedCampaignName ?? '',
+                        categoryName: _selectedCategoryName ?? '',
+                        leads: allLeads,
+                        isDark: isDark,
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_new, size: 12),
+                    label: const Text('Popup', style: TextStyle(fontSize: 11)),
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _selectedCampaignKey = null;
+                        _selectedCampaignName = null;
+                        _selectedCategoryName = null;
+                      });
+                    },
+                    icon: const Icon(Icons.clear, size: 12),
+                    label: const Text('Clear Filter', style: TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _selectedCategoryName != null
+              ? 'Campaign leads allocated to this salesperson under $_selectedCampaignName ($_selectedCategoryName).'
+              : 'Campaign leads directly allocated to ${widget.telecallerName ?? "this salesperson"}.',
+          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 14),
+
+        // Tabs: Property Listing Leads vs Requirement Leads
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            _buildLeadTypeTabButton(
+              label: 'Property Listing Leads',
+              count: filteredPropertyLeads.length,
+              isSelected: _salesSelectedLeadTypeTab == 'Property Listing',
+              icon: Icons.holiday_village_outlined,
+              onTap: () => setState(() => _salesSelectedLeadTypeTab = 'Property Listing'),
+              isDark: isDark,
+            ),
+            _buildLeadTypeTabButton(
+              label: 'Requirement Leads',
+              count: filteredReqLeads.length,
+              isSelected: _salesSelectedLeadTypeTab == 'Requirement',
+              icon: Icons.person_search_outlined,
+              onTap: () => setState(() => _salesSelectedLeadTypeTab = 'Requirement'),
+              isDark: isDark,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // Active Tab Table / View
+        if (_salesSelectedLeadTypeTab == 'Property Listing')
+          _buildPropertyListingLeadsTable(filteredPropertyLeads, isDark, isMobile)
+        else
+          _buildRequirementLeadsTable(filteredReqLeads, isDark, isMobile),
+      ],
+    );
+  }
+
+  Widget _buildPropertyListingLeadsTable(List<Map<String, dynamic>> leads, bool isDark, bool isMobile) {
+    if (leads.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.holiday_village_outlined, size: 36, color: Colors.grey.shade400),
+              const SizedBox(height: 8),
+              Text(
+                _selectedCategoryName != null
+                    ? 'No Property Listing Leads currently allocated for $_selectedCampaignName ($_selectedCategoryName).'
+                    : 'No Property Listing Leads currently allocated to this salesperson.',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (isMobile) {
+      return Column(
+        children: [
+          for (int i = 0; i < leads.length; i++)
+            _buildPropertyListingLeadMobileCard(leads[i], i + 1, isDark),
+        ],
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(
+              isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            ),
+            dataRowMinHeight: 48,
+            dataRowMaxHeight: 56,
+            horizontalMargin: 14,
+            columnSpacing: 18,
+            columns: const [
+              DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Source', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Transfer Leads', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Client / Owner Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Phone Number', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Received On', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Property Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Expected Rent', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Property Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('City', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              DataColumn(label: Text('Email ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+            ],
+            rows: leads.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final lead = entry.value;
+              final leadId = lead['id']?.toString() ?? '';
+              final source = lead['source']?.toString() ?? 'META';
+              final clientName = lead['clientName']?.toString() ?? '—';
+              final phone = lead['phone']?.toString() ?? '';
+              final receivedOn = lead['receivedOn']?.toString();
+              final propType = lead['propertyType']?.toString() ?? lead['category']?.toString() ?? '—';
+              final transferLeadsName = lead['transferLeads']?.toString() ?? widget.telecallerName ?? 'Salesperson';
+              final expectedRent = _leadText(lead, 'expectedRent', const ['expected_monthly_rent', 'expected monthly rent', 'expected_rent']);
+              final propertyLocation = _leadText(lead, 'propertyLocation', const ['where_is_your_property_located', 'property_location', 'property location']);
+              final city = _leadText(lead, 'city', const ['city']);
+              final email = _leadText(lead, 'email', const ['email']);
+
+              return DataRow(
+                color: WidgetStateProperty.resolveWith<Color?>((states) {
+                  final status = (lead['status']?.toString() ?? '').toLowerCase();
+                  if (status == 'interested') {
+                    return const Color(0xFF10B981).withValues(alpha: 0.08);
+                  }
+                  return idx.isEven
+                      ? (isDark ? const Color(0xFF1E293B) : const Color(0xFFFAFAFA))
+                      : (isDark ? const Color(0xFF0F172A).withValues(alpha: 0.5) : Colors.white);
+                }),
+                cells: [
+                  DataCell(Text('${idx + 1}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
+                  DataCell(_buildSourceBadge(source)),
+                  DataCell(_buildPropertyListingStatusLabel(lead, isDark)),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 120),
+                          child: Text(
+                            transferLeadsName,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.4)),
+                          ),
+                          onPressed: () => _reassignLead(leadId),
+                          icon: const Icon(Icons.swap_horiz, size: 12),
+                          label: const Text('Reassign', style: TextStyle(fontSize: 10.5)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 120),
+                          child: Text(
+                            clientName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Lead details',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.info_outline, size: 16),
+                          onPressed: () => _showAllocatedLeadDetails(lead),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    phone.isNotEmpty
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _makePhoneCall(phone),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(Icons.phone_outlined, size: 14, color: CRMColors.primary),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _sendWhatsAppMessage(phone),
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(2),
+                                  child: Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF25D366)),
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Text('—', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+                  DataCell(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _formatDateTimeDisplay(receivedOn),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          _formatTimeAgoDisplay(receivedOn),
+                          style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : const Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                      ),
+                      child: Text(
+                        propType,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDark ? Colors.white : const Color(0xFF334155)),
+                      ),
+                    ),
+                  ),
+                  DataCell(_buildLeadTextCell(expectedRent, maxWidth: 130)),
+                  DataCell(_buildLeadTextCell(propertyLocation, maxWidth: 150)),
+                  DataCell(_buildLeadTextCell(city, maxWidth: 120)),
+                  DataCell(_buildLeadTextCell(email, maxWidth: 180)),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _humanizeLeadValue(String value) {
+    final text = value.trim();
+    if (text.isEmpty || text.contains('@') || !text.contains('_')) return text;
+    return text
+        .split('_')
+        .where((word) => word.isNotEmpty)
+        .map((word) {
+          final lower = word.toLowerCase();
+          if (lower == 'bhk' || lower == 'rk') return lower.toUpperCase();
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
+  }
+
+  /// Reads a value from the lead map, then from the stored campaign form answers.
+  static String _leadText(Map<String, dynamic> lead, String field, List<String> rawKeyMatchers) {
+    final direct = lead[field]?.toString().trim() ?? '';
+    if (direct.isNotEmpty && direct != 'null' && direct != 'N/A' && direct != 'Property') {
+      return _humanizeLeadValue(direct);
+    }
+    final raw = lead['rawJson'];
+    if (raw is Map) {
+      for (final entry in raw.entries) {
+        final key = entry.key.toString().toLowerCase();
+        if (!rawKeyMatchers.any(key.contains)) continue;
+        final value = entry.value;
+        if (value == null || value is Map || value is List) continue;
+        final text = value.toString().trim();
+        if (text.isNotEmpty && text != 'null') return _humanizeLeadValue(text);
+      }
+    }
+    return '';
+  }
+
+  Widget _buildLeadTextCell(String value, {double maxWidth = 140}) {
+    if (value.isEmpty) {
+      return const Text('—', style: TextStyle(fontSize: 12, color: Colors.grey));
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Tooltip(
+        message: value,
+        child: Text(
+          value,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyStatusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+      ),
+    );
+  }
+
+  Widget _buildPropertyListingStatusLabel(Map<String, dynamic> lead, bool isDark) {
+    final status = (lead['status']?.toString() ?? 'None').trim().toLowerCase();
+    if (status == 'interested') return _buildReadOnlyStatusChip('Interested', const Color(0xFF10B981));
+    if (status == 'rejected') return _buildReadOnlyStatusChip('Rejected', const Color(0xFFEF4444));
+    return _buildReadOnlyStatusChip('None', isDark ? Colors.white70 : const Color(0xFF64748B));
+  }
+
+  Widget _buildPropertyListingLeadMobileCard(Map<String, dynamic> lead, int index, bool isDark) {
+    final leadId = lead['id']?.toString() ?? '';
+    final source = lead['source']?.toString() ?? 'META';
+    final clientName = lead['clientName']?.toString() ?? '—';
+    final phone = lead['phone']?.toString() ?? '';
+    final receivedOn = lead['receivedOn']?.toString();
+    final propType = lead['propertyType']?.toString() ?? lead['category']?.toString() ?? '—';
+    final transferLeadsName = lead['transferLeads']?.toString() ?? widget.telecallerName ?? 'Salesperson';
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('#$index', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                const SizedBox(width: 8),
+                _buildSourceBadge(source),
+                const Spacer(),
+                _buildPropertyListingStatusLabel(lead, isDark),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    clientName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  ),
+                  onPressed: () => _reassignLead(leadId),
+                  icon: const Icon(Icons.swap_horiz, size: 12),
+                  label: const Text('Reassign', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (phone.isNotEmpty)
+                  InkWell(
+                    onTap: () => _sendWhatsAppMessage(phone),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.chat_bubble_outline, size: 12, color: Color(0xFF25D366)),
+                        const SizedBox(width: 4),
+                        Text(phone, style: const TextStyle(fontSize: 12, color: Color(0xFF25D366), fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                Text('• Assigned to $transferLeadsName', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text('• Type: $propType', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Received: ${_formatDateTimeDisplay(receivedOn)} (${_formatTimeAgoDisplay(receivedOn)})',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequirementLeadsTable(List<Map<String, dynamic>> leads, bool isDark, bool isMobile) {
+    if (leads.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.person_search_outlined, size: 36, color: Colors.grey.shade400),
+              const SizedBox(height: 8),
+              Text(
+                _selectedCategoryName != null
+                    ? 'No Requirement Leads currently allocated for $_selectedCampaignName ($_selectedCategoryName).'
+                    : 'No Requirement Leads currently allocated to this salesperson.',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!isMobile) {
+      return _buildRequirementLeadsDataTable(leads, isDark);
+    }
+
+    return Column(
+      children: [
+        for (int i = 0; i < leads.length; i++)
+          Builder(
+            builder: (context) {
+              final lead = leads[i];
+              final leadId = lead['id']?.toString() ?? '';
+              final clientName = lead['clientName']?.toString() ?? 'Requirement Lead';
+              final config = lead['config']?.toString() ?? lead['category']?.toString() ?? 'Property';
+              final budget = lead['budget']?.toString() ?? 'Budget on Request';
+              final source = lead['source']?.toString() ?? 'META';
+              final phone = lead['phone']?.toString() ?? '';
+              final assignedTo = lead['assignedSalesperson']?.toString() ?? widget.telecallerName ?? 'Salesperson';
+              final status = lead['status']?.toString() ?? 'Assigned to Sales';
+              final receivedOn = lead['receivedOn']?.toString();
+
+              return Card(
+                elevation: 0,
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: CRMColors.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text('#${i + 1}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CRMColors.primary)),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(status, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            ),
+                            onPressed: () => _reassignLead(leadId),
+                            icon: const Icon(Icons.swap_horiz, size: 12),
+                            label: const Text('Reassign', style: TextStyle(fontSize: 11)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.home_outlined, size: 14, color: Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Text(config, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.currency_rupee, size: 14, color: Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Text(budget, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                          _buildSourceBadge(source),
+                          if (phone.isNotEmpty)
+                            InkWell(
+                              onTap: () => _sendWhatsAppMessage(phone),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.chat_bubble_outline, size: 13, color: Color(0xFF25D366)),
+                                  const SizedBox(width: 4),
+                                  Text(phone, style: const TextStyle(fontSize: 12, color: Color(0xFF25D366), fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Assigned to: $assignedTo', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                          Text(
+                            'Added by: Propkart Admin · ${_formatTimeAgoDisplay(receivedOn)}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRequirementLeadsDataTable(List<Map<String, dynamic>> leads, bool isDark) {
+    const headerStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5);
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(
+              isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            ),
+            dataRowMinHeight: 48,
+            dataRowMaxHeight: 56,
+            horizontalMargin: 14,
+            columnSpacing: 18,
+            columns: const [
+              DataColumn(label: Text('#', style: headerStyle)),
+              DataColumn(label: Text('Source', style: headerStyle)),
+              DataColumn(label: Text('Status', style: headerStyle)),
+              DataColumn(label: Text('Transfer Leads', style: headerStyle)),
+              DataColumn(label: Text('Client Name', style: headerStyle)),
+              DataColumn(label: Text('Phone Number', style: headerStyle)),
+              DataColumn(label: Text('Received On', style: headerStyle)),
+              DataColumn(label: Text('Property Type', style: headerStyle)),
+              DataColumn(label: Text('Budget', style: headerStyle)),
+              DataColumn(label: Text('Preferred Area', style: headerStyle)),
+              DataColumn(label: Text('City', style: headerStyle)),
+              DataColumn(label: Text('Email ID', style: headerStyle)),
+            ],
+            rows: leads.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final lead = entry.value;
+              final leadId = lead['id']?.toString() ?? '';
+              final source = lead['source']?.toString() ?? 'META';
+              final clientName = lead['clientName']?.toString() ?? '—';
+              final phone = lead['phone']?.toString() ?? '';
+              final receivedOn = lead['receivedOn']?.toString();
+              final status = lead['status']?.toString() ?? 'Assigned to Sales';
+              final assignedTo = lead['assignedSalesperson']?.toString() ?? widget.telecallerName ?? 'Salesperson';
+              final propertyType = _leadText(lead, 'config', const ['what_type_of_home', 'type_of_property', 'property_type', 'configuration', 'bhk']);
+              final budget = _leadText(lead, 'budget', const ['budget']);
+              final area = _leadText(lead, 'preferredArea', const ['which_area', 'which_location', 'preferred_area', 'preferred_location']);
+              final city = _leadText(lead, 'city', const ['city']);
+              final email = _leadText(lead, 'email', const ['email']);
+
+              return DataRow(
+                color: WidgetStateProperty.resolveWith<Color?>((states) {
+                  return idx.isEven
+                      ? (isDark ? const Color(0xFF1E293B) : const Color(0xFFFAFAFA))
+                      : (isDark ? const Color(0xFF0F172A).withValues(alpha: 0.5) : Colors.white);
+                }),
+                cells: [
+                  DataCell(Text('${idx + 1}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
+                  DataCell(_buildSourceBadge(source)),
+                  DataCell(_buildReadOnlyStatusChip(status, Colors.blue)),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 120),
+                          child: Text(
+                            assignedTo,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            side: BorderSide(color: CRMColors.primary.withValues(alpha: 0.4)),
+                          ),
+                          onPressed: () => _reassignLead(leadId),
+                          icon: const Icon(Icons.swap_horiz, size: 12),
+                          label: const Text('Reassign', style: TextStyle(fontSize: 10.5)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 130),
+                          child: Text(
+                            clientName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Lead details',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.info_outline, size: 16),
+                          onPressed: () => _showAllocatedLeadDetails(lead),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    phone.isNotEmpty
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _makePhoneCall(phone),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(Icons.phone_outlined, size: 14, color: CRMColors.primary),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _sendWhatsAppMessage(phone),
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(2),
+                                  child: Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF25D366)),
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Text('—', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+                  DataCell(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _formatDateTimeDisplay(receivedOn),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          _formatTimeAgoDisplay(receivedOn),
+                          style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : const Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(_buildLeadTextCell(propertyType, maxWidth: 130)),
+                  DataCell(_buildLeadTextCell(budget, maxWidth: 150)),
+                  DataCell(_buildLeadTextCell(area, maxWidth: 150)),
+                  DataCell(_buildLeadTextCell(city, maxWidth: 120)),
+                  DataCell(_buildLeadTextCell(email, maxWidth: 180)),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
 }

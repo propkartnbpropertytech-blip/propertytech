@@ -26,9 +26,16 @@ class TelecallerCnrRequested extends TelecallerListEvent {
   final String? from;
   final String? to;
   final String? source;
-  const TelecallerCnrRequested({this.search, this.from, this.to, this.source});
+  final bool clearDateRange;
+  const TelecallerCnrRequested({
+    this.search,
+    this.from,
+    this.to,
+    this.source,
+    this.clearDateRange = false,
+  });
   @override
-  List<Object?> get props => [search, from, to, source];
+  List<Object?> get props => [search, from, to, source, clearDateRange];
 }
 
 class TelecallerLeadRemoved extends TelecallerListEvent {
@@ -210,6 +217,11 @@ class TelecallerCallbacksBloc extends Bloc<TelecallerListEvent, TelecallerListSt
 }
 
 class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
+  String? _activeSearch;
+  String? _activeFrom;
+  String? _activeTo;
+  String? _activeSource;
+
   TelecallerCnrBloc({this.telecallerId, TelecallerRepository? repository})
       : _repository = repository ?? TelecallerRepository(),
         super(const TelecallerListState(loading: true)) {
@@ -220,11 +232,25 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
     on<TelecallerCnrRequested>((event, emit) async {
       emit(TelecallerListState(loading: true, items: state.items));
       try {
+        if (event.clearDateRange) {
+          _activeFrom = null;
+          _activeTo = null;
+        } else if (event.from != null || event.to != null) {
+          _activeFrom = event.from;
+          _activeTo = event.to;
+        }
+        if (event.source != null) {
+          _activeSource = event.source;
+        }
+        if (event.search != null) {
+          _activeSearch = event.search;
+        }
+
         final serverItems = await _repository.cnr(
-          search: event.search,
-          from: event.from,
-          to: event.to,
-          source: event.source,
+          search: _activeSearch,
+          from: _activeFrom,
+          to: _activeTo,
+          source: _activeSource,
           telecallerId: telecallerId,
         );
         var items = _keptForCurrentTelecaller(serverItems);
@@ -261,6 +287,19 @@ class TelecallerCnrBloc extends Bloc<TelecallerListEvent, TelecallerListState> {
           }
           final isCnr = l.campaignStatus == 'CNR' || l.allocationStatus == 'CNR';
           if (!isCnr) return false;
+          if (_activeFrom != null) {
+            final fromDate = DateTime.tryParse(_activeFrom!);
+            if (fromDate != null && l.receivedAt.isBefore(fromDate)) return false;
+          }
+          if (_activeTo != null) {
+            final toDate = DateTime.tryParse(_activeTo!);
+            if (toDate != null && l.receivedAt.isAfter(toDate)) return false;
+          }
+          if (_activeSource != null && _activeSource != 'All') {
+            final leadSource = l.source.toUpperCase();
+            if (_activeSource!.toUpperCase().contains('HOUSING') && !leadSource.contains('HOUSING')) return false;
+            if (_activeSource!.toUpperCase().contains('META') && !leadSource.contains('META') && !leadSource.contains('ADS')) return false;
+          }
           final myId = RoleGuard.currentUser?.id.trim().toLowerCase();
           final isTelecaller = RoleGuard.isTelecaller(RoleGuard.currentUser?.role);
           final focusId = (telecallerId ?? '').trim().toLowerCase();

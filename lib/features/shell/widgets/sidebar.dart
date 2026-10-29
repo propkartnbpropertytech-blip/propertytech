@@ -177,7 +177,7 @@ class _ModernSidebarState extends State<ModernSidebar> {
                          RoleGuard.canViewPage(widget.userRole, '/users')))
                       _buildNavItem(
                         context,
-                        title: 'Employees',
+                        title: RoleGuard.isSuperAdmin(widget.userRole) ? 'Users' : 'Employees',
                         icon: Icons.people_outline_rounded,
                         route: '/users',
                         isActive: currentPath.startsWith('/users'),
