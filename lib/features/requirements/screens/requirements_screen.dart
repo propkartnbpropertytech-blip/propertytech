@@ -14,6 +14,7 @@ import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../bloc/requirements_bloc.dart';
 import '../models/requirement_model.dart';
+import '../domain/canonical_budget_score.dart';
 import '../services/match_criteria_manager.dart';
 import '../services/followup_sync_engine.dart';
 import '../repository/requirements_repository.dart';
@@ -702,22 +703,21 @@ class PropertyRequirementMatcher {
     final maxB = req.maxBudget > 0 ? req.maxBudget : 0.0;
     final price = p.price;
 
-    if (maxB > 0) {
-      if (price >= minB && price <= maxB) {
-        totalScore += 30;
-        isPriceMatch = true;
-        matchedTags.add('✓ In Budget (₹${BudgetFormatter.format(price)})');
-      } else if (price >= minB * 0.8 && price <= maxB * 1.2) {
-        totalScore += 20;
-        matchedTags.add('~ Near Budget (₹${BudgetFormatter.format(price)})');
-      } else if (price >= minB * 0.65 && price <= maxB * 1.35) {
-        totalScore += 10;
-        matchedTags.add('~ Flex Budget (₹${BudgetFormatter.format(price)})');
-      }
-    } else {
-      totalScore += 20;
+    final budget = CanonicalBudgetScore.evaluate(
+      price: price,
+      minBudget: minB,
+      maxBudget: maxB,
+    );
+    if (budget.band == 'exact') {
+      totalScore += budget.score;
       isPriceMatch = true;
-      matchedTags.add('✓ ₹${BudgetFormatter.format(price)}');
+      matchedTags.add('✓ In Budget (₹${BudgetFormatter.format(price)})');
+    } else if (budget.band == 'near') {
+      totalScore += budget.score;
+      matchedTags.add('~ Near Budget (₹${BudgetFormatter.format(price)})');
+    } else if (budget.band == 'flexible') {
+      totalScore += budget.score;
+      matchedTags.add('~ Flex Budget (₹${BudgetFormatter.format(price)})');
     }
 
     // 5. Property Type / Category Match (Weight: 10 pts)

@@ -115,8 +115,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     icon: Icons.person_outline_rounded,
                     route: '/reports/leads/sales',
                     isActive: currentPath.contains('/sales'),
-                    isFunctional: false,
-                    badgeText: 'Stage 2',
+                    isFunctional: true,
                   ),
                   if (isAdmin)
                     _buildSubTab(
@@ -142,8 +141,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     icon: Icons.home_work_outlined,
                     route: '/reports/properties',
                     isActive: true,
-                    isFunctional: false,
-                    badgeText: 'Coming Soon',
+                    isFunctional: true,
                   ),
                 ],
               ),
