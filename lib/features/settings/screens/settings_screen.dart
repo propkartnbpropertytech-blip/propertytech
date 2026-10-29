@@ -1199,7 +1199,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.currency_rupee_rounded,
                   title: 'Budget & Price Range',
                   weight: '30 Points',
-                  details: 'Exact budget: 30 pts • Within ±20%: 20 pts • Within ±35%: 10 pts',
+                  details: 'Exact budget: 30 pts • Within ±15%: 20 pts • Within ±25%: 10 pts',
                   color: const Color(0xFF10B981),
                 ),
                 const Divider(height: CRMSpacing.m),

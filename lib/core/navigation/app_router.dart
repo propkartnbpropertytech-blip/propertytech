@@ -15,6 +15,9 @@ import '../../features/properties/screens/property_search_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
+import '../../features/clients/screens/clients_screen.dart';
+import '../../features/owners/screens/owners_screen.dart';
+import '../../features/builders/screens/builders_screen.dart';
 import '../../features/users/screens/employee_detail_screen.dart';
 import '../../features/users/screens/user_tree_screen.dart';
 import '../../features/requirements/screens/requirements_screen.dart';
@@ -50,9 +53,9 @@ import '../../features/reports/screens/reports_shell.dart';
 import '../../features/reports/screens/leads/overall_business_insight_screen.dart';
 import '../../features/reports/screens/leads/telecaller_report_screen.dart';
 import '../../features/reports/screens/leads/super_admin_metrics_screen.dart';
-import '../../features/reports/screens/leads/sales_report_placeholder.dart';
+import '../../features/reports/screens/leads/sales_report_screen.dart';
 import '../../features/reports/screens/leads/lead_metrics_screen.dart';
-import '../../features/reports/screens/properties/properties_coming_soon_screen.dart';
+import '../../features/reports/screens/properties/property_inventory_report_screen.dart';
 import '../../features/reports/bloc/reports_bloc.dart';
 import '../../features/reports/bloc/reports_event.dart';
 import '../utils/seo_helper.dart';
@@ -489,15 +492,24 @@ class AppRouter {
           ),
           GoRoute(
             path: '/clients',
-            redirect: (context, state) => '/dashboard',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const ClientsScreen(),
+            ),
           ),
           GoRoute(
             path: '/owners',
-            redirect: (context, state) => '/dashboard',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const OwnersScreen(),
+            ),
           ),
           GoRoute(
             path: '/builders',
-            redirect: (context, state) => '/dashboard',
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const BuildersScreen(),
+            ),
           ),
           GoRoute(
             path: '/settings',
@@ -647,7 +659,7 @@ class AppRouter {
                 path: '/reports/leads/sales',
                 pageBuilder: (context, state) => crmFadeSlidePage(
                   key: state.pageKey,
-                  child: const SalesReportPlaceholderScreen(),
+                  child: const SalesReportScreen(),
                 ),
               ),
               GoRoute(
@@ -661,7 +673,7 @@ class AppRouter {
                 path: '/reports/properties',
                 pageBuilder: (context, state) => crmFadeSlidePage(
                   key: state.pageKey,
-                  child: const PropertiesComingSoonScreen(),
+                  child: const PropertyInventoryReportScreen(),
                 ),
               ),
             ],
