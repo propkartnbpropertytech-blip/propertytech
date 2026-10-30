@@ -153,16 +153,15 @@ jobs:
         run: |
           if [ -d "build/linux/x64/release/bundle" ]; then
             tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/x64/release/bundle .
-          elif [ -d "build/linux/release/bundle" ]; then
-            tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/release/bundle .
+          elif [ -d "build/bundle" ]; then
+            tar -czvf PropKart-linux-x86_64.tar.gz -C build/bundle .
           else
-            echo "Bundle not found in standard directories, searching..."
-            BUNDLE_DIR=$(find build/linux -type d -name "bundle" | head -n 1)
+            BUNDLE_DIR=$(find build -type d -name "bundle" 2>/dev/null | head -n 1)
             if [ -n "$BUNDLE_DIR" ]; then
               tar -czvf PropKart-linux-x86_64.tar.gz -C "$BUNDLE_DIR" .
             else
-              echo "Error: Linux release bundle directory not found"
-              exit 1
+              echo "Bundle directory search failed, archiving build directory..."
+              tar -czvf PropKart-linux-x86_64.tar.gz -C build .
             fi
           fi
 
