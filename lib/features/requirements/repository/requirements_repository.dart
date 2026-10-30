@@ -626,6 +626,36 @@ class RequirementsRepository {
     return _requirementsService.logShareAction(data);
   }
 
+  Future<Map<String, dynamic>> getSalesPropertyListingLeads({
+    String? userId,
+    bool orgWide = false,
+  }) {
+    return _requirementsService.getSalesPropertyListingLeads(
+      userId: userId,
+      orgWide: orgWide,
+    );
+  }
+
+  Future<Map<String, dynamic>> bulkUpdateSalesLeadStatus({
+    required List<String> ids,
+    required String status,
+  }) {
+    return _requirementsService.bulkUpdateSalesLeadStatus(
+      ids: ids,
+      status: status,
+    );
+  }
+
+  Future<Map<String, dynamic>> updateSalesLeadStatus({
+    required String leadId,
+    required String status,
+  }) {
+    return _requirementsService.updateSalesLeadStatus(
+      leadId: leadId,
+      status: status,
+    );
+  }
+
   Future<void> downloadFile(String url, String savePath) {
     return _requirementsService.downloadFile(url, savePath);
   }

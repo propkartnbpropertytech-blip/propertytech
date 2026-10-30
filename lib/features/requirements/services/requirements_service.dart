@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/api/api_constants.dart';
 import '../../../core/api/api_exception.dart';
 
 class RequirementsService {
@@ -366,6 +367,67 @@ class RequirementsService {
     try {
       await _apiClient.post('/audit/share', data);
     } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> getSalesPropertyListingLeads({
+    String? userId,
+    bool orgWide = false,
+  }) async {
+    try {
+      final query = <String, dynamic>{
+        if (userId != null && userId.isNotEmpty) 'userId': userId,
+        if (orgWide && (userId == null || userId.isEmpty)) 'scope': 'org',
+      };
+      final res = await _apiClient.get(
+        ApiConstants.allocationSalesLeads,
+        queryParameters: query,
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> bulkUpdateSalesLeadStatus({
+    required List<String> ids,
+    required String status,
+  }) async {
+    try {
+      final res = await _apiClient.patch(
+        ApiConstants.allocationSalesLeadBulkStatus,
+        {'ids': ids, 'status': status},
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> updateSalesLeadStatus({
+    required String leadId,
+    required String status,
+  }) async {
+    try {
+      final res = await _apiClient.patch(
+        ApiConstants.allocationSalesLeadStatus(leadId),
+        {'status': status},
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
   }
 
   Future<void> downloadFile(String url, String savePath) async {

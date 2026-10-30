@@ -76,6 +76,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   bool? _selectedVerification;
   PropertyMetadataModel? _cachedMetadata;
   List<PropertyModel> _cachedProperties = [];
+  List<PropertyModel>? _serverSearchProperties;
+  int _propertySearchRequest = 0;
   Set<String> _cachedBookmarkedIds = {};
   String? _selectedPriceSortOrRange;
   double? _minPrice;
@@ -150,15 +152,39 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   void _onSearchChangedDebounced() {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
-      if (mounted) {
-        _lastComputedPropertyFilterKey = null;
-        _recomputeFilteredProperties();
-      }
+      if (mounted) _fetchServerPropertySearch();
     });
   }
 
+  Future<void> _fetchServerPropertySearch() async {
+    final query = _searchController.text.trim();
+    final request = ++_propertySearchRequest;
+    if (query.isEmpty) {
+      if (!mounted) return;
+      setState(() => _serverSearchProperties = null);
+      _lastComputedPropertyFilterKey = null;
+      _recomputeFilteredProperties();
+      return;
+    }
+    try {
+      final models = await PropertiesRepository().searchPropertiesServer(query, limit: 50);
+      if (!mounted || request != _propertySearchRequest) return;
+
+
+
+
+
+      setState(() => _serverSearchProperties = models);
+      _lastComputedPropertyFilterKey = null;
+      _recomputeFilteredProperties();
+    } catch (_) {
+      if (!mounted || request != _propertySearchRequest) return;
+      setState(() => _serverSearchProperties = []);
+    }
+  }
+
   void _recomputeFilteredProperties({bool notify = true, String? currentUserId}) {
-    final rawLoadedList = _cachedProperties;
+    final rawLoadedList = _serverSearchProperties ?? _cachedProperties;
     if (rawLoadedList.isEmpty) {
       _allViewModels = [];
       _filteredViewModels = [];
@@ -200,7 +226,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       selectedPriceSortOrRange: _selectedPriceSortOrRange ?? 'all',
       minPrice: _minPrice,
       maxPrice: _maxPrice,
-      searchQuery: _searchController.text,
+      searchQuery: _serverSearchProperties == null ? _searchController.text : '',
       myAddedOnly: _myAddedOnly,
       currentUserId: effUserId,
       currentUserName: effUserName,
@@ -3104,7 +3130,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             _cachedBookmarkedIds = state.bookmarkedIds;
           }
 
-          final rawLoadedList = state is PropertiesLoaded ? state.properties : _cachedProperties;
+          final rawLoadedList = _serverSearchProperties ??
+              (state is PropertiesLoaded ? state.properties : _cachedProperties);
           final isInitialLoad =
               (state is PropertiesLoading || state is PropertiesInitial) && rawLoadedList.isEmpty;
           List<PropertyModel> properties = [];
@@ -5877,7 +5904,7 @@ _recomputeFilteredProperties();
       selectedPriceSortOrRange: _selectedPriceSortOrRange ?? 'all',
       minPrice: _minPrice,
       maxPrice: _maxPrice,
-      searchQuery: _searchController.text,
+      searchQuery: _serverSearchProperties == null ? _searchController.text : '',
       myAddedOnly: _myAddedOnly,
       currentUserId: currentUserId ?? authUser?.id,
       currentUserName: authUser?.fullName,

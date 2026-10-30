@@ -4,9 +4,9 @@ import '../../../core/services/notification_center.dart';
 import '../../../core/security/crm_control_guard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
+// Presentation layer decoupled from Dio
 import '../../../core/api/api_constants.dart';
-import '../../../core/api/dio_client.dart';
+// Presentation layer decoupled from DioClient
 import '../../../core/theme/theme_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -13002,16 +13002,13 @@ _recomputeFilteredRequirements();
       _salesLeadsLoadFailed = false;
     });
     try {
-      final res = await DioClient.dio.get(
-        ApiConstants.allocationSalesLeads,
-        queryParameters: {
-          if (userId != null && userId.isNotEmpty) 'userId': userId,
-          if (orgWide && (userId == null || userId.isEmpty)) 'scope': 'org',
-        },
+      final res = await RequirementsRepository().getSalesPropertyListingLeads(
+        userId: userId,
+        orgWide: orgWide,
       );
-      if (res.data['success'] == true && mounted) {
-        final list = res.data['propertyListingLeads'] as List<dynamic>? ?? [];
-        final reqList = res.data['requirementLeads'] as List<dynamic>? ?? [];
+      if (res['success'] == true && mounted) {
+        final list = res['propertyListingLeads'] as List<dynamic>? ?? [];
+        final reqList = res['requirementLeads'] as List<dynamic>? ?? [];
         final listingIds = <String>{};
         final mapped = list.map((e) {
           final lead = Map<String, dynamic>.from(e as Map);
@@ -13031,14 +13028,14 @@ _recomputeFilteredRequirements();
           final legacy = lead['legacyRequirementId']?.toString() ?? '';
           if (legacy.isNotEmpty) listingIds.add(legacy);
         }
-        final apiIds = res.data['requirementIds'];
+        final apiIds = res['requirementIds'];
         if (apiIds is List) {
           for (final id in apiIds) {
             final text = id?.toString() ?? '';
             if (text.isNotEmpty) requirementIds.add(text);
           }
         }
-        final apiListingIds = res.data['propertyListingIds'];
+        final apiListingIds = res['propertyListingIds'];
         if (apiListingIds is List) {
           for (final id in apiListingIds) {
             final text = id?.toString() ?? '';
@@ -13099,13 +13096,13 @@ _recomputeFilteredRequirements();
     if (confirmed != true || !mounted) return;
     setState(() => _campaignBulkUpdating = true);
     try {
-      final res = await DioClient.dio.patch(
-        ApiConstants.allocationSalesLeadBulkStatus,
-        data: {'ids': ids, 'status': newStatus},
+      final res = await RequirementsRepository().bulkUpdateSalesLeadStatus(
+        ids: ids,
+        status: newStatus,
       );
-      final updated = res.data['updatedIds'];
+      final updated = res['updatedIds'];
       final updatedIds = updated is List ? updated.map((id) => id.toString()).toSet() : ids.toSet();
-      if (res.data['success'] == true && mounted) {
+      if (res['success'] == true && mounted) {
         setState(() {
           for (final item in _salesPropertyListingLeads) {
             final id = item['id']?.toString() ?? '';
@@ -13127,13 +13124,7 @@ _recomputeFilteredRequirements();
     } catch (e) {
       if (mounted) {
         setState(() => _campaignBulkUpdating = false);
-        var message = 'Failed to update the selected leads.';
-        if (e is DioException) {
-          final data = e.response?.data;
-          final serverMessage = data is Map ? data['message']?.toString() : null;
-          if (serverMessage != null && serverMessage.trim().isNotEmpty) message = serverMessage.trim();
-        }
-        AppStatusSnackBar.show(context, message: message, isSuccess: false);
+        AppStatusSnackBar.show(context, message: e.toString().replaceFirst("Exception: ", ""), isSuccess: false);
       }
     }
   }
@@ -13142,11 +13133,11 @@ _recomputeFilteredRequirements();
     if (leadId.isEmpty) return;
     setState(() => _salesUpdatingStatusLeads[leadId] = true);
     try {
-      final res = await DioClient.dio.patch(
-        ApiConstants.allocationSalesLeadStatus(leadId),
-        data: {'status': newStatus},
+      final res = await RequirementsRepository().updateSalesLeadStatus(
+        leadId: leadId,
+        status: newStatus,
       );
-      if (res.data['success'] == true && mounted) {
+      if (res['success'] == true && mounted) {
         setState(() {
           for (final item in _salesPropertyListingLeads) {
             if (item['id']?.toString() == leadId) {

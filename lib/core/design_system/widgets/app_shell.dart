@@ -23,10 +23,6 @@ import '../../utils/budget_formatter.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/storage/model_mappers.dart';
-import '../../../features/properties/services/properties_service.dart';
-import '../../../features/properties/models/property_model.dart';
-import '../../../features/properties/repository/properties_repository.dart';
 import '../../navigation/mobile_system_back_handler.dart';
 import '../tokens/app_breakpoints.dart';
 import '../../../../features/shell/widgets/sidebar.dart';
@@ -173,7 +169,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   List<dynamic> _ownerSuggestions = [];
   List<dynamic> _builderSuggestions = [];
   List<dynamic> _clientSuggestions = [];
-  List<Map<String, String>> _callingLeadSuggestions = [];
+  List<Map<String, dynamic>> _callingLeadSuggestions = [];
   bool _isSearching = false;
   Timer? _searchDebounce;
   List<dynamic> _notifications = [];
@@ -741,73 +737,6 @@ class _CRMAppShellState extends State<CRMAppShell>
     });
   }
 
-  int _levenshteinDistance(String s, String t) {
-    if (s == t) return 0;
-    if (s.isEmpty) return t.length;
-    if (t.isEmpty) return s.length;
-
-    List<int> v0 = List<int>.generate(t.length + 1, (i) => i);
-    List<int> v1 = List<int>.filled(t.length + 1, 0);
-
-    for (int i = 0; i < s.length; i++) {
-      v1[0] = i + 1;
-      for (int j = 0; j < t.length; j++) {
-        int cost = (s.codeUnitAt(i) == t.codeUnitAt(j)) ? 0 : 1;
-        int subCost = v0[j] + cost;
-        int insCost = v1[j] + 1;
-        int delCost = v0[j + 1] + 1;
-        v1[j + 1] = subCost < insCost
-            ? (subCost < delCost ? subCost : delCost)
-            : (insCost < delCost ? insCost : delCost);
-      }
-      for (int j = 0; j <= t.length; j++) {
-        v0[j] = v1[j];
-      }
-    }
-    return v0[t.length];
-  }
-
-  bool _isFuzzyMatchToken(
-      String token, List<String> fieldStrings, List<String> fieldWords) {
-    if (token.isEmpty) return true;
-
-    // Direct substring match in any field string
-    for (final fs in fieldStrings) {
-      if (fs.contains(token)) return true;
-      if (token.length >= 4 && fs.length >= 3 && token.contains(fs)) return true;
-    }
-
-    final isNumericToken = RegExp(r'^\d+$').hasMatch(token);
-    if (isNumericToken && token.length >= 4) {
-      for (final fs in fieldStrings) {
-        if (fs.replaceAll(RegExp(r'\D'), '').contains(token)) return true;
-      }
-    }
-
-    // Word level matching
-    for (final w in fieldWords) {
-      if (w.isEmpty) continue;
-      if (w == token) return true;
-      if (!isNumericToken && (w.contains(token) || token.contains(w))) return true;
-
-      if (token.length <= 3) {
-        if (!isNumericToken && w.startsWith(token)) return true;
-      } else if (token.length <= 6) {
-        if (!isNumericToken && _levenshteinDistance(token, w) <= 1) return true;
-      } else {
-        if (!isNumericToken && _levenshteinDistance(token, w) <= 2) return true;
-      }
-    }
-    return false;
-  }
-
-  void _addStr(List<String> list, dynamic val) {
-    if (val != null) {
-      final s = val.toString().trim().toLowerCase();
-      if (s.isNotEmpty) list.add(s);
-    }
-  }
-
   Set<int> _extractAllBhks(String? text) {
     final Set<int> results = {};
     if (text == null || text.trim().isEmpty) return results;
@@ -821,437 +750,46 @@ class _CRMAppShellState extends State<CRMAppShell>
     return results;
   }
 
-  void _addPriceStrings(List<String> list, num? price) {
-    if (price == null || price <= 0) return;
-    final val = price.toDouble();
-    final valInt = price.toInt();
-    list.add(valInt.toString());
-
-    final fmt = BudgetFormatter.format(val).toLowerCase();
-    list.add(fmt);
-    list.add(fmt.replaceAll(' ', ''));
-    list.add('₹$fmt');
-    list.add('₹${fmt.replaceAll(' ', '')}');
-
-    if (val >= 100000) {
-      final lakhs = val / 100000;
-      final lakhsStr = lakhs.toStringAsFixed(lakhs.truncateToDouble() == lakhs ? 0 : 1);
-      list.add('${lakhsStr}l');
-      list.add('$lakhsStr l');
-      list.add('${lakhsStr}lakh');
-      list.add('$lakhsStr lakh');
-      list.add('$lakhsStr lakhs');
-    } else if (val >= 1000) {
-      final k = val / 1000;
-      final kStr = k.toStringAsFixed(k.truncateToDouble() == k ? 0 : 1);
-      list.add('${kStr}k');
-      list.add('$kStr k');
-      list.add('${kStr}thousand');
-      list.add('$kStr thousand');
-    }
-  }
+  int _searchRequest = 0;
 
   Future<void> _performSearch(String query) async {
+    final requestId = ++_searchRequest;
     setState(() => _isSearching = true);
     _showSearchOverlay();
     try {
-      final authState = context.read<AuthBloc>().state;
-      String? currentUserRole;
-      if (authState is Authenticated) {
-        currentUserRole = authState.user.role;
+      final response = await DioClient.dio.get(
+        '/search',
+        queryParameters: {'query': query, 'limit': 8},
+      );
+      if (!mounted || requestId != _searchRequest) return;
+      final body = response.data;
+      final data = body is Map ? body['data'] : null;
+      List<Map<String, dynamic>> readList(String key) {
+        final raw = data is Map ? data[key] : null;
+        if (raw is! List) return [];
+        return raw.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
       }
-      final bool isUserAdminOrSuperAdmin =
-          currentUserRole == 'Admin' || currentUserRole == 'Super Admin';
-
-      // Standardize query & aliases
-      String queryNorm = query.toLowerCase().trim();
-      queryNorm = queryNorm.replaceAll(RegExp(r'(\d+)\s*bhk'), r'$1 bhk');
-      queryNorm = queryNorm.replaceAll(RegExp(r'\bresel(l)?\b'), 'resale');
-      queryNorm = queryNorm.replaceAll(RegExp(r'\bre-sale\b'), 'resale');
-
-      final requestedBhks = _extractAllBhks(queryNorm);
-
-      final queryTokens = queryNorm
-          .split(RegExp(r'[\s,/\-]+'))
-          .where((t) => t.isNotEmpty)
-          .toList();
-
-      final cleanQueryNoSpaces = queryNorm.replaceAll(RegExp(r'\s+'), '');
-      final isPrSearch = cleanQueryNoSpaces.startsWith('pr-') ||
-          (cleanQueryNoSpaces.startsWith('pr') && RegExp(r'^pr\d+').hasMatch(cleanQueryNoSpaces));
-      final prDigitsMatch = RegExp(r'\d+').firstMatch(queryNorm)?.group(0);
-
-      // 1. Active Properties (with fallback to repository API if local is empty)
-      List<dynamic> props = [];
-      try {
-        props = await RepositoryCoordinator().propertyLocal.getProperties();
-      } catch (_) {}
-      if (props.isEmpty) {
-        try {
-          props = await PropertiesRepository().getProperties();
-        } catch (_) {}
-      }
-
-      final matchedProps = props
-          .where((p) {
-            final pCodeNorm = (p.propertyCode ?? '').toLowerCase().replaceAll('-', '').replaceAll(' ', '');
-            if (isPrSearch && prDigitsMatch != null) {
-              final targetPrNorm = 'pr$prDigitsMatch';
-              if (prDigitsMatch.length >= 4) {
-                if (pCodeNorm != targetPrNorm) return false;
-              } else {
-                if (!pCodeNorm.startsWith(targetPrNorm)) return false;
-              }
-            }
-
-            if (requestedBhks.isNotEmpty) {
-              final propBhks = _extractAllBhks('${p.configurationName ?? ''} ${p.title} ${p.description ?? ''}');
-              if (propBhks.isNotEmpty && propBhks.intersection(requestedBhks).isEmpty) {
-                return false;
-              }
-            }
-
-            final fieldStrings = <String>[];
-            _addStr(fieldStrings, p.propertyCode);
-            _addStr(fieldStrings, p.title);
-            _addStr(fieldStrings, p.ownerName);
-            _addStr(fieldStrings, p.ownerMobile);
-            _addStr(fieldStrings, p.areaName);
-            _addStr(fieldStrings, p.configurationName);
-            _addStr(fieldStrings, p.propertyStatusName);
-            _addStr(fieldStrings, p.superBuiltupArea);
-            _addStr(fieldStrings, p.propertyTypeName);
-            _addStr(fieldStrings, p.categoryName);
-            _addStr(fieldStrings, p.remarks);
-            _addStr(fieldStrings, p.description);
-            _addPriceStrings(fieldStrings, p.price);
-
-            final configLower = p.configurationName?.toLowerCase() ?? '';
-            if (configLower.isNotEmpty) {
-              _addStr(fieldStrings, configLower.replaceAll(' ', ''));
-              _addStr(fieldStrings, configLower.replaceAll(' ', '-'));
-            }
-            final categoryLower = p.categoryName?.toLowerCase() ?? '';
-            if (categoryLower.contains('re-sale') || categoryLower.contains('resale')) {
-              fieldStrings.add('resale');
-              fieldStrings.add('re-sale');
-              fieldStrings.add('resel');
-            }
-
-            if (isUserAdminOrSuperAdmin) {
-              _addStr(fieldStrings, p.createdByName);
-            }
-
-            final fieldWords = fieldStrings
-                .join(' ')
-                .split(RegExp(r'[^a-zA-Z0-9]+'))
-                .where((w) => w.isNotEmpty)
-                .toList();
-
-            return queryTokens.every(
-              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
-            );
-          })
-          .map(
-            (p) => {
-              'id': p.id,
-              'title': p.title,
-              'property_code': p.propertyCode,
-              'price': p.price,
-              'is_recycle_bin': false,
-            },
-          )
-          .toList();
-
-      // 1b. Recycle Bin / Deleted Properties
-      List<Map<String, dynamic>> matchedBinProps = [];
-      try {
-        final binRes = await PropertiesService().getBinProperties();
-        final binData = binRes['data'] as Map<String, dynamic>? ?? {};
-        final binList = binData['properties'] as List? ?? [];
-        final binProps = binList.map((p) => PropertyModel.fromJson(p)).toList();
-
-        matchedBinProps = binProps
-            .where((p) {
-              final pCodeNorm = (p.propertyCode ?? '').toLowerCase().replaceAll('-', '').replaceAll(' ', '');
-              if (isPrSearch && prDigitsMatch != null) {
-                final targetPrNorm = 'pr$prDigitsMatch';
-                if (prDigitsMatch.length >= 4) {
-                  if (pCodeNorm != targetPrNorm) return false;
-                } else {
-                  if (!pCodeNorm.startsWith(targetPrNorm)) return false;
-                }
-              }
-
-              if (requestedBhks.isNotEmpty) {
-                final propBhks = _extractAllBhks('${p.configurationName} ${p.title} ${p.description}');
-                if (propBhks.isNotEmpty && propBhks.intersection(requestedBhks).isEmpty) {
-                  return false;
-                }
-              }
-
-              final fieldStrings = <String>[];
-              _addStr(fieldStrings, p.propertyCode);
-              _addStr(fieldStrings, p.title);
-              _addStr(fieldStrings, p.ownerName);
-              _addStr(fieldStrings, p.ownerMobile);
-              _addStr(fieldStrings, p.areaName);
-              _addStr(fieldStrings, p.configurationName);
-              _addStr(fieldStrings, p.propertyStatusName);
-              _addStr(fieldStrings, p.superBuiltupArea);
-              _addStr(fieldStrings, p.propertyTypeName);
-              _addStr(fieldStrings, p.categoryName);
-              _addStr(fieldStrings, p.remarks);
-              _addStr(fieldStrings, p.description);
-              _addPriceStrings(fieldStrings, p.price);
-
-              final configLower = p.configurationName?.toLowerCase() ?? '';
-              if (configLower.isNotEmpty) {
-                _addStr(fieldStrings, configLower.replaceAll(' ', ''));
-                _addStr(fieldStrings, configLower.replaceAll(' ', '-'));
-              }
-              final categoryLower = p.categoryName.toLowerCase();
-              if (categoryLower.contains('re-sale') || categoryLower.contains('resale')) {
-                fieldStrings.add('resale');
-                fieldStrings.add('re-sale');
-                fieldStrings.add('resel');
-              }
-
-              if (isUserAdminOrSuperAdmin) {
-                _addStr(fieldStrings, p.createdByName);
-              }
-
-              final fieldWords = fieldStrings
-                  .join(' ')
-                  .split(RegExp(r'[^a-zA-Z0-9]+'))
-                  .where((w) => w.isNotEmpty)
-                  .toList();
-
-              return queryTokens.every(
-                (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
-              );
-            })
-            .map(
-              (p) => {
-                'id': p.id,
-                'title': '[In Recycle Bin] ${p.title}',
-                'property_code': p.propertyCode,
-                'price': p.price,
-                'is_recycle_bin': true,
-              },
-            )
-            .toList();
-      } catch (_) {}
-
-      final allMatchedProps = [...matchedProps, ...matchedBinProps].take(12).toList();
-
-      final isReqSearch = cleanQueryNoSpaces.startsWith('req') || cleanQueryNoSpaces.startsWith('r-');
-      final reqDigitsMatch = RegExp(r'\d+').firstMatch(queryNorm)?.group(0);
-
-      // 2. Requirements / Leads
-      final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
-      final matchedReqs = reqs
-          .where((r) {
-            final reqModel = r.toModel();
-            final reqCodeNorm = reqModel.requirementCode.toLowerCase().replaceAll('-', '').replaceAll(' ', '');
-
-            if (isReqSearch && reqDigitsMatch != null) {
-              if (reqDigitsMatch.length >= 4) {
-                if (!reqCodeNorm.contains(reqDigitsMatch)) return false;
-              }
-            }
-
-            if (requestedBhks.isNotEmpty) {
-              final reqBhks = _extractAllBhks('${r.configurationName ?? ''} ${r.remarks ?? ''}');
-              if (reqBhks.isNotEmpty && reqBhks.intersection(requestedBhks).isEmpty) {
-                return false;
-              }
-            }
-
-            final fieldStrings = <String>[];
-            _addStr(fieldStrings, reqModel.requirementCode);
-            _addStr(fieldStrings, r.id);
-            _addStr(fieldStrings, r.clientName);
-            _addStr(fieldStrings, r.clientMobile);
-            _addStr(fieldStrings, r.remarks);
-            _addStr(fieldStrings, r.notes);
-            _addStr(fieldStrings, r.propertyTypeName);
-            _addStr(fieldStrings, r.configurationName);
-            _addStr(fieldStrings, r.categoryName);
-            _addPriceStrings(fieldStrings, r.minBudget);
-            _addPriceStrings(fieldStrings, r.maxBudget);
-            for (final a in r.areaNames) {
-              _addStr(fieldStrings, a);
-            }
-            if (isUserAdminOrSuperAdmin) {
-              _addStr(fieldStrings, r.creatorName);
-              _addStr(fieldStrings, r.assigneeName);
-            }
-
-            final fieldWords = fieldStrings
-                .join(' ')
-                .split(RegExp(r'[^a-zA-Z0-9]+'))
-                .where((w) => w.isNotEmpty)
-                .toList();
-
-            return queryTokens.every(
-              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
-            );
-          })
-          .map(
-            (r) {
-              final reqModel = r.toModel();
-              return {
-                'id': r.id,
-                'customer_name': r.clientName,
-                'mobile': r.clientMobile,
-                'requirement_code': reqModel.requirementCode,
-              };
-            },
-          )
-          .take(12)
-          .toList();
-
-      // 3. Owners
-      final owners = await RepositoryCoordinator().ownerLocal.getOwners();
-      final matchedOwners = owners
-          .where((o) {
-            final fieldStrings = <String>[];
-            _addStr(fieldStrings, o.name);
-            _addStr(fieldStrings, o.mobile);
-            _addStr(fieldStrings, o.email);
-
-            final fieldWords = fieldStrings
-                .join(' ')
-                .split(RegExp(r'[^a-zA-Z0-9]+'))
-                .where((w) => w.isNotEmpty)
-                .toList();
-
-            return queryTokens.every(
-              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
-            );
-          })
-          .map((o) => {'id': o.id, 'name': o.name, 'mobile': o.mobile})
-          .take(8)
-          .toList();
-
-      // 4. Builders
-      final builders = await RepositoryCoordinator().builderLocal.getBuilders();
-      final matchedBuilders = builders
-          .where((b) {
-            final fieldStrings = <String>[];
-            _addStr(fieldStrings, b.companyName);
-            _addStr(fieldStrings, b.contactPerson);
-            _addStr(fieldStrings, b.mobile);
-            _addStr(fieldStrings, b.email);
-            _addStr(fieldStrings, b.remarks);
-
-            final fieldWords = fieldStrings
-                .join(' ')
-                .split(RegExp(r'[^a-zA-Z0-9]+'))
-                .where((w) => w.isNotEmpty)
-                .toList();
-
-            return queryTokens.every(
-              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
-            );
-          })
-          .map(
-            (b) => {
-              'id': b.id,
-              'company_name': b.companyName,
-              'contact_person': b.contactPerson,
-              'mobile': b.mobile,
-            },
-          )
-          .take(8)
-          .toList();
-
-      // 5. Clients
-      final clients = await RepositoryCoordinator().clientLocal.getClients();
-      final matchedClients = clients
-          .where((c) {
-            final fieldStrings = <String>[];
-            _addStr(fieldStrings, c.name);
-            _addStr(fieldStrings, c.mobile);
-            _addStr(fieldStrings, c.email);
-            _addStr(fieldStrings, c.remarks);
-
-            final fieldWords = fieldStrings
-                .join(' ')
-                .split(RegExp(r'[^a-zA-Z0-9]+'))
-                .where((w) => w.isNotEmpty)
-                .toList();
-
-            return queryTokens.every(
-              (token) => _isFuzzyMatchToken(token, fieldStrings, fieldWords),
-            );
-          })
-          .map((c) => {'id': c.id, 'name': c.name, 'mobile': c.mobile})
-          .take(8)
-          .toList();
-
-      if (IntegrationService().leads.isEmpty) {
-        try {
-          await IntegrationService().ensureLoaded();
-        } catch (_) {}
-      }
-      final callingLeads = IntegrationService().leads.where((lead) {
-        final buffer = StringBuffer()
-          ..write(lead.campaignStatus)
-          ..write(' ')
-          ..write(lead.source)
-          ..write(' ')
-          ..write(lead.leadType)
-          ..write(' ')
-          ..write(lead.assignedToName ?? '')
-          ..write(' ')
-          ..write(lead.assignedTelecallerName ?? '');
-        for (final value in lead.rawJson.values) {
-          if (value != null && value is! Map && value is! List) buffer.write(' $value');
-        }
-        final text = buffer.toString().toLowerCase();
-        final digits = text.replaceAll(RegExp(r'\D'), '');
-        final qDigits = queryNorm.replaceAll(RegExp(r'\D'), '');
-        if (text.contains(queryNorm)) return true;
-        return qDigits.length >= 4 && digits.contains(qDigits);
-      }).take(8).map((lead) {
-        final status = lead.campaignStatus.trim().toLowerCase();
-        final alloc = (lead.allocationStatus ?? '').toUpperCase();
-        final queue = (status == 'cnr' || alloc == 'CNR')
-            ? 'CNR'
-            : ((status == 'callback' || status == 'call back' || alloc == 'CALLBACK') ? 'Callback' : (status == 'follow up' || status == 'follow-up' ? 'Follow up' : 'New'));
-        String name = '';
-        for (final key in ['Full Name', 'Client Name', 'full_name', 'lead_name', 'Name', 'Customer Name']) {
-          final value = lead.rawJson[key]?.toString().trim() ?? '';
-          if (value.isNotEmpty) {
-            name = value;
-            break;
-          }
-        }
-        if (name.isEmpty) name = 'Lead';
-        final phone = (lead.rawJson['Phone Number'] ?? lead.rawJson['phone_number'] ?? lead.rawJson['lead_phone'] ?? '').toString();
-        return {
-          'id': lead.id,
-          'name': name,
-          'phone': phone,
-          'queue': queue,
-          'status': lead.campaignStatus.isEmpty ? 'New' : lead.campaignStatus,
-        };
-      }).toList();
-
       setState(() {
-        _propertySuggestions = allMatchedProps;
-        _requirementSuggestions = matchedReqs;
-        _ownerSuggestions = matchedOwners;
-        _builderSuggestions = matchedBuilders;
-        _clientSuggestions = matchedClients;
-        _callingLeadSuggestions = callingLeads;
+        _propertySuggestions = readList('properties');
+        _requirementSuggestions = readList('requirements');
+        _ownerSuggestions = readList('owners');
+        _builderSuggestions = [];
+        _clientSuggestions = readList('clients');
+        _callingLeadSuggestions = readList('leads');
         _isSearching = false;
       });
       _searchOverlayEntry?.markNeedsBuild();
-    } catch (e) {
-      setState(() => _isSearching = false);
+    } catch (_) {
+      if (!mounted || requestId != _searchRequest) return;
+      setState(() {
+        _propertySuggestions = [];
+        _requirementSuggestions = [];
+        _ownerSuggestions = [];
+        _builderSuggestions = [];
+        _clientSuggestions = [];
+        _callingLeadSuggestions = [];
+        _isSearching = false;
+      });
       _searchOverlayEntry?.markNeedsBuild();
     }
   }
