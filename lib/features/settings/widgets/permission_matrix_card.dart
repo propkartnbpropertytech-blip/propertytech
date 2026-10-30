@@ -488,8 +488,8 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
                   children: [
                     _buildViewTabButton(
                       context,
-                      label: 'Matrix Grid',
-                      icon: Icons.table_chart_outlined,
+                      label: 'Under Dev Page',
+                      icon: Icons.developer_mode_outlined,
                       index: 0,
                     ),
                     _buildViewTabButton(
