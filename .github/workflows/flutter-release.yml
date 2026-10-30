@@ -81,6 +81,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Configure Git for Large Native Submodules
+        shell: powershell
+        run: |
+          git config --global core.longpaths true
+          git config --global http.postBuffer 524288000
+
       - name: Enable Windows Desktop Support
         run: flutter config --enable-windows-desktop
 
@@ -125,7 +131,7 @@ jobs:
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libstdc++-12-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libcurl4-openssl-dev libstdc++-12-dev
 
       - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
