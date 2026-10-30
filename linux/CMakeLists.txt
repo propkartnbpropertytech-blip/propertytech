@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 project(runner LANGUAGES CXX)
+
+find_package(PkgConfig REQUIRED)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
