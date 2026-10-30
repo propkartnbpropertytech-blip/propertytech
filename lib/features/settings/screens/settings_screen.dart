@@ -18,8 +18,8 @@ import '../../auth/bloc/auth_bloc.dart';
 import 'sync_debug_screen.dart';
 import 'kpi_config_screen.dart';
 import '../widgets/backup_management_card.dart';
-import '../widgets/page_control_settings_card.dart';
 import '../services/page_control_service.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/design_system/widgets/under_development_screen.dart';
 import '../../requirements/services/match_criteria_manager.dart';
 import '../services/upload_limits_manager.dart';
@@ -53,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     UploadLimitsManager().addListener(_onUploadLimitsChanged);
     UploadLimitsManager().fetchFromBackend(silent: true);
     PageControlService.instance.addListener(_onThemeChanged);
+    PermissionMatrixService.instance.addListener(_onThemeChanged);
   }
 
   void _onThemeChanged() {
@@ -100,6 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     MatchCriteriaManager().removeListener(_onCriteriaChanged);
     UploadLimitsManager().removeListener(_onUploadLimitsChanged);
     PageControlService.instance.removeListener(_onThemeChanged);
+    PermissionMatrixService.instance.removeListener(_onThemeChanged);
     super.dispose();
   }
 
@@ -1678,24 +1680,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       currentUserName = authState.user.fullName;
     }
 
+    final permService = PermissionMatrixService.instance;
     final sections = <_SettingsNavItem>[
-      const _SettingsNavItem(id: 'profile', label: 'Profile', icon: Icons.person_outline_rounded),
-      const _SettingsNavItem(id: 'themes', label: 'Themes', icon: Icons.palette_outlined),
-      const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
-      const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
-      if (isAdminOrSuperAdmin)
+      if (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.profile'))
+        const _SettingsNavItem(id: 'profile', label: 'Profile', icon: Icons.person_outline_rounded),
+      if (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.themes'))
+        const _SettingsNavItem(id: 'themes', label: 'Themes', icon: Icons.palette_outlined),
+      if (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.appearance'))
+        const _SettingsNavItem(id: 'appearance', label: 'Appearance', icon: Icons.tune_rounded),
+      if (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.locations'))
+        const _SettingsNavItem(id: 'locations', label: 'Locations', icon: Icons.location_city_outlined),
+      if (isAdminOrSuperAdmin && (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.match_criteria')))
         const _SettingsNavItem(id: 'match_criteria', label: 'Run Match Criteria', icon: Icons.bolt_rounded),
-      if (isAdminOrSuperAdmin)
+      if (isAdminOrSuperAdmin && (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.upload_limits')))
         const _SettingsNavItem(id: 'upload_limits', label: 'Upload Limits', icon: Icons.photo_library_outlined),
-      if (isAdminOrSuperAdmin)
+      if (isAdminOrSuperAdmin && (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.kpi_config')))
         const _SettingsNavItem(id: 'kpi_config', label: 'KPI Configuration', icon: Icons.dashboard_customize_outlined),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'backups', label: 'Automated Backups', icon: Icons.cloud_download_rounded),
       if (isSuperAdmin)
         const _SettingsNavItem(id: 'audit', label: 'Audit Logs', icon: Icons.history_rounded),
-      if (isSuperAdmin)
-        const _SettingsNavItem(id: 'page_control', label: 'Page Control', icon: Icons.construction_rounded),
-      const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
+
+      if (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.system'))
+        const _SettingsNavItem(id: 'system', label: 'System', icon: Icons.info_outline_rounded),
     ];
 
     if (!sections.any((s) => s.id == _activeSection)) {
@@ -1723,9 +1730,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       switch (_activeSection) {
-        case 'page_control':
-          if (!isSuperAdmin) return _buildProfileCard(currentUserName, currentUserEmail);
-          return const PageControlSettingsCard();
+
         case 'themes':
           return _buildThemesSection(isSuperAdmin: isSuperAdmin);
         case 'appearance':
@@ -1999,16 +2004,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() => _mobileActiveSection = 'audit');
                 },
               ),
-              const Divider(height: 1, indent: 48),
-              _buildMobileSettingsTile(
-                icon: Icons.construction_rounded,
-                title: 'Page Control',
-                subtitle: 'Role-based Under Development controls',
-                onTap: () {
-                  _setActiveSection('page_control');
-                  setState(() => _mobileActiveSection = 'page_control');
-                },
-              ),
+
             ],
           ]),
           const SizedBox(height: CRMSpacing.xxl),

@@ -41,6 +41,7 @@ import '../storage/session_cleanup.dart';
 import '../../features/requirements/screens/share_properties_page.dart';
 import '../../features/requirements/screens/public_property_detail_screen.dart';
 import '../security/role_guard.dart';
+import '../security/permission_matrix_service.dart';
 import '../../features/library/screens/library_main_screen.dart';
 import '../../features/library/screens/rental_library_screen.dart';
 import '../../features/library/screens/resale_library_screen.dart';
@@ -130,7 +131,10 @@ class AppRouter {
   late final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: _getWebInitialLocation(),
-    refreshListenable: GoRouterRefreshStream(authBloc.stream),
+    refreshListenable: Listenable.merge([
+      GoRouterRefreshStream(authBloc.stream),
+      PermissionMatrixService.instance,
+    ]),
     observers: [
       AuditRouteObserver(),
     ],
@@ -789,25 +793,35 @@ class AppRouter {
           });
         }
 
+        final fallback = RoleGuard.getFirstAllowedRoute(role);
+
         if (onUsers && !RoleGuard.canManageEmployees(role)) {
-          return '/dashboard';
+          return fallback;
         }
         if (onAudit && !RoleGuard.canViewAuditLogs(role)) {
-          return '/dashboard';
+          return fallback;
         }
         if (onReports && !RoleGuard.canViewReports(role)) {
-          return '/dashboard';
+          return fallback;
         }
         final onPermissionsStudio = state.matchedLocation.startsWith('/admin/permissions');
         final onPlansStudio = state.matchedLocation.startsWith('/admin/plans');
         final onBrokerManagement = state.matchedLocation.startsWith('/admin/brokers');
         if ((onPermissionsStudio || onPlansStudio || onBrokerManagement) && !RoleGuard.isSuperAdmin(role)) {
-          return '/dashboard';
+          return fallback;
+        }
+
+        // Global page visibility guard for non-Super-Admin roles
+        if (!isAuthGate && !RoleGuard.isSuperAdmin(role)) {
+          final loc = state.matchedLocation;
+          if (!RoleGuard.canViewPage(role, loc)) {
+            return fallback;
+          }
         }
 
         if (loggingIn || onGetStarted) {
           final from = state.uri.queryParameters['from'];
-          return RoleGuard.sanitizeRedirectPath(from, role: role) ?? '/dashboard';
+          return RoleGuard.sanitizeRedirectPath(from, role: role) ?? fallback;
         }
         if (onSplash) {
           if (!SyncManager().isSyncCompleted) {
@@ -825,7 +839,7 @@ class AppRouter {
             }
           }
 
-          return '/dashboard';
+          return fallback;
         }
         return null;
       }

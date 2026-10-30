@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/storage/local_repositories.dart';
 import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/repository_coordinator.dart';
@@ -144,9 +145,27 @@ class _FollowupsCardState extends State<FollowupsCard> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
+    return ListenableBuilder(
+      listenable: PermissionMatrixService.instance,
+      builder: (context, _) {
+        final role = RoleGuard.currentUser?.role ?? 'Admin';
+        final permService = PermissionMatrixService.instance;
+        final canViewFollowups = RoleGuard.isSuperAdmin(role) || permService.hasPermission(role, 'page.dashboard.followups');
+        final canViewSiteVisits = RoleGuard.isSuperAdmin(role) || permService.hasPermission(role, 'page.dashboard.site_visits');
 
-    return FutureBuilder<List<RequirementModel>>(
+        if (!canViewFollowups && !canViewSiteVisits) {
+          return const SizedBox.shrink();
+        }
+
+        if (!canViewFollowups && _mainSection == 'Follow ups') {
+          _mainSection = 'Site Visit Scheduled';
+        } else if (!canViewSiteVisits && _mainSection == 'Site Visit Scheduled') {
+          _mainSection = 'Follow ups';
+        }
+
+        final isDark = ThemeManager().isDarkMode;
+
+        return FutureBuilder<List<RequirementModel>>(
       future: _requirementsFuture,
       builder: (context, snapshot) {
         final reqsList = snapshot.data ?? [];
@@ -301,32 +320,64 @@ class _FollowupsCardState extends State<FollowupsCard> {
               ),
 
               // ── Main Mode Switcher: Follow ups vs Site Visit Scheduled ──
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildMainModeButton(
-                        label: 'Follow ups',
-                        icon: Icons.phone_callback_rounded,
-                        isSelected: _mainSection == 'Follow ups',
-                        isDark: isDark,
-                        onTap: () => setState(() => _mainSection = 'Follow ups'),
+              if (canViewFollowups && canViewSiteVisits)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _buildMainModeButton(
+                          label: 'Follow ups',
+                          icon: Icons.phone_callback_rounded,
+                          isSelected: _mainSection == 'Follow ups',
+                          isDark: isDark,
+                          onTap: () => setState(() => _mainSection = 'Follow ups'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildMainModeButton(
-                        label: 'Site Visit Scheduled',
-                        icon: Icons.directions_car_rounded,
-                        isSelected: _mainSection == 'Site Visit Scheduled',
-                        isDark: isDark,
-                        onTap: () => setState(() => _mainSection = 'Site Visit Scheduled'),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildMainModeButton(
+                          label: 'Site Visit Scheduled',
+                          icon: Icons.directions_car_rounded,
+                          isSelected: _mainSection == 'Site Visit Scheduled',
+                          isDark: isDark,
+                          onTap: () => setState(() => _mainSection = 'Site Visit Scheduled'),
+                        ),
                       ),
+                    ],
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: ThemeManager().primaryColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ThemeManager().primaryColor.withValues(alpha: 0.2)),
                     ),
-                  ],
+                    child: Row(
+                      children: [
+                        Icon(
+                          canViewFollowups ? Icons.phone_callback_rounded : Icons.directions_car_rounded,
+                          size: 16,
+                          color: ThemeManager().primaryColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          canViewFollowups ? 'Follow-ups' : 'Site Visit Scheduled',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: ThemeManager().primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
 
               const SizedBox(height: 10),
 
@@ -445,6 +496,8 @@ class _FollowupsCardState extends State<FollowupsCard> {
             ],
           ),
         );
+      },
+    );
       },
     );
   }

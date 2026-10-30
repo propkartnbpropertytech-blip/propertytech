@@ -38,6 +38,7 @@ import '../widgets/kpi_drilldown_dialogs.dart';
 import '../widgets/generic_kpi_drilldown_dialog.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../widgets/welcome_header.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/recent_properties_card.dart';
@@ -164,6 +165,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
+    PermissionMatrixService.instance.addListener(_onPermissionsMatrixChanged);
     _nameShimmerController = AnimationController(
       vsync: this,
       duration: CRMMotion.nameShimmer,
@@ -181,8 +183,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  void _onPermissionsMatrixChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    PermissionMatrixService.instance.removeListener(_onPermissionsMatrixChanged);
     _nameShimmerController.dispose();
     _propertyDetailFutures.clear();
     super.dispose();
@@ -386,8 +393,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                                           child: Column(
                                             children: [
                                               scheduleWidget,
-                                              const SizedBox(height: 20),
-                                              followupsWidget,
+                                              if (RoleGuard.isSuperAdmin(role) ||
+                                                  PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.followups') ||
+                                                  PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.site_visits')) ...[
+                                                const SizedBox(height: 20),
+                                                followupsWidget,
+                                              ],
                                             ],
                                           ),
                                         ),
@@ -399,8 +410,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         recentPropsWidget,
                                         const SizedBox(height: 20),
                                         scheduleWidget,
-                                        const SizedBox(height: 20),
-                                        followupsWidget,
+                                        if (RoleGuard.isSuperAdmin(role) ||
+                                            PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.followups') ||
+                                            PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.site_visits')) ...[
+                                          const SizedBox(height: 20),
+                                          followupsWidget,
+                                        ],
                                       ],
                                     ),
                                   SizedBox(height: isDesktop ? 32 : 96),
@@ -622,8 +637,12 @@ class _DashboardScreenState extends State<DashboardScreen>
           recentPropsWidget,
           const SizedBox(height: 16),
           scheduleWidget,
-          const SizedBox(height: 16),
-          followupsWidget,
+          if (RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role) ||
+              PermissionMatrixService.instance.hasPermission(RoleGuard.currentUser?.role, 'page.dashboard.followups') ||
+              PermissionMatrixService.instance.hasPermission(RoleGuard.currentUser?.role, 'page.dashboard.site_visits')) ...[
+            const SizedBox(height: 16),
+            followupsWidget,
+          ],
           const SizedBox(height: 16),
         ],
       ),
