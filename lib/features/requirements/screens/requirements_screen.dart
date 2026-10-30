@@ -13157,13 +13157,16 @@ _recomputeFilteredRequirements();
       if (mounted) {
         setState(() => _salesUpdatingStatusLeads.remove(leadId));
         var message = 'Failed to update status.';
-        if (e is DioException) {
-          final data = e.response?.data;
+        final dynamic err = e;
+        try {
+          final data = err.response?.data;
           final serverMessage = data is Map ? data['message']?.toString() : null;
           if (serverMessage != null && serverMessage.trim().isNotEmpty) {
             message = serverMessage.trim();
+          } else if (err.message != null && err.message.toString().trim().isNotEmpty) {
+            message = err.message.toString().trim();
           }
-        }
+        } catch (_) {}
         AppStatusSnackBar.show(
           context,
           message: message,
