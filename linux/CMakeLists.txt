@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.14)
 project(runner LANGUAGES CXX)
 
 find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK REQUIRED IMPORTED_TARGET GLOBAL gtk+-3.0)
+pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET GLOBAL glib-2.0)
+pkg_check_modules(GIO REQUIRED IMPORTED_TARGET GLOBAL gio-2.0)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
