@@ -4172,7 +4172,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             label: Text(
               isAssigned
                   ? (isTelecaller ? 'Re-assign' : 'Re-transfer')
-                  : 'Outcome',
+                  : (isSalesAllocationMode ? 'Transfer' : 'Outcome'),
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
@@ -4729,7 +4729,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'Picked Up',
+                                            isSalesAllocationMode ? 'Assign' : 'Picked Up',
                                             style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.bold,
@@ -5075,7 +5075,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
                       // On Picked Up: Show "Type property key points here" and "Lead Assign Dropdown"
                       if (selectedStatus == 'Picked Up') ...[
-                        // 1. "Type property key points here *" (Mandatory)
+                        // 1. "Type property key points here *" (Mandatory; hidden in Sales allocation mode)
+                        if (!isSalesAllocationMode) ...[
                         RichText(
                           text: TextSpan(
                             text: 'Type property key points here ',
@@ -5119,6 +5120,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           style: const TextStyle(fontSize: 13),
                         ),
                         const SizedBox(height: 16),
+                        ],
 
                         // 2. Lead Assign Dropdown
                         Text(
@@ -5300,7 +5302,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                         }
 
                         if (selectedStatus == 'Picked Up') {
-                          if (remarksController.text.trim().isEmpty) {
+                          if (!isSalesAllocationMode && remarksController.text.trim().isEmpty) {
                             setDialogState(() {
                               remarksError = 'Property key points (remarks) are mandatory when assigning a lead.';
                             });
@@ -5341,9 +5343,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           });
 
                           final cnrRemarks = cnrRemarksController.text.trim();
+                          final typedRemarks = remarksController.text.trim();
                           final effectiveRemarks = selectedStatus == 'CNR'
                               ? (cnrRemarks.isNotEmpty ? cnrRemarks : 'Marked as CNR')
-                              : remarksController.text.trim();
+                              : (isSalesAllocationMode && typedRemarks.isEmpty
+                                  ? 'Assigned to $targetUserName'
+                                  : typedRemarks);
 
                           final result = await _service.transferLead(
                             lead.id,

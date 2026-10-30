@@ -5733,6 +5733,9 @@ _recomputeFilteredRequirements();
 
   Widget _buildCampaignSalespersonFilter() {
     if (!_isCampaignLeadAdmin) return const SizedBox.shrink();
+    if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
     final users = _getSalesUsers();
     final known = users.any((user) => user.id == _campaignSalespersonFilter);
     final value = known || _campaignSalespersonFilter == 'All' ? _campaignSalespersonFilter : 'All';
@@ -5940,9 +5943,7 @@ _recomputeFilteredRequirements();
                 icon: Icons.holiday_village_outlined,
                 onTap: () {
                   setState(() => _salesCampaignSubTab = 'Property Listing');
-                  if (_salesPropertyListingLeads.isEmpty) {
-                    _fetchSalesPropertyListingLeads(orgWide: isForOtherUser);
-                  }
+                  _fetchSalesPropertyListingLeads(orgWide: isForOtherUser);
                 },
               ),
               const SizedBox(width: 8),
@@ -5977,6 +5978,9 @@ _recomputeFilteredRequirements();
           _salesLeadGroupFilter = value;
           _currentPage = 1;
         });
+        if (value == 'campaign') {
+          _fetchSalesPropertyListingLeads();
+        }
         _lastComputedFilterKey = null;
         _recomputeFilteredRequirements(notify: false);
       },
@@ -12887,9 +12891,8 @@ _recomputeFilteredRequirements();
   }
 
   bool _campaignLeadMatchesListingTab(Map<String, dynamic> lead) {
-    final mode = (lead['listingMode'] ?? 'Rent').toString();
-    final isResale = mode == 'Re-Sale' || mode == 'Resale' || mode == 'Sale';
-    return isResale ? _activeListingTab != 'Rent' : _activeListingTab == 'Rent';
+    // Campaign Property Listing Leads are unified (Rent & Re-Sale) under Campaign Leads
+    return true;
   }
 
   bool _campaignLeadMatchesSalesperson(RequirementModel requirement) {
@@ -12922,10 +12925,10 @@ _recomputeFilteredRequirements();
     String? ownerId;
     if (user?.role == 'Sales') {
       ownerId = user?.id;
-    } else if (_campaignSalespersonFilter != 'All') {
-      ownerId = _campaignSalespersonFilter;
     } else if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
       ownerId = _selectedUserFilterId;
+    } else if (_campaignSalespersonFilter != 'All') {
+      ownerId = _campaignSalespersonFilter;
     }
     return _propertyListingLeadsFor(ownerId: ownerId, rejected: rejectedOnly);
   }
@@ -12973,10 +12976,10 @@ _recomputeFilteredRequirements();
     String? rejectedOwnerId;
     if (user?.role == 'Sales') {
       rejectedOwnerId = user?.id;
-    } else if (_campaignSalespersonFilter != 'All') {
-      rejectedOwnerId = _campaignSalespersonFilter;
     } else if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
       rejectedOwnerId = _selectedUserFilterId;
+    } else if (_campaignSalespersonFilter != 'All') {
+      rejectedOwnerId = _campaignSalespersonFilter;
     }
     final listingCount = _propertyListingLeadsFor(
       ownerId: rejectedOwnerId,
@@ -13052,10 +13055,12 @@ _recomputeFilteredRequirements();
     ));
   }
 
-  Future<void> _fetchSalesPropertyListingLeads({String? userId, bool orgWide = false}) async {
+  Future<void> _fetchSalesPropertyListingLeads({String? userId, bool? orgWide}) async {
     if (!mounted) return;
+    final roleName = RoleGuard.currentUser?.role ?? '';
+    final effectiveOrgWide = orgWide ?? (roleName == 'Admin' || roleName == 'Super Admin');
     _salesLeadFetchUserId = userId;
-    _salesLeadFetchOrgWide = orgWide;
+    _salesLeadFetchOrgWide = effectiveOrgWide;
     if (_isLoadingSalesPropertyListingLeads) {
       _salesLeadsRefreshPending = true;
       return;
@@ -13067,7 +13072,7 @@ _recomputeFilteredRequirements();
     try {
       final res = await RequirementsRepository().getSalesPropertyListingLeads(
         userId: userId,
-        orgWide: orgWide,
+        orgWide: effectiveOrgWide,
       );
       if (res['success'] == true && mounted) {
         final list = res['propertyListingLeads'] as List<dynamic>? ?? [];
