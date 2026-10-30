@@ -174,7 +174,6 @@ void main() {
       ];
 
       final filtered = items.where((raw) {
-        if (raw is! Map) return false;
         final lead = raw['lead'];
         final cs = ((lead is Map ? lead['campaign_status'] : null) ?? raw['campaign_status'] ?? '').toString().trim().toLowerCase();
         if (cs == 'property listed' || cs == 'listed' || cs == 'archived' || cs == 'not interested' || cs == 'not_interested' || cs == 'disqualified') return false;
@@ -198,7 +197,6 @@ void main() {
       final autoTarget = 'auto_$strippedTarget';
 
       final filtered = items.where((raw) {
-        if (raw is! Map) return true;
         final id = (raw['id'] ?? '').toString().trim().toLowerCase();
         final leadId = (raw['lead_id'] ?? raw['leadId'] ?? '').toString().trim().toLowerCase();
         return id != target && id != strippedTarget && id != autoTarget &&
