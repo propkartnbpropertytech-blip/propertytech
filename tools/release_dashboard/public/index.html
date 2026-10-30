@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PropKart CRM — Release & CI Control Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #121827;
+      --card-border: #1f293d;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.1);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.1);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.1);
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --term-bg: #05070d;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 40px;
+    }
+
+    /* Top Navbar */
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      font-weight: 800;
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      letter-spacing: 0.5px;
+    }
+    .brand-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .tag-badge {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #38bdf8;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Main Container */
+    .container {
+      max-width: 1280px;
+      margin: 24px auto;
+      padding: 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Grid Layout for Top Stats */
+    .sync-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .sync-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Git Status Items */
+    .git-info-box {
+      background: #0d121f;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .git-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+    .git-label { color: var(--text-muted); }
+    .git-value { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+    /* Buttons */
+    .btn {
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+    .btn-success { background: #059669; color: #fff; }
+    .btn-success:hover { background: #047857; }
+    .btn-outline { background: transparent; border: 1px solid #334155; color: #cbd5e1; }
+    .btn-outline:hover { background: #1e293b; color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+    /* Workflow Runs List */
+    .runs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .runs-table th {
+      text-align: left;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .runs-table td {
+      padding: 14px;
+      border-bottom: 1px solid #1a2233;
+    }
+    .runs-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Badges */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-success { background: var(--success-bg); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.2); }
+    .status-progress { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.2); animation: pulse 2s infinite; }
+    .status-failed { background: var(--danger-bg); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.2); }
+    .status-queued { background: var(--warning-bg); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.2); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* Linux Builder Terminal */
+    .terminal-window {
+      background: var(--term-bg);
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 16px;
+    }
+    .terminal-bar {
+      background: #0f172a;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e293b;
+    }
+    .term-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .term-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+
+    .terminal-content {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #38bdf8;
+      padding: 16px;
+      height: 280px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.45;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    .modal-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="logo-group">
+      <div class="logo-badge">PK</div>
+      <div>
+        <div class="brand-title">PropKart CRM Release & CI Console</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Autonomous Local Build & GitHub Release Engine</div>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <div class="tag-badge" id="versionBadge">
+        <span>📦 Version: Loading...</span>
+      </div>
+      <button class="btn btn-outline" id="refreshBtn" onclick="fetchStatus()">
+        <span>🔄 Refresh Status</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Top Grid: Git Sync & Quick Push -->
+    <div class="sync-grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>💻 Local Repository & Staging Status</span>
+          </div>
+          <span id="syncBadge" class="status-badge status-success">In Sync</span>
+        </div>
+        <div class="git-info-box">
+          <div class="git-row">
+            <span class="git-label">Current Branch:</span>
+            <span class="git-value" id="currentBranch">...</span>
+          </div>
+          <div class="git-row">
+            <span class="git-label">Latest Local Commit:</span>
+            <span class="git-value" id="latestCommit">...</span>
+          </div>
+          <div class="git-row">
+            <span class="git-label">Commit Message:</span>
+            <span class="git-value" id="commitMsg" style="font-size: 13px; color: #cbd5e1;">...</span>
+          </div>
+          <div class="git-row">
+            <span class="git-label">Unpushed Commits to Origin:</span>
+            <span class="git-value" id="unpushedCommits">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Card -->
+      <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div class="card-title" style="margin-bottom: 8px;">🚀 Push to GitHub</div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            Explicitly push local commits to <code style="color: #60a5fa;">origin/main</code> and update the live release tag.
+          </p>
+        </div>
+        <button class="btn btn-primary" id="pushMainBtn" onclick="openPushModal()" style="width: 100%; justify-content: center; padding: 12px;">
+          <span>⬆️ Push to GitHub Main</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Section: GitHub Actions Live Status -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🌐 Live GitHub CI/CD Checks & Builds</span>
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted);" id="lastUpdated">
+          Updated: Just now
+        </div>
+      </div>
+      <div style="overflow-x: auto;">
+        <table class="runs-table">
+          <thead>
+            <tr>
+              <th>Workflow Name</th>
+              <th>Status</th>
+              <th>Trigger</th>
+              <th>Branch / Tag</th>
+              <th>Commit</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="runsTableBody">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading GitHub Actions runs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section: Local Linux Desktop Builder -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🐧 Local Linux Desktop Builder (WSL2 Ubuntu)</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-outline" id="uploadLinuxBtn" onclick="openUploadModal()" disabled>
+            <span>📤 Upload Linux to GitHub</span>
+          </button>
+          <button class="btn btn-success" id="buildLinuxBtn" onclick="startLinuxBuild()">
+            <span>🔨 Build Linux Release Locally</span>
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; background: #0d121f; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--card-border);">
+        <div>
+          <span style="font-size: 13px; color: var(--text-muted);">Local Linux Package:</span>
+          <span id="linuxPackageStatus" style="font-size: 14px; font-weight: 600; margin-left: 8px;">Not Built Yet</span>
+        </div>
+        <div id="linuxPackageSize" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #34d399;"></div>
+      </div>
+
+      <!-- Live Terminal Output -->
+      <div class="terminal-window">
+        <div class="terminal-bar">
+          <div class="term-dots">
+            <div class="term-dot dot-red"></div>
+            <div class="term-dot dot-yellow"></div>
+            <div class="term-dot dot-green"></div>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+            WSL2 Console Output
+          </div>
+          <button onclick="clearTerminal()" style="background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer;">
+            Clear
+          </button>
+        </div>
+        <div class="terminal-content" id="terminalOutput">Ready. Click "Build Linux Release Locally" to compile native Linux executable.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Modal: Confirm Push to Main -->
+  <div class="modal-backdrop" id="pushModal">
+    <div class="modal-box">
+      <h3 style="font-size: 18px; font-weight: 700;">Confirm Push to GitHub</h3>
+      <p style="font-size: 14px; color: var(--text-muted);">
+        Are you sure you want to push your local commits to <strong style="color: #fff;">origin/main</strong> and trigger the automated GitHub Actions pipeline?
+      </p>
+      <div style="background: #0d121f; padding: 12px; border-radius: 6px; font-size: 13px; font-family: 'JetBrains Mono', monospace;">
+        git push origin main && git push origin -f <span id="modalVersionTag">v1.1.2</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closePushModal()">Cancel</button>
+        <button class="btn btn-primary" id="confirmPushBtn" onclick="executePushMain()">Confirm & Push Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Confirm Upload Linux Release -->
+  <div class="modal-backdrop" id="uploadModal">
+    <div class="modal-box">
+      <h3 style="font-size: 18px; font-weight: 700;">Upload Linux Bundle to GitHub</h3>
+      <p style="font-size: 14px; color: var(--text-muted);">
+        Upload the compiled <strong style="color: #34d399;">PropKart-linux-x86_64.tar.gz</strong> to the live GitHub Release <span id="modalUploadTag" style="font-weight: 600; color: #fff;">v1.1.2</span>?
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeUploadModal()">Cancel</button>
+        <button class="btn btn-success" id="confirmUploadBtn" onclick="executeUploadLinux()">Confirm & Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentData = null;
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        currentData = data;
+        renderDashboard(data);
+      } catch (err) {
+        console.error('Failed to load status:', err);
+      }
+    }
+
+    function renderDashboard(data) {
+      document.getElementById('versionBadge').innerText = `📦 Release: ${data.tag}`;
+      document.getElementById('currentBranch').innerText = data.branch;
+      document.getElementById('latestCommit').innerText = data.commitSha;
+      document.getElementById('commitMsg').innerText = data.commitMessage;
+      document.getElementById('modalVersionTag').innerText = data.tag;
+      document.getElementById('modalUploadTag').innerText = data.tag;
+
+      const unpushed = data.unpushedCount || 0;
+      document.getElementById('unpushedCommits').innerText = unpushed;
+
+      const syncBadge = document.getElementById('syncBadge');
+      if (unpushed > 0) {
+        syncBadge.className = 'status-badge status-queued';
+        syncBadge.innerText = `${unpushed} commit(s) ahead of origin`;
+      } else {
+        syncBadge.className = 'status-badge status-success';
+        syncBadge.innerText = 'In Sync with origin/main';
+      }
+
+      // Linux Bundle Status
+      const bundle = data.linuxBundle;
+      const statusSpan = document.getElementById('linuxPackageStatus');
+      const sizeSpan = document.getElementById('linuxPackageSize');
+      const uploadBtn = document.getElementById('uploadLinuxBtn');
+
+      if (bundle && bundle.exists) {
+        statusSpan.innerHTML = `✅ <span style="color: #34d399;">Ready (${bundle.path})</span>`;
+        sizeSpan.innerText = bundle.sizeMB;
+        uploadBtn.disabled = false;
+      } else {
+        statusSpan.innerText = 'Not Built Yet';
+        sizeSpan.innerText = '';
+        uploadBtn.disabled = true;
+      }
+
+      // GitHub Runs Table
+      const tbody = document.getElementById('runsTableBody');
+      if (data.githubRuns && data.githubRuns.length > 0) {
+        tbody.innerHTML = data.githubRuns.map(run => {
+          let badgeClass = 'status-queued';
+          let badgeText = run.status;
+          if (run.status === 'completed') {
+            badgeClass = run.conclusion === 'success' ? 'status-success' : 'status-failed';
+            badgeText = run.conclusion || 'completed';
+          } else if (run.status === 'in_progress') {
+            badgeClass = 'status-progress';
+            badgeText = 'running...';
+          }
+
+          const shortSha = run.headSha ? run.headSha.substring(0, 7) : '-';
+          return `
+            <tr>
+              <td style="font-weight: 600;">${run.name}</td>
+              <td><span class="status-badge ${badgeClass}">${badgeText}</span></td>
+              <td style="color: var(--text-muted);">${run.event}</td>
+              <td><span style="font-family: 'JetBrains Mono', monospace; font-size: 13px;">${run.headBranch || '-'}</span></td>
+              <td><span style="font-family: 'JetBrains Mono', monospace; color: #60a5fa;">${shortSha}</span></td>
+              <td>
+                <a href="${run.url}" target="_blank" class="btn btn-outline" style="padding: 4px 10px; font-size: 12px; text-decoration: none;">
+                  View on GitHub ↗
+                </a>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No recent runs found.</td></tr>';
+      }
+
+      document.getElementById('lastUpdated').innerText = `Updated: ${new Date().toLocaleTimeString()}`;
+    }
+
+    // Modal controls
+    function openPushModal() { document.getElementById('pushModal').style.display = 'flex'; }
+    function closePushModal() { document.getElementById('pushModal').style.display = 'none'; }
+    function openUploadModal() { document.getElementById('uploadModal').style.display = 'flex'; }
+    function closeUploadModal() { document.getElementById('uploadModal').style.display = 'none'; }
+
+    // Execute Push
+    async function executePushMain() {
+      const btn = document.getElementById('confirmPushBtn');
+      btn.disabled = true;
+      btn.innerText = 'Pushing to GitHub...';
+
+      try {
+        const res = await fetch('/api/push-main', { method: 'POST' });
+        const result = await res.json();
+        closePushModal();
+        alert(result.success ? '🎉 Successfully pushed to GitHub main and synced release tag!' : `Push failed: ${result.pushOutput}`);
+        fetchStatus();
+      } catch (err) {
+        alert('Network error pushing to GitHub: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Confirm & Push Now';
+      }
+    }
+
+    // Execute Linux Release Upload
+    async function executeUploadLinux() {
+      const btn = document.getElementById('confirmUploadBtn');
+      btn.disabled = true;
+      btn.innerText = 'Uploading...';
+
+      try {
+        const res = await fetch('/api/upload-linux', { method: 'POST' });
+        const result = await res.json();
+        closeUploadModal();
+        if (result.success) {
+          alert('🎉 Linux release package successfully published to GitHub Releases!\nURL: ' + result.downloadUrl);
+        } else {
+          alert('Upload failed: ' + (result.error || result.output));
+        }
+        fetchStatus();
+      } catch (err) {
+        alert('Error uploading to GitHub: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Confirm & Upload';
+      }
+    }
+
+    // Terminal Logging
+    function appendTerminal(text) {
+      const term = document.getElementById('terminalOutput');
+      term.innerText += text;
+      term.scrollTop = term.scrollHeight;
+    }
+    function clearTerminal() {
+      document.getElementById('terminalOutput').innerText = '';
+    }
+
+    // Start Linux Build via SSE
+    function startLinuxBuild() {
+      const btn = document.getElementById('buildLinuxBtn');
+      btn.disabled = true;
+      btn.innerText = '⏳ Building in WSL2...';
+      clearTerminal();
+
+      appendTerminal('🚀 Initializing Local Linux Desktop compilation via WSL2 Ubuntu...\n\n');
+
+      const eventSource = new EventSource('/api/build-linux-stream');
+
+      eventSource.onmessage = (event) => {
+        try {
+          const packet = JSON.parse(event.data);
+          if (packet.type === 'log') {
+            appendTerminal(packet.data);
+          } else if (packet.type === 'done') {
+            eventSource.close();
+            btn.disabled = false;
+            btn.innerText = '🔨 Build Linux Release Locally';
+            if (packet.data.success) {
+              appendTerminal('\n✅ Linux Build & Packaging COMPLETED SUCCESSFULLY!\n');
+              appendTerminal(`📦 Package: PropKart-linux-x86_64.tar.gz (${packet.data.bundle.sizeMB})\n`);
+            } else {
+              appendTerminal(`\n❌ Linux Build failed with exit code ${packet.data.code}.\n`);
+            }
+            fetchStatus();
+          }
+        } catch (_) {
+          appendTerminal(event.data);
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        btn.disabled = false;
+        btn.innerText = '🔨 Build Linux Release Locally';
+        appendTerminal('\n⚠️ Build stream closed.\n');
+        fetchStatus();
+      };
+    }
+
+    // Initialize and Auto-refresh every 8 seconds
+    fetchStatus();
+    setInterval(fetchStatus, 8000);
+  </script>
+</body>
+</html>
