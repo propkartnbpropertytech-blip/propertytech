@@ -115,62 +115,6 @@ jobs:
           path: PropKart-Windows-x64.zip
           retention-days: 7
 
-  # =========================================================================
-  # Job 3: Build Linux Desktop (AppImage / Tar)
-  # =========================================================================
-  build-linux:
-    name: 🐧 Build Linux x64 Desktop
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: true
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Linux Build Dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libcurl4-openssl-dev libstdc++-12-dev
-
-      - name: Set up Flutter SDK
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: Enable Linux Desktop Support
-        run: flutter config --enable-linux-desktop
-
-      - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Build Linux Release
-        run: |
-          flutter build linux --release --dart-define=APP_ENV=production
-
-      - name: Archive Linux Release Bundle
-        run: |
-          if [ -d "build/linux/x64/release/bundle" ]; then
-            tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/x64/release/bundle .
-          elif [ -d "build/bundle" ]; then
-            tar -czvf PropKart-linux-x86_64.tar.gz -C build/bundle .
-          else
-            BUNDLE_DIR=$(find build -type d -name "bundle" 2>/dev/null | head -n 1)
-            if [ -n "$BUNDLE_DIR" ]; then
-              tar -czvf PropKart-linux-x86_64.tar.gz -C "$BUNDLE_DIR" .
-            else
-              echo "Bundle directory search failed, archiving build directory..."
-              tar -czvf PropKart-linux-x86_64.tar.gz -C build .
-            fi
-          fi
-
-      - name: Upload Linux Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: propkart-linux-tar
-          path: PropKart-linux-x86_64.tar.gz
-          retention-days: 7
 
   # =========================================================================
   # Job 4: Build Web Release
@@ -217,7 +161,7 @@ jobs:
   # =========================================================================
   publish-release:
     name: 🚀 Publish Multi-OS GitHub Release
-    needs: [build-android, build-windows, build-linux, build-web]
+    needs: [build-android, build-windows, build-web]
     if: always() && !cancelled() && (needs.build-android.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
 
@@ -254,13 +198,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: propkart-windows-zip
-          path: ./dist
-
-      - name: Download Linux Artifact
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: propkart-linux-tar
           path: ./dist
 
       - name: Standardize Release Filenames
