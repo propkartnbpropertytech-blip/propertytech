@@ -164,6 +164,8 @@ class SyncManager {
 
   final _stateController = StreamController<SyncState>.broadcast();
   Stream<SyncState> get stateStream => _stateController.stream;
+  final _tableChanges = StreamController<Set<String>>.broadcast();
+  Stream<Set<String>> get tableChanges => _tableChanges.stream;
 
   int _ref = 0;
   int _reconnectAttempts = 0;
@@ -507,6 +509,9 @@ class SyncManager {
       isarWriteMs: isarWriteMs,
       totalMs: totalMs,
     );
+    if (tablesToRefresh.isNotEmpty && !_tableChanges.isClosed) {
+      _tableChanges.add(tablesToRefresh);
+    }
   }
 
   void _handleDisconnect(String reason) {

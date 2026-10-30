@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/network/sync_manager.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/widgets/crm_page_header.dart';
@@ -77,6 +79,10 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  Set<String>? _serverMatchIds;
+  int _treeSearchRequest = 0;
+  Timer? _treeSearchDebounce;
+  StreamSubscription<Set<String>>? _treeRefreshSub;
   String _view = 'tree';
   final TransformationController _graphController = TransformationController();
   final GlobalKey _graphContentKey = GlobalKey();
@@ -90,11 +96,17 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
   @override
   void initState() {
     super.initState();
+    _treeRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted || _query.isEmpty) return;
+      if (tables.contains('users')) _fetchTreeSearch(_query);
+    });
     _loadTree();
   }
 
   @override
   void dispose() {
+    _treeSearchDebounce?.cancel();
+    _treeRefreshSub?.cancel();
     _searchController.dispose();
     _graphController.dispose();
     super.dispose();
@@ -105,7 +117,7 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
 
   bool get _isSearching => _query.isNotEmpty;
 
-  bool _matches(_TreeUser u) => _isSearching && u.name.toLowerCase().contains(_query);
+  bool _matches(_TreeUser u) => _isSearching && (_serverMatchIds?.contains(u.id) ?? false);
 
   /// Branches visible for the current search: an Administrator whose name matches keeps all
   /// employees; otherwise only matching employees are kept, and empty branches are hidden.
@@ -136,8 +148,38 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
   }
 
   void _onSearchChanged(String value) {
-    setState(() => _query = value.trim().toLowerCase());
+    final next = value.trim();
+    setState(() => _query = next.toLowerCase());
+    _treeSearchDebounce?.cancel();
+    _treeSearchDebounce = Timer(const Duration(milliseconds: 250), () {
+      _fetchTreeSearch(next);
+    });
     if (_view == 'graph') _fitGraph();
+  }
+
+  Future<void> _fetchTreeSearch(String raw) async {
+    final request = ++_treeSearchRequest;
+    if (raw.trim().isEmpty) {
+      if (!mounted || request != _treeSearchRequest) return;
+      setState(() => _serverMatchIds = null);
+      return;
+    }
+    if (mounted) setState(() => _serverMatchIds = null);
+    try {
+      final res = await DioClient.dio.get('/users', queryParameters: {'search': raw.trim()});
+      if (!mounted || request != _treeSearchRequest) return;
+      final data = res.data is Map ? res.data['data'] : null;
+      final rawList = data is Map && data['users'] is List ? data['users'] as List : (data is List ? data : const []);
+      final ids = rawList
+          .whereType<Map>()
+          .map((row) => (row['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      setState(() => _serverMatchIds = ids);
+    } catch (_) {
+      if (!mounted || request != _treeSearchRequest) return;
+      setState(() => _serverMatchIds = {});
+    }
   }
 
   Future<void> _loadTree() async {

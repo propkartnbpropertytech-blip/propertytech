@@ -66,6 +66,12 @@ class _CRMAppShellState extends State<CRMAppShell>
   @override
   void initState() {
     super.initState();
+    _searchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted) return;
+      final query = _searchController.text.trim();
+      if (query.isEmpty) return;
+      if (tables.any(_liveSearchTables.contains)) _performSearch(query);
+    });
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
       if ((newNotif['action'] ?? '').toString() == 'refresh' ||
@@ -156,6 +162,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
+    _searchRefreshSub?.cancel();
     _notificationsTimer?.cancel();
     _notifCenterSub?.cancel();
     TelecallerHeartbeatService.instance.stop();
@@ -172,6 +179,15 @@ class _CRMAppShellState extends State<CRMAppShell>
   List<Map<String, dynamic>> _callingLeadSuggestions = [];
   bool _isSearching = false;
   Timer? _searchDebounce;
+  StreamSubscription<Set<String>>? _searchRefreshSub;
+  static const _liveSearchTables = {
+    'properties',
+    'requirements',
+    'owners',
+    'clients',
+    'leads',
+    'integration_leads',
+  };
   List<dynamic> _notifications = [];
   final Set<String> _knownNotificationIds = {};
   bool _isFirstNotifFetch = true;

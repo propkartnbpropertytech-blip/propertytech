@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 // Presentation layer decoupled from Dio
 import '../../../core/api/api_constants.dart';
+import '../../../core/api/api_exception.dart';
 // Presentation layer decoupled from DioClient
 import '../../../core/theme/theme_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,6 +18,8 @@ import '../models/requirement_model.dart';
 import '../domain/canonical_budget_score.dart';
 import '../services/match_criteria_manager.dart';
 import '../services/followup_sync_engine.dart';
+import '../services/requirements_service.dart';
+import '../../../core/network/sync_manager.dart';
 import '../repository/requirements_repository.dart';
 import 'add_edit_requirement_screen.dart';
 import '../../properties/repository/properties_repository.dart';
@@ -970,6 +973,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final Map<String, TextEditingController> _tabSearchControllers = {};
   final Map<String, String> _tabSearchQueries = {};
   Timer? _tabSearchDebounce;
+  final RequirementsService _tabSearchService = RequirementsService();
+  Set<String>? _tabServerMatchIds;
+  String _tabServerMatchQuery = '';
+  int _tabServerSearchRequest = 0;
+  StreamSubscription<Set<String>>? _tabSearchRefreshSub;
   String? _selectedSalespersonFilter;
 
   TextEditingController _getTabSearchController(String subTab) {
@@ -980,6 +988,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _getTabSearchQuery(String subTab) {
     final key = '${_selectedMainFollowupSection}_$subTab';
     return _tabSearchQueries[key] ?? '';
+  }
+
+  Future<void> _loadTabServerMatches(String raw) async {
+    final request = ++_tabServerSearchRequest;
+    final query = raw.trim().toLowerCase();
+    if (query.isEmpty) {
+      if (!mounted || request != _tabServerSearchRequest) return;
+      setState(() {
+        _tabServerMatchIds = null;
+        _tabServerMatchQuery = '';
+      });
+      return;
+    }
+    try {
+      final ids = await _tabSearchService.searchFollowupTabIds(query);
+      if (!mounted || request != _tabServerSearchRequest) return;
+      setState(() {
+        _tabServerMatchIds = ids;
+        _tabServerMatchQuery = query;
+      });
+    } catch (_) {
+      if (!mounted || request != _tabServerSearchRequest) return;
+    }
   }
   String? _wonCategoryId;
   String? _wonPropertyTypeId;
@@ -1033,6 +1064,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   StreamSubscription? _dashboardStreamSub;
   StreamSubscription<Map<String, dynamic>>? _salesLeadEventsSub;
   StreamSubscription<SyncState>? _salesSyncSub;
+  StreamSubscription<Map<String, dynamic>>? _salesNotificationSub;
   SyncState? _salesSyncState;
   String? _salesLeadFetchUserId;
   bool _salesLeadFetchOrgWide = false;
@@ -1119,6 +1151,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabSearchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted) return;
+      final query = _getTabSearchQuery(_selectedFollowupSubTab);
+      if (query.isEmpty) return;
+      if (tables.contains('requirements') || tables.contains('followups') || tables.contains('site_visits')) {
+        _loadTabServerMatches(query);
+      }
+    });
     _searchController.addListener(_onSearchChangedDebounced);
     _wonSearchController.addListener(_onSearchChangedDebounced);
     if (widget.initialTab != null) {
@@ -1522,10 +1562,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _dashboardStreamSub?.cancel();
     _salesLeadEventsSub?.cancel();
     _salesSyncSub?.cancel();
+    _salesNotificationSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
     _allClientsFollowupSearchDebounce?.cancel();
     _allClientsFollowupSearchController.dispose();
+    _tabSearchRefreshSub?.cancel();
     _tabSearchDebounce?.cancel();
     for (final c in _tabSearchControllers.values) {
       c.dispose();
@@ -11189,11 +11231,20 @@ _recomputeFilteredRequirements();
               }
 
               final activeTabQuery = _getTabSearchQuery(_selectedFollowupSubTab);
-              final filtered = FollowupSyncEngine.filterBySearch(
-                items: selectedList,
-                query: activeTabQuery,
-                followupToReqMap: followupToReqMap,
-              );
+              final useServerMatches = activeTabQuery.isNotEmpty &&
+                  _tabServerMatchQuery == activeTabQuery &&
+                  _tabServerMatchIds != null;
+              final filtered = useServerMatches
+                  ? selectedList.where((item) {
+                      final requirementId = item.requirementId;
+                      return _tabServerMatchIds!.contains(item.id) ||
+                          (requirementId != null && _tabServerMatchIds!.contains(requirementId));
+                    }).toList()
+                  : FollowupSyncEngine.filterBySearch(
+                      items: selectedList,
+                      query: activeTabQuery,
+                      followupToReqMap: followupToReqMap,
+                    );
 
               final totalCount = filtered.length;
               final totalPages = (totalCount / _followupsPerPage).ceil();
@@ -11333,13 +11384,15 @@ _recomputeFilteredRequirements();
                           controller: searchCtrl,
                           onChanged: (val) {
                             _tabSearchDebounce?.cancel();
-                            _tabSearchDebounce = Timer(const Duration(milliseconds: 200), () {
+                            _tabSearchDebounce = Timer(const Duration(milliseconds: 250), () {
                               if (!mounted) return;
+                              final next = val.trim().toLowerCase();
                               setState(() {
                                 final key = '${_selectedMainFollowupSection}_$_selectedFollowupSubTab';
-                                _tabSearchQueries[key] = val.trim().toLowerCase();
+                                _tabSearchQueries[key] = next;
                                 _currentFollowupPage = 1;
                               });
+                              _loadTabServerMatches(next);
                             });
                           },
                           decoration: InputDecoration(
@@ -12978,6 +13031,16 @@ _recomputeFilteredRequirements();
         _requestSalesLeadRefresh();
       }
     });
+    _salesNotificationSub = NotificationCenter.stream.listen((notif) {
+      final type = (notif['type'] ?? '').toString().toLowerCase();
+      final route = (notif['route'] ?? '').toString().toLowerCase();
+      if (type.contains('lead') || route.contains('requirements') || route.contains('leads')) {
+        _requestSalesLeadRefresh();
+        if (mounted) {
+          context.read<RequirementsBloc>().add(FetchRequirementsEvent(refreshFromServer: true));
+        }
+      }
+    });
   }
 
   void _requestSalesLeadRefresh() {
@@ -13157,12 +13220,8 @@ _recomputeFilteredRequirements();
       if (mounted) {
         setState(() => _salesUpdatingStatusLeads.remove(leadId));
         var message = 'Failed to update status.';
-        if (e is DioException) {
-          final data = e.response?.data;
-          final serverMessage = data is Map ? data['message']?.toString() : null;
-          if (serverMessage != null && serverMessage.trim().isNotEmpty) {
-            message = serverMessage.trim();
-          }
+        if (e is ApiException && e.message.trim().isNotEmpty) {
+          message = e.message.trim();
         }
         AppStatusSnackBar.show(
           context,

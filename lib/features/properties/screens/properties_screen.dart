@@ -28,6 +28,7 @@ import '../../auth/models/user_model.dart';
 import '../bloc/properties_bloc.dart';
 import '../models/property_model.dart';
 import '../repository/properties_repository.dart';
+import '../../../core/network/sync_manager.dart';
 import 'add_edit_property_screen.dart';
 import '../widgets/property_kpi_summary_bar.dart';
 import '../../../core/utils/currency.dart';
@@ -78,6 +79,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   List<PropertyModel> _cachedProperties = [];
   List<PropertyModel>? _serverSearchProperties;
   int _propertySearchRequest = 0;
+  StreamSubscription<Set<String>>? _propertySearchRefreshSub;
   Set<String> _cachedBookmarkedIds = {};
   String? _selectedPriceSortOrRange;
   double? _minPrice;
@@ -145,6 +147,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChangedDebounced);
+    _propertySearchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted || _searchController.text.trim().isEmpty) return;
+      if (tables.contains('properties')) _fetchServerPropertySearch();
+    });
     _loadArchivedPropertyIds();
     _loadProperties();
   }
@@ -270,6 +276,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   @override
   void dispose() {
     _searchDebounceTimer?.cancel();
+    _propertySearchRefreshSub?.cancel();
     _searchController.removeListener(_onSearchChangedDebounced);
     _searchController.dispose();
     _scrollController.dispose();
