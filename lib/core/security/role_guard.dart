@@ -18,6 +18,13 @@ class RoleGuard {
 
   static bool isSales(String? role) => (role ?? '').toLowerCase() == 'sales';
 
+  /// Sales and telecaller sessions own an allocation availability row.
+  /// Logout has to close that row or the person stays eligible.
+  static bool endsAllocationShift(String? role) {
+    final normalized = (role ?? '').toLowerCase();
+    return normalized == 'telecaller' || normalized == 'sales' || normalized == 'salesperson';
+  }
+
   /// General permission evaluator
   static bool hasPermission(String? role, String key) {
     return PermissionMatrixService.instance.hasPermission(role, key);

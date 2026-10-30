@@ -325,12 +325,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     _sessionWatchdogTimer?.cancel();
     final user = RoleGuard.currentUser;
-    RoleGuard.currentUser = null;
     try {
-      if (user != null && RoleGuard.isTelecaller(user.role)) {
+      if (RoleGuard.endsAllocationShift(user?.role)) {
         await TelecallerShiftManager.instance.handleLogout();
       }
     } catch (_) {}
+    RoleGuard.currentUser = null;
     try {
       await NotificationCenter.clearSession();
     } catch (_) {}
@@ -352,12 +352,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     _sessionWatchdogTimer?.cancel();
     final user = RoleGuard.currentUser;
-    RoleGuard.currentUser = null;
     try {
-      if (user != null && RoleGuard.isTelecaller(user.role)) {
+      if (RoleGuard.endsAllocationShift(user?.role)) {
         await TelecallerShiftManager.instance.handleLogout();
       }
     } catch (_) {}
+    RoleGuard.currentUser = null;
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}

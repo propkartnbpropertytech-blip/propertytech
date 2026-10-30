@@ -62,6 +62,9 @@ import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 import '../models/requirement_view_model.dart';
+import '../sales_lead_sync.dart';
+import '../../integration/services/integration_service.dart';
+import '../../../core/network/sync_manager.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -1028,6 +1031,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   late Future<List<dynamic>> _followupsFuture;
   StreamSubscription? _requirementsStreamSub;
   StreamSubscription? _dashboardStreamSub;
+  StreamSubscription<Map<String, dynamic>>? _salesLeadEventsSub;
+  StreamSubscription<SyncState>? _salesSyncSub;
+  SyncState? _salesSyncState;
+  String? _salesLeadFetchUserId;
+  bool _salesLeadFetchOrgWide = false;
+  bool _salesLeadsRefreshPending = false;
+  bool _salesLeadsLoadFailed = false;
+  String? _salesCampaignRouteToken;
   OverlayEntry? _notesOverlayEntry;
   final Set<String> _selectedRequirementIds = {};
   final ScrollController _scrollController = ScrollController();
@@ -1176,6 +1187,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final roleName = RoleGuard.currentUser?.role ?? '';
     if (roleName == 'Sales' || roleName == 'Admin' || roleName == 'Super Admin') {
       unawaited(_fetchSalesPropertyListingLeads(orgWide: roleName != 'Sales'));
+      _watchSalesLeadPipeline();
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1456,6 +1468,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             _salesLeadGroupFilter = targetGroup;
           });
         }
+        final leadToken = uri.queryParameters['leadId'] ?? '';
+        final routeToken = '$targetGroup|$leadToken';
+        if (targetGroup == 'campaign' && routeToken != _salesCampaignRouteToken) {
+          _salesCampaignRouteToken = routeToken;
+          final roleName = RoleGuard.currentUser?.role ?? '';
+          if (roleName == 'Sales' || roleName == 'Admin' || roleName == 'Super Admin') {
+            unawaited(_fetchSalesPropertyListingLeads(orgWide: roleName != 'Sales'));
+          }
+        }
       }
       final statusParam = uri.queryParameters['status'];
       if (statusParam != null && statusParam.isNotEmpty) {
@@ -1499,6 +1520,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _removeNotesPopover();
     _requirementsStreamSub?.cancel();
     _dashboardStreamSub?.cancel();
+    _salesLeadEventsSub?.cancel();
+    _salesSyncSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
     _allClientsFollowupSearchDebounce?.cancel();
@@ -12944,9 +12967,40 @@ _recomputeFilteredRequirements();
     );
   }
 
+  void _watchSalesLeadPipeline() {
+    _salesLeadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
+      _requestSalesLeadRefresh();
+    });
+    _salesSyncSub = SyncManager().stateStream.listen((state) {
+      final previous = _salesSyncState;
+      _salesSyncState = state;
+      if (shouldRefreshSalesLeadsAfterReconnect(previous, state)) {
+        _requestSalesLeadRefresh();
+      }
+    });
+  }
+
+  void _requestSalesLeadRefresh() {
+    final roleName = RoleGuard.currentUser?.role ?? '';
+    if (roleName != 'Sales' && roleName != 'Admin' && roleName != 'Super Admin') return;
+    unawaited(_fetchSalesPropertyListingLeads(
+      userId: _salesLeadFetchUserId,
+      orgWide: _salesLeadFetchOrgWide,
+    ));
+  }
+
   Future<void> _fetchSalesPropertyListingLeads({String? userId, bool orgWide = false}) async {
-    if (_isLoadingSalesPropertyListingLeads) return;
-    setState(() => _isLoadingSalesPropertyListingLeads = true);
+    if (!mounted) return;
+    _salesLeadFetchUserId = userId;
+    _salesLeadFetchOrgWide = orgWide;
+    if (_isLoadingSalesPropertyListingLeads) {
+      _salesLeadsRefreshPending = true;
+      return;
+    }
+    setState(() {
+      _isLoadingSalesPropertyListingLeads = true;
+      _salesLeadsLoadFailed = false;
+    });
     try {
       final res = await DioClient.dio.get(
         ApiConstants.allocationSalesLeads,
@@ -13001,14 +13055,30 @@ _recomputeFilteredRequirements();
             ..addAll(requirementIds);
           _salesDirectLeadsLoaded = true;
           _isLoadingSalesPropertyListingLeads = false;
+          _salesLeadsLoadFailed = false;
           _lastComputedFilterKey = null;
         });
         _recomputeFilteredRequirements(notify: false);
-      } else {
-        if (mounted) setState(() => _isLoadingSalesPropertyListingLeads = false);
+      } else if (mounted) {
+        setState(() {
+          _isLoadingSalesPropertyListingLeads = false;
+          _salesLeadsLoadFailed = true;
+        });
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoadingSalesPropertyListingLeads = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingSalesPropertyListingLeads = false;
+          _salesLeadsLoadFailed = true;
+        });
+      }
+    } finally {
+      if (_salesLeadsRefreshPending && mounted) {
+        _salesLeadsRefreshPending = false;
+        final nextUser = _salesLeadFetchUserId;
+        final nextOrgWide = _salesLeadFetchOrgWide;
+        unawaited(_fetchSalesPropertyListingLeads(userId: nextUser, orgWide: nextOrgWide));
+      }
     }
   }
 
@@ -13362,12 +13432,16 @@ _recomputeFilteredRequirements();
     final rowIds = rows.map((lead) => lead['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
     final selectedCount = rowIds.where(_selectedCampaignLeadIds.contains).length;
     final allSelected = rowIds.isNotEmpty && selectedCount == rowIds.length;
-    final emptyTitle = rejectedOnly
-        ? 'No Rejected Property Listing Leads'
-        : 'No Property Listing Leads currently allocated to you.';
-    final emptyBody = rejectedOnly
-        ? 'Property listing leads marked Rejected will appear here.'
-        : 'Property listing leads directly allocated from campaign sources will appear here.';
+    final emptyTitle = _salesLeadsLoadFailed && !rejectedOnly
+        ? 'Campaign leads could not be loaded.'
+        : rejectedOnly
+            ? 'No Rejected Property Listing Leads'
+            : 'No Property Listing Leads currently allocated to you.';
+    final emptyBody = _salesLeadsLoadFailed && !rejectedOnly
+        ? 'The allocation list did not load. Refresh to try again.'
+        : rejectedOnly
+            ? 'Property listing leads marked Rejected will appear here.'
+            : 'Property listing leads directly allocated from campaign sources will appear here.';
 
     final toolbar = Padding(
       padding: const EdgeInsets.only(bottom: 8),

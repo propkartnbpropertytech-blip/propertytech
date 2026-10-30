@@ -252,6 +252,13 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         route: '/admin/brokers',
                         isActive: currentPath.startsWith('/admin/brokers'),
                       ),
+                      _buildNavItem(
+                        context,
+                        title: 'Super Admin Metrics',
+                        icon: Icons.insights_outlined,
+                        route: '/reports/leads/super-admin-metrics',
+                        isActive: currentPath.startsWith('/reports/leads/super-admin-metrics'),
+                      ),
                     ],
                     if (RoleGuard.isSuperAdmin(widget.userRole))
                       _buildNavItem(

@@ -72,6 +72,7 @@ class ApiConstants {
   static const allocationSalesLeadBulkStatus = "/allocation/sales-leads/bulk-status";
   static const salesDashboardSummary = "/sales/dashboard-summary";
   static const superAdminMetrics = "/super-admin/metrics";
+  static const superAdminPlatformOverview = "/dashboard/platform-overview";
 
   /// Public web URL used in password-recovery emails.
   static const passwordResetRedirectTo = 'https://propkart.nbpropertytech.com/reset-password';
