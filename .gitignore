@@ -76,3 +76,6 @@ app.*.map.json
 # Local version snapshots
 /Versions/
 .sentry-native/
+PropKart-*.tar.gz
+PropKart-*.zip
+*.tar.gz
