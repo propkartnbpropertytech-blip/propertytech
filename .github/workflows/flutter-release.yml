@@ -125,7 +125,7 @@ jobs:
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libstdc++-12-dev
 
       - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
@@ -145,7 +145,20 @@ jobs:
 
       - name: Archive Linux Release Bundle
         run: |
-          tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/x64/release/bundle .
+          if [ -d "build/linux/x64/release/bundle" ]; then
+            tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/x64/release/bundle .
+          elif [ -d "build/linux/release/bundle" ]; then
+            tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/release/bundle .
+          else
+            echo "Bundle not found in standard directories, searching..."
+            BUNDLE_DIR=$(find build/linux -type d -name "bundle" | head -n 1)
+            if [ -n "$BUNDLE_DIR" ]; then
+              tar -czvf PropKart-linux-x86_64.tar.gz -C "$BUNDLE_DIR" .
+            else
+              echo "Error: Linux release bundle directory not found"
+              exit 1
+            fi
+          fi
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
