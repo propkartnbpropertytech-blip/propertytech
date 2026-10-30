@@ -1,0 +1,279 @@
+name: PropKart Multi-OS Automated Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - master
+    paths:
+      - 'pubspec.yaml'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Release Tag (e.g., v1.1.2). Leave empty to read from pubspec.yaml'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # =========================================================================
+  # Job 1: Build Android APK
+  # =========================================================================
+  build-android:
+    name: 📱 Build Android Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Android Release APK
+        run: |
+          echo "Building Android release APK..."
+          flutter build apk --release --dart-define=APP_ENV=production
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: propkart-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
+
+  # =========================================================================
+  # Job 2: Build Windows Desktop
+  # =========================================================================
+  build-windows:
+    name: 🖥️ Build Windows x64 Desktop
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows Desktop Support
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Windows Desktop Release
+        run: |
+          flutter build windows --release --dart-define=APP_ENV=production
+
+      - name: Archive Windows Release Directory
+        shell: powershell
+        run: |
+          if (Test-Path "build\windows\x64\runner\Release") {
+            Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "PropKart-Windows-x64.zip" -Force
+          } elseif (Test-Path "build\windows\runner\Release") {
+            Compress-Archive -Path "build\windows\runner\Release\*" -DestinationPath "PropKart-Windows-x64.zip" -Force
+          } else {
+            Write-Error "Windows release build output folder not found"
+          }
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: propkart-windows-zip
+          path: PropKart-Windows-x64.zip
+          retention-days: 7
+
+  # =========================================================================
+  # Job 3: Build Linux Desktop (AppImage / Tar)
+  # =========================================================================
+  build-linux:
+    name: 🐧 Build Linux x64 Desktop
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Linux Desktop Support
+        run: flutter config --enable-linux-desktop
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Linux Release
+        run: |
+          flutter build linux --release --dart-define=APP_ENV=production
+
+      - name: Archive Linux Release Bundle
+        run: |
+          tar -czvf PropKart-linux-x86_64.tar.gz -C build/linux/x64/release/bundle .
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: propkart-linux-tar
+          path: PropKart-linux-x86_64.tar.gz
+          retention-days: 7
+
+  # =========================================================================
+  # Job 4: Build Web Release
+  # =========================================================================
+  build-web:
+    name: 🌐 Build Cloud Web App
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Fix Isar Integer Hashes for Web
+        run: node fix_web_build.js
+
+      - name: Build Web Release Bundle
+        run: |
+          flutter build web --release --dart-define=APP_ENV=production --pwa-strategy=offline-first
+
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: propkart-web-build
+          path: build/web
+          retention-days: 7
+
+  # =========================================================================
+  # Job 5: Publish Release & Generate Registry
+  # =========================================================================
+  publish-release:
+    name: 🚀 Publish Multi-OS GitHub Release
+    needs: [build-android, build-windows, build-linux, build-web]
+    if: always() && !cancelled() && (needs.build-android.result == 'success' || needs.build-windows.result == 'success')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Determine Version Tag
+        id: version_resolver
+        run: |
+          if [ -n "${{ github.event.inputs.version_tag }}" ]; then
+            TAG="${{ github.event.inputs.version_tag }}"
+          else
+            RAW_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+            TAG="v$RAW_VERSION"
+          fi
+          CLEAN_VER=$(echo "$TAG" | sed 's/^v//')
+          echo "TAG_NAME=$TAG" >> $GITHUB_OUTPUT
+          echo "CLEAN_VERSION=$CLEAN_VER" >> $GITHUB_OUTPUT
+          echo "Resolved release version: $TAG"
+
+      - name: Create Distribution Staging Directory
+        run: mkdir -p dist
+
+      - name: Download Android Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: propkart-android-apk
+          path: ./dist
+
+      - name: Download Windows Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: propkart-windows-zip
+          path: ./dist
+
+      - name: Download Linux Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: propkart-linux-tar
+          path: ./dist
+
+      - name: Standardize Release Filenames
+        run: |
+          cd dist
+          find . -maxdepth 2 -name "*.apk" -exec cp {} PropKart-release.apk \; 2>/dev/null || true
+          find . -maxdepth 2 -name "*Windows*.zip" -exec cp {} PropKart-Windows-x64.zip \; 2>/dev/null || true
+          find . -maxdepth 2 -name "*linux*.tar.gz" -exec cp {} PropKart-linux-x86_64.tar.gz \; 2>/dev/null || true
+          # Generate version.json registry for automated website & app discovery
+          cat <<EOF > version.json
+          {
+            "version": "${{ steps.version_resolver.outputs.CLEAN_VERSION }}",
+            "tag": "${{ steps.version_resolver.outputs.TAG_NAME }}",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "apk_url": "https://github.com/propkartnbpropertytech-blip/propertytech/releases/latest/download/PropKart-release.apk",
+            "windows_url": "https://github.com/propkartnbpropertytech-blip/propertytech/releases/latest/download/PropKart-Windows-x64.zip",
+            "linux_url": "https://github.com/propkartnbpropertytech-blip/propertytech/releases/latest/download/PropKart-linux-x86_64.tar.gz",
+            "web_url": "https://propkart.nbpropertytech.com"
+          }
+          EOF
+          ls -la
+
+      - name: Publish or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version_resolver.outputs.TAG_NAME }}
+          name: PropKart CRM ${{ steps.version_resolver.outputs.TAG_NAME }}
+          files: dist/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+

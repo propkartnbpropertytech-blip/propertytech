@@ -1,8 +1,30 @@
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/security/role_guard.dart';
 import '../../integration/services/integration_service.dart';
 
+/// Sales sessions use the sales availability routes. Telecaller routes stay
+/// for telecallers. The backend still selects the table from the user role.
+String availabilityPathForRole(String? role) {
+  final normalized = (role ?? '').toLowerCase();
+  if (normalized == 'sales' || normalized == 'salesperson') {
+    return ApiConstants.salesAvailability;
+  }
+  return ApiConstants.telecallerAvailability;
+}
+
+String heartbeatPathForRole(String? role) {
+  final normalized = (role ?? '').toLowerCase();
+  if (normalized == 'sales' || normalized == 'salesperson') {
+    return ApiConstants.salesHeartbeat;
+  }
+  return ApiConstants.telecallerHeartbeat;
+}
+
 class TelecallerRepository {
+  String get _availabilityPath => availabilityPathForRole(RoleGuard.currentUser?.role);
+  String get _heartbeatPath => heartbeatPathForRole(RoleGuard.currentUser?.role);
+
   Future<Map<String, dynamic>> dashboard() async {
     final res = await DioClient.dio.get(ApiConstants.telecallerDashboard);
     return Map<String, dynamic>.from(res.data['data'] ?? {});
@@ -10,19 +32,19 @@ class TelecallerRepository {
 
   Future<Map<String, dynamic>> setAvailability(String status, {bool isManual = false}) async {
     final res = await DioClient.dio.post(
-      ApiConstants.telecallerAvailability,
+      _availabilityPath,
       data: {'status': status, 'isManual': isManual},
     );
     return Map<String, dynamic>.from(res.data['data'] ?? {});
   }
 
   Future<Map<String, dynamic>> getAvailability() async {
-    final res = await DioClient.dio.get(ApiConstants.telecallerAvailability);
+    final res = await DioClient.dio.get(_availabilityPath);
     return Map<String, dynamic>.from(res.data['data'] ?? {});
   }
 
   Future<void> heartbeat() async {
-    await DioClient.dio.post(ApiConstants.telecallerHeartbeat);
+    await DioClient.dio.post(_heartbeatPath);
   }
 
   Future<List<dynamic>> myLeads({String? status, bool? isOldUntouched}) async {

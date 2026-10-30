@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
 import 'package:file_picker/file_picker.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -983,8 +984,58 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       userRole = authState.user.role;
     }
 
-    // RBAC Guard: Zero interference - Sales users strictly blocked from telecaller queue
-    if (!RoleGuard.canAccessCampaign(userRole) || RoleGuard.isSales(userRole)) {
+    // RBAC Guard: Zero interference - Sales users redirected to their dedicated assigned campaign leads
+    if (RoleGuard.isSales(userRole)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.go('/requirements?tab=leads&group=campaign');
+        }
+      });
+      return Scaffold(
+        backgroundColor: CRMColors.backgroundOf(context),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.campaign_outlined, size: 48, color: CRMColors.primary),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Direct Campaign Leads',
+                    style: CRMTypography.title,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Sales users view their assigned campaign leads directly in the Requirements & Leads section.',
+                    textAlign: TextAlign.center,
+                    style: CRMTypography.bodyMedium.copyWith(
+                      color: CRMColors.textSecondaryOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: CRMColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    onPressed: () {
+                      context.go('/requirements?tab=leads&group=campaign');
+                    },
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('Go to Assigned Leads'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!RoleGuard.canAccessCampaign(userRole)) {
       return Scaffold(
         backgroundColor: CRMColors.backgroundOf(context),
         body: SafeArea(

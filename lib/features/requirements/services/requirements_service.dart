@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/api/api_constants.dart';
 import '../../../core/api/api_exception.dart';
 
 class RequirementsService {
@@ -146,11 +147,17 @@ class RequirementsService {
     }
   }
 
-  Future<Map<String, dynamic>> getBinRequirements() async {
+  Future<Map<String, dynamic>> getBinRequirements({String? search}) async {
     try {
+      final query = search?.trim() ?? '';
       final response = await _apiClient.get(
         '/requirements',
-        queryParameters: {'includeDeleted': 'true'},
+        queryParameters: {
+          'includeDeleted': 'true',
+          if (query.isNotEmpty) 'search': query,
+          if (query.isNotEmpty) 'page': 1,
+          if (query.isNotEmpty) 'limit': 500,
+        },
       );
       if (response.data is Map<String, dynamic>) {
         return response.data as Map<String, dynamic>;
@@ -161,6 +168,47 @@ class RequirementsService {
     } catch (e) {
       throw ApiException(message: e.toString());
     }
+  }
+
+  Future<Set<String>> searchFollowupTabIds(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return {};
+    final ids = <String>{};
+    var loaded = false;
+    Object? failure;
+    try {
+      final response = await getRequirements(search: trimmed, page: 1, limit: 500);
+      final data = response['data'];
+      final list = data is Map ? data['requirements'] : null;
+      if (list is List) {
+        for (final row in list) {
+          if (row is Map && row['id'] != null) ids.add(row['id'].toString());
+        }
+      }
+      loaded = true;
+    } catch (error) {
+      failure = error;
+    }
+    try {
+      final response = await _apiClient.get('/followups', queryParameters: {'search': trimmed, 'limit': 500});
+      final body = response.data;
+      final data = body is Map ? body['data'] : null;
+      final list = data is Map ? data['followups'] : null;
+      if (list is List) {
+        for (final row in list) {
+          if (row is! Map) continue;
+          final id = row['id']?.toString();
+          final requirementId = row['requirement_id']?.toString();
+          if (id != null && id.isNotEmpty) ids.add(id);
+          if (requirementId != null && requirementId.isNotEmpty) ids.add(requirementId);
+        }
+      }
+      loaded = true;
+    } catch (error) {
+      failure ??= error;
+    }
+    if (!loaded && failure != null) throw failure;
+    return ids;
   }
 
   Future<Map<String, dynamic>> restoreRequirement(String id) async {
@@ -366,6 +414,67 @@ class RequirementsService {
     try {
       await _apiClient.post('/audit/share', data);
     } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> getSalesPropertyListingLeads({
+    String? userId,
+    bool orgWide = false,
+  }) async {
+    try {
+      final query = <String, dynamic>{
+        if (userId != null && userId.isNotEmpty) 'userId': userId,
+        if (orgWide && (userId == null || userId.isEmpty)) 'scope': 'org',
+      };
+      final res = await _apiClient.get(
+        ApiConstants.allocationSalesLeads,
+        queryParameters: query,
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> bulkUpdateSalesLeadStatus({
+    required List<String> ids,
+    required String status,
+  }) async {
+    try {
+      final res = await _apiClient.patch(
+        ApiConstants.allocationSalesLeadBulkStatus,
+        {'ids': ids, 'status': status},
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> updateSalesLeadStatus({
+    required String leadId,
+    required String status,
+  }) async {
+    try {
+      final res = await _apiClient.patch(
+        ApiConstants.allocationSalesLeadStatus(leadId),
+        {'status': status},
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
   }
 
   Future<void> downloadFile(String url, String savePath) async {

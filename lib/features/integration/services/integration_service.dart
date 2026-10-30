@@ -1322,6 +1322,11 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Real-time event handler for incoming leads from Supabase Realtime
   void handleRealtimeEvent(String eventType, Map<String, dynamic>? record, Map<String, dynamic>? oldRecord) {
+    leadEvents.add({
+      'type': 'LEAD_CHANGED',
+      'eventType': eventType,
+      'leadId': record?['id']?.toString() ?? oldRecord?['id']?.toString(),
+    });
     if (eventType == 'DELETE' && oldRecord != null) {
       final id = oldRecord['id']?.toString();
       if (id != null) {

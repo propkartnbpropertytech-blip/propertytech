@@ -13,6 +13,8 @@ import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart';
 import '../bloc/properties_bloc.dart';
+import '../repository/properties_repository.dart';
+import '../../../core/network/sync_manager.dart';
 import '../models/property_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -42,6 +44,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   String? _selectedPriceSort;
   final Set<String> _shortlistedPropertyIds = {};
   List<PropertyModel> _cachedSearchProperties = [];
+  List<PropertyModel>? _serverSearchProperties;
+  int _propertySearchRequest = 0;
+  StreamSubscription<Set<String>>? _propertySearchRefreshSub;
   PropertyMetadataModel? _cachedSearchMetadata;
 
   Timer? _searchDebounceTimer;
@@ -91,16 +96,39 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       }
     }
     _loadShortlistedIds();
+    _propertySearchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted || _searchController.text.trim().isEmpty) return;
+      if (tables.contains('properties')) _fetchServerPropertySearch();
+    });
     context.read<PropertiesBloc>().add(LoadPropertiesEvent(activeTab: 'All'));
+    if ((widget.initialSearch ?? '').trim().isNotEmpty) {
+      _fetchServerPropertySearch();
+    }
   }
 
   void _onSearchChanged() {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
-      if (mounted) {
-        setState(() {});
-      }
+      if (mounted) _fetchServerPropertySearch();
     });
+  }
+
+  Future<void> _fetchServerPropertySearch() async {
+    final query = _searchController.text.trim();
+    final request = ++_propertySearchRequest;
+    if (query.isEmpty) {
+      if (!mounted || request != _propertySearchRequest) return;
+      setState(() => _serverSearchProperties = null);
+      return;
+    }
+    try {
+      final models = await PropertiesRepository().searchPropertiesServer(query, limit: 50);
+      if (!mounted || request != _propertySearchRequest) return;
+      setState(() => _serverSearchProperties = models);
+    } catch (_) {
+      if (!mounted || request != _propertySearchRequest) return;
+      setState(() => _serverSearchProperties = []);
+    }
   }
 
   Future<void> _loadShortlistedIds() async {
@@ -145,6 +173,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   @override
   void dispose() {
     _searchDebounceTimer?.cancel();
+    _propertySearchRefreshSub?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
@@ -380,7 +409,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          List<PropertyModel> allProps = _cachedSearchProperties;
+          List<PropertyModel> allProps = _serverSearchProperties ?? _cachedSearchProperties;
           PropertyMetadataModel? metadata = state is PropertiesLoaded
               ? (state.metadata ?? _cachedSearchMetadata)
               : _cachedSearchMetadata;
@@ -391,7 +420,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
           final cleanLoc = rawLoc.replaceAll(RegExp(r'\b\d+\s*BHK\b', caseSensitive: false), '').trim();
           final locationText = cleanLoc.isNotEmpty ? cleanLoc : rawLoc;
 
-          final filteredProps = _getFilteredProperties(allProps);
+          final filteredProps = _getFilteredProperties(allProps, serverMatched: _serverSearchProperties != null);
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -488,9 +517,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     );
   }
 
-  List<PropertyModel> _getFilteredProperties(List<PropertyModel> allProps) {
+  List<PropertyModel> _getFilteredProperties(List<PropertyModel> allProps, {bool serverMatched = false}) {
     final searchText = _searchController.text.trim();
-    final cacheKey = '$_activeListingTab|$_activeCategoryTab|$_activeBhkFilter|$_selectedPriceSort|$searchText|${_shortlistedPropertyIds.length}';
+    final cacheKey = '$_activeListingTab|$_activeCategoryTab|$_activeBhkFilter|$_selectedPriceSort|$searchText|$serverMatched|${_shortlistedPropertyIds.length}';
 
     if (identical(allProps, _lastSourceProps) && _lastFilterCacheKey == cacheKey && _memoizedFilteredProps != null) {
       return _memoizedFilteredProps!;
@@ -498,11 +527,11 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 
     _lastSourceProps = allProps;
     _lastFilterCacheKey = cacheKey;
-    _memoizedFilteredProps = _computeFilteredAndSorted(allProps, searchText);
+    _memoizedFilteredProps = _computeFilteredAndSorted(allProps, searchText, serverMatched: serverMatched);
     return _memoizedFilteredProps!;
   }
 
-  List<PropertyModel> _computeFilteredAndSorted(List<PropertyModel> allProps, String searchText) {
+  List<PropertyModel> _computeFilteredAndSorted(List<PropertyModel> allProps, String searchText, {bool serverMatched = false}) {
     // Auto-sync search query with active BHK filter chip if explicit BHK is typed
     if (searchText.isNotEmpty) {
       final bhkMatch = RegExp(r'(\d+\+?)\s*-?\s*BHK', caseSensitive: false).firstMatch(searchText);
@@ -594,7 +623,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       // Search query filter (strips explicit BHK terms to match location/type/title/address cleanly)
       bool matchesSearch = true;
       bool isDirectMatch = false;
-      if (searchText.isNotEmpty) {
+      if (searchText.isNotEmpty && !serverMatched) {
         final cleanQuery = searchText.replaceAll(RegExp(r'(\d+\+?)\s*-?\s*bhk', caseSensitive: false), '').trim();
         if (cleanQuery.isNotEmpty) {
           final words = cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../core/network/sync_manager.dart';
 import '../../../core/storage/local_repositories.dart';
 import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/model_mappers.dart';
@@ -47,6 +49,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   final Map<String, user_settings_model.UserModel> _usersMap = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String? _serverPropertySearch;
+  String? _serverRequirementSearch;
+  int _binSearchRequest = 0;
+  Timer? _binSearchDebounce;
+  StreamSubscription<Set<String>>? _binRefreshSub;
 
   int _propertiesPerPage = 15;
   int _requirementsPerPage = 15;
@@ -60,7 +67,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     final lookupName = LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase() ?? '';
     if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) return false;
     if (lookupName.contains('rent')) return true;
-    return p.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+    return false;
   }
 
   List<PropertyModel> get _visibleBinProperties {
@@ -72,7 +79,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   bool _propertyMatchesSearch(PropertyModel p) {
     final q = _searchQuery;
-    if (q.isEmpty) return true;
+    if (q.isEmpty || _serverPropertySearch == q) return true;
     final haystack = [
       p.propertyCode,
       p.title,
@@ -98,7 +105,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     final lookupName = LookupLocalRepository.getLookupNameSync(r.listingTypeId ?? '')?.toLowerCase() ?? '';
     if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) return false;
     if (lookupName.contains('rent')) return true;
-    return r.listingTypeId == '1c1ccfc1-d318-4b66-9a43-c551532d1802';
+    return false;
   }
 
   List<RequirementModel> get _visibleBinRequirements {
@@ -110,7 +117,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   bool _requirementMatchesSearch(RequirementModel r) {
     final q = _searchQuery;
-    if (q.isEmpty) return true;
+    if (q.isEmpty || _serverRequirementSearch == q) return true;
     final salesperson = r.creatorName ?? r.assigneeName ?? '';
     final mappedUser = r.assignedTo != null ? _usersMap[r.assignedTo]?.fullName ?? '' : '';
     final haystack = [
@@ -134,12 +141,20 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   @override
   void initState() {
     super.initState();
+    _binRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted) return;
+      if (tables.contains('properties') || tables.contains('requirements')) {
+        _fetchBinData();
+      }
+    });
     _loadAutoDeleteDays();
     _fetchBinData();
   }
 
   @override
   void dispose() {
+    _binSearchDebounce?.cancel();
+    _binRefreshSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -189,10 +204,15 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
           fillColor: CRMColors.cardBgOf(context),
         ),
         onChanged: (value) {
+          final next = value.trim().toLowerCase();
           setState(() {
-            _searchQuery = value.trim().toLowerCase();
+            _searchQuery = next;
             _currentPropertiesPage = 1;
             _currentRequirementsPage = 1;
+          });
+          _binSearchDebounce?.cancel();
+          _binSearchDebounce = Timer(const Duration(milliseconds: 250), () {
+            if (mounted) _fetchBinData();
           });
         },
       ),
@@ -227,9 +247,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _fetchBinProperties() async {
+    final request = ++_binSearchRequest;
+    final query = _searchQuery;
     setState(() => _isLoading = true);
     try {
-      final res = await _propertiesService.getBinProperties();
+      final res = await _propertiesService.getBinProperties(search: query);
       final data = res['data'] as Map<String, dynamic>? ?? {};
       final list = data['properties'] as List? ?? [];
 
@@ -249,8 +271,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
       List<PropertyModel> parsedList = list.map((p) => PropertyModel.fromJson(p)).toList();
 
+      if (!mounted || request != _binSearchRequest) return;
       setState(() {
         _binProperties = parsedList;
+        _serverPropertySearch = query;
         _isLoading = false;
       });
     } catch (e) {
@@ -264,6 +288,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _fetchBinRequirements() async {
+    final request = ++_binSearchRequest;
+    final query = _searchQuery;
+    final searchingBin = _requirementsSubTab == 'Bin';
     setState(() => _isLoading = true);
     try {
       if (_usersMap.isEmpty) {
@@ -276,7 +303,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       }
 
       final res = _requirementsSubTab == 'Bin'
-          ? await _requirementsService.getBinRequirements()
+          ? await _requirementsService.getBinRequirements(search: query)
           : await _requirementsService.getRequirements(status: 'Not Interested');
       final data = res['data'] as Map<String, dynamic>? ?? {};
       final list = data['requirements'] as List? ?? [];
@@ -334,8 +361,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
         }
       }
 
+      if (!mounted || request != _binSearchRequest) return;
       setState(() {
         _binRequirements = parsedList;
+        _serverRequirementSearch = searchingBin ? query : null;
         _isLoading = false;
       });
     } catch (e) {

@@ -4,9 +4,10 @@ import '../../../core/services/notification_center.dart';
 import '../../../core/security/crm_control_guard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
+// Presentation layer decoupled from Dio
 import '../../../core/api/api_constants.dart';
-import '../../../core/api/dio_client.dart';
+import '../../../core/api/api_exception.dart';
+// Presentation layer decoupled from DioClient
 import '../../../core/theme/theme_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +18,8 @@ import '../models/requirement_model.dart';
 import '../domain/canonical_budget_score.dart';
 import '../services/match_criteria_manager.dart';
 import '../services/followup_sync_engine.dart';
+import '../services/requirements_service.dart';
+import '../../../core/network/sync_manager.dart';
 import '../repository/requirements_repository.dart';
 import 'add_edit_requirement_screen.dart';
 import '../../properties/repository/properties_repository.dart';
@@ -62,6 +65,9 @@ import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 import '../models/requirement_view_model.dart';
+import '../sales_lead_sync.dart';
+import '../../integration/services/integration_service.dart';
+import '../../../core/network/sync_manager.dart';
 
 /// WhatsApp brand green — kept as a distinct constant for brand recognition.
 const Color kWhatsAppGreen = Color(0xFF25D366);
@@ -967,6 +973,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final Map<String, TextEditingController> _tabSearchControllers = {};
   final Map<String, String> _tabSearchQueries = {};
   Timer? _tabSearchDebounce;
+  final RequirementsService _tabSearchService = RequirementsService();
+  Set<String>? _tabServerMatchIds;
+  String _tabServerMatchQuery = '';
+  int _tabServerSearchRequest = 0;
+  StreamSubscription<Set<String>>? _tabSearchRefreshSub;
   String? _selectedSalespersonFilter;
 
   TextEditingController _getTabSearchController(String subTab) {
@@ -977,6 +988,29 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _getTabSearchQuery(String subTab) {
     final key = '${_selectedMainFollowupSection}_$subTab';
     return _tabSearchQueries[key] ?? '';
+  }
+
+  Future<void> _loadTabServerMatches(String raw) async {
+    final request = ++_tabServerSearchRequest;
+    final query = raw.trim().toLowerCase();
+    if (query.isEmpty) {
+      if (!mounted || request != _tabServerSearchRequest) return;
+      setState(() {
+        _tabServerMatchIds = null;
+        _tabServerMatchQuery = '';
+      });
+      return;
+    }
+    try {
+      final ids = await _tabSearchService.searchFollowupTabIds(query);
+      if (!mounted || request != _tabServerSearchRequest) return;
+      setState(() {
+        _tabServerMatchIds = ids;
+        _tabServerMatchQuery = query;
+      });
+    } catch (_) {
+      if (!mounted || request != _tabServerSearchRequest) return;
+    }
   }
   String? _wonCategoryId;
   String? _wonPropertyTypeId;
@@ -1028,6 +1062,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   late Future<List<dynamic>> _followupsFuture;
   StreamSubscription? _requirementsStreamSub;
   StreamSubscription? _dashboardStreamSub;
+  StreamSubscription<Map<String, dynamic>>? _salesLeadEventsSub;
+  StreamSubscription<SyncState>? _salesSyncSub;
+  StreamSubscription<Map<String, dynamic>>? _salesNotificationSub;
+  SyncState? _salesSyncState;
+  String? _salesLeadFetchUserId;
+  bool _salesLeadFetchOrgWide = false;
+  bool _salesLeadsRefreshPending = false;
+  bool _salesLeadsLoadFailed = false;
+  String? _salesCampaignRouteToken;
   OverlayEntry? _notesOverlayEntry;
   final Set<String> _selectedRequirementIds = {};
   final ScrollController _scrollController = ScrollController();
@@ -1108,6 +1151,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabSearchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted) return;
+      final query = _getTabSearchQuery(_selectedFollowupSubTab);
+      if (query.isEmpty) return;
+      if (tables.contains('requirements') || tables.contains('followups') || tables.contains('site_visits')) {
+        _loadTabServerMatches(query);
+      }
+    });
     _searchController.addListener(_onSearchChangedDebounced);
     _wonSearchController.addListener(_onSearchChangedDebounced);
     if (widget.initialTab != null) {
@@ -1176,6 +1227,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     final roleName = RoleGuard.currentUser?.role ?? '';
     if (roleName == 'Sales' || roleName == 'Admin' || roleName == 'Super Admin') {
       unawaited(_fetchSalesPropertyListingLeads(orgWide: roleName != 'Sales'));
+      _watchSalesLeadPipeline();
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1456,6 +1508,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             _salesLeadGroupFilter = targetGroup;
           });
         }
+        final leadToken = uri.queryParameters['leadId'] ?? '';
+        final routeToken = '$targetGroup|$leadToken';
+        if (targetGroup == 'campaign' && routeToken != _salesCampaignRouteToken) {
+          _salesCampaignRouteToken = routeToken;
+          final roleName = RoleGuard.currentUser?.role ?? '';
+          if (roleName == 'Sales' || roleName == 'Admin' || roleName == 'Super Admin') {
+            unawaited(_fetchSalesPropertyListingLeads(orgWide: roleName != 'Sales'));
+          }
+        }
       }
       final statusParam = uri.queryParameters['status'];
       if (statusParam != null && statusParam.isNotEmpty) {
@@ -1499,10 +1560,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _removeNotesPopover();
     _requirementsStreamSub?.cancel();
     _dashboardStreamSub?.cancel();
+    _salesLeadEventsSub?.cancel();
+    _salesSyncSub?.cancel();
+    _salesNotificationSub?.cancel();
     _searchController.dispose();
     _wonSearchController.dispose();
     _allClientsFollowupSearchDebounce?.cancel();
     _allClientsFollowupSearchController.dispose();
+    _tabSearchRefreshSub?.cancel();
     _tabSearchDebounce?.cancel();
     for (final c in _tabSearchControllers.values) {
       c.dispose();
@@ -11166,11 +11231,20 @@ _recomputeFilteredRequirements();
               }
 
               final activeTabQuery = _getTabSearchQuery(_selectedFollowupSubTab);
-              final filtered = FollowupSyncEngine.filterBySearch(
-                items: selectedList,
-                query: activeTabQuery,
-                followupToReqMap: followupToReqMap,
-              );
+              final useServerMatches = activeTabQuery.isNotEmpty &&
+                  _tabServerMatchQuery == activeTabQuery &&
+                  _tabServerMatchIds != null;
+              final filtered = useServerMatches
+                  ? selectedList.where((item) {
+                      final requirementId = item.requirementId;
+                      return _tabServerMatchIds!.contains(item.id) ||
+                          (requirementId != null && _tabServerMatchIds!.contains(requirementId));
+                    }).toList()
+                  : FollowupSyncEngine.filterBySearch(
+                      items: selectedList,
+                      query: activeTabQuery,
+                      followupToReqMap: followupToReqMap,
+                    );
 
               final totalCount = filtered.length;
               final totalPages = (totalCount / _followupsPerPage).ceil();
@@ -11310,13 +11384,15 @@ _recomputeFilteredRequirements();
                           controller: searchCtrl,
                           onChanged: (val) {
                             _tabSearchDebounce?.cancel();
-                            _tabSearchDebounce = Timer(const Duration(milliseconds: 200), () {
+                            _tabSearchDebounce = Timer(const Duration(milliseconds: 250), () {
                               if (!mounted) return;
+                              final next = val.trim().toLowerCase();
                               setState(() {
                                 final key = '${_selectedMainFollowupSection}_$_selectedFollowupSubTab';
-                                _tabSearchQueries[key] = val.trim().toLowerCase();
+                                _tabSearchQueries[key] = next;
                                 _currentFollowupPage = 1;
                               });
+                              _loadTabServerMatches(next);
                             });
                           },
                           decoration: InputDecoration(
@@ -12944,20 +13020,58 @@ _recomputeFilteredRequirements();
     );
   }
 
+  void _watchSalesLeadPipeline() {
+    _salesLeadEventsSub = IntegrationService.leadEvents.stream.listen((_) {
+      _requestSalesLeadRefresh();
+    });
+    _salesSyncSub = SyncManager().stateStream.listen((state) {
+      final previous = _salesSyncState;
+      _salesSyncState = state;
+      if (shouldRefreshSalesLeadsAfterReconnect(previous, state)) {
+        _requestSalesLeadRefresh();
+      }
+    });
+    _salesNotificationSub = NotificationCenter.stream.listen((notif) {
+      final type = (notif['type'] ?? '').toString().toLowerCase();
+      final route = (notif['route'] ?? '').toString().toLowerCase();
+      if (type.contains('lead') || route.contains('requirements') || route.contains('leads')) {
+        _requestSalesLeadRefresh();
+        if (mounted) {
+          context.read<RequirementsBloc>().add(FetchRequirementsEvent(refreshFromServer: true));
+        }
+      }
+    });
+  }
+
+  void _requestSalesLeadRefresh() {
+    final roleName = RoleGuard.currentUser?.role ?? '';
+    if (roleName != 'Sales' && roleName != 'Admin' && roleName != 'Super Admin') return;
+    unawaited(_fetchSalesPropertyListingLeads(
+      userId: _salesLeadFetchUserId,
+      orgWide: _salesLeadFetchOrgWide,
+    ));
+  }
+
   Future<void> _fetchSalesPropertyListingLeads({String? userId, bool orgWide = false}) async {
-    if (_isLoadingSalesPropertyListingLeads) return;
-    setState(() => _isLoadingSalesPropertyListingLeads = true);
+    if (!mounted) return;
+    _salesLeadFetchUserId = userId;
+    _salesLeadFetchOrgWide = orgWide;
+    if (_isLoadingSalesPropertyListingLeads) {
+      _salesLeadsRefreshPending = true;
+      return;
+    }
+    setState(() {
+      _isLoadingSalesPropertyListingLeads = true;
+      _salesLeadsLoadFailed = false;
+    });
     try {
-      final res = await DioClient.dio.get(
-        ApiConstants.allocationSalesLeads,
-        queryParameters: {
-          if (userId != null && userId.isNotEmpty) 'userId': userId,
-          if (orgWide && (userId == null || userId.isEmpty)) 'scope': 'org',
-        },
+      final res = await RequirementsRepository().getSalesPropertyListingLeads(
+        userId: userId,
+        orgWide: orgWide,
       );
-      if (res.data['success'] == true && mounted) {
-        final list = res.data['propertyListingLeads'] as List<dynamic>? ?? [];
-        final reqList = res.data['requirementLeads'] as List<dynamic>? ?? [];
+      if (res['success'] == true && mounted) {
+        final list = res['propertyListingLeads'] as List<dynamic>? ?? [];
+        final reqList = res['requirementLeads'] as List<dynamic>? ?? [];
         final listingIds = <String>{};
         final mapped = list.map((e) {
           final lead = Map<String, dynamic>.from(e as Map);
@@ -12977,14 +13091,14 @@ _recomputeFilteredRequirements();
           final legacy = lead['legacyRequirementId']?.toString() ?? '';
           if (legacy.isNotEmpty) listingIds.add(legacy);
         }
-        final apiIds = res.data['requirementIds'];
+        final apiIds = res['requirementIds'];
         if (apiIds is List) {
           for (final id in apiIds) {
             final text = id?.toString() ?? '';
             if (text.isNotEmpty) requirementIds.add(text);
           }
         }
-        final apiListingIds = res.data['propertyListingIds'];
+        final apiListingIds = res['propertyListingIds'];
         if (apiListingIds is List) {
           for (final id in apiListingIds) {
             final text = id?.toString() ?? '';
@@ -13001,14 +13115,30 @@ _recomputeFilteredRequirements();
             ..addAll(requirementIds);
           _salesDirectLeadsLoaded = true;
           _isLoadingSalesPropertyListingLeads = false;
+          _salesLeadsLoadFailed = false;
           _lastComputedFilterKey = null;
         });
         _recomputeFilteredRequirements(notify: false);
-      } else {
-        if (mounted) setState(() => _isLoadingSalesPropertyListingLeads = false);
+      } else if (mounted) {
+        setState(() {
+          _isLoadingSalesPropertyListingLeads = false;
+          _salesLeadsLoadFailed = true;
+        });
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoadingSalesPropertyListingLeads = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingSalesPropertyListingLeads = false;
+          _salesLeadsLoadFailed = true;
+        });
+      }
+    } finally {
+      if (_salesLeadsRefreshPending && mounted) {
+        _salesLeadsRefreshPending = false;
+        final nextUser = _salesLeadFetchUserId;
+        final nextOrgWide = _salesLeadFetchOrgWide;
+        unawaited(_fetchSalesPropertyListingLeads(userId: nextUser, orgWide: nextOrgWide));
+      }
     }
   }
 
@@ -13029,13 +13159,13 @@ _recomputeFilteredRequirements();
     if (confirmed != true || !mounted) return;
     setState(() => _campaignBulkUpdating = true);
     try {
-      final res = await DioClient.dio.patch(
-        ApiConstants.allocationSalesLeadBulkStatus,
-        data: {'ids': ids, 'status': newStatus},
+      final res = await RequirementsRepository().bulkUpdateSalesLeadStatus(
+        ids: ids,
+        status: newStatus,
       );
-      final updated = res.data['updatedIds'];
+      final updated = res['updatedIds'];
       final updatedIds = updated is List ? updated.map((id) => id.toString()).toSet() : ids.toSet();
-      if (res.data['success'] == true && mounted) {
+      if (res['success'] == true && mounted) {
         setState(() {
           for (final item in _salesPropertyListingLeads) {
             final id = item['id']?.toString() ?? '';
@@ -13057,13 +13187,7 @@ _recomputeFilteredRequirements();
     } catch (e) {
       if (mounted) {
         setState(() => _campaignBulkUpdating = false);
-        var message = 'Failed to update the selected leads.';
-        if (e is DioException) {
-          final data = e.response?.data;
-          final serverMessage = data is Map ? data['message']?.toString() : null;
-          if (serverMessage != null && serverMessage.trim().isNotEmpty) message = serverMessage.trim();
-        }
-        AppStatusSnackBar.show(context, message: message, isSuccess: false);
+        AppStatusSnackBar.show(context, message: e.toString().replaceFirst("Exception: ", ""), isSuccess: false);
       }
     }
   }
@@ -13072,11 +13196,11 @@ _recomputeFilteredRequirements();
     if (leadId.isEmpty) return;
     setState(() => _salesUpdatingStatusLeads[leadId] = true);
     try {
-      final res = await DioClient.dio.patch(
-        ApiConstants.allocationSalesLeadStatus(leadId),
-        data: {'status': newStatus},
+      final res = await RequirementsRepository().updateSalesLeadStatus(
+        leadId: leadId,
+        status: newStatus,
       );
-      if (res.data['success'] == true && mounted) {
+      if (res['success'] == true && mounted) {
         setState(() {
           for (final item in _salesPropertyListingLeads) {
             if (item['id']?.toString() == leadId) {
@@ -13096,12 +13220,8 @@ _recomputeFilteredRequirements();
       if (mounted) {
         setState(() => _salesUpdatingStatusLeads.remove(leadId));
         var message = 'Failed to update status.';
-        if (e is DioException) {
-          final data = e.response?.data;
-          final serverMessage = data is Map ? data['message']?.toString() : null;
-          if (serverMessage != null && serverMessage.trim().isNotEmpty) {
-            message = serverMessage.trim();
-          }
+        if (e is ApiException && e.message.trim().isNotEmpty) {
+          message = e.message.trim();
         }
         AppStatusSnackBar.show(
           context,
@@ -13362,12 +13482,16 @@ _recomputeFilteredRequirements();
     final rowIds = rows.map((lead) => lead['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
     final selectedCount = rowIds.where(_selectedCampaignLeadIds.contains).length;
     final allSelected = rowIds.isNotEmpty && selectedCount == rowIds.length;
-    final emptyTitle = rejectedOnly
-        ? 'No Rejected Property Listing Leads'
-        : 'No Property Listing Leads currently allocated to you.';
-    final emptyBody = rejectedOnly
-        ? 'Property listing leads marked Rejected will appear here.'
-        : 'Property listing leads directly allocated from campaign sources will appear here.';
+    final emptyTitle = _salesLeadsLoadFailed && !rejectedOnly
+        ? 'Campaign leads could not be loaded.'
+        : rejectedOnly
+            ? 'No Rejected Property Listing Leads'
+            : 'No Property Listing Leads currently allocated to you.';
+    final emptyBody = _salesLeadsLoadFailed && !rejectedOnly
+        ? 'The allocation list did not load. Refresh to try again.'
+        : rejectedOnly
+            ? 'Property listing leads marked Rejected will appear here.'
+            : 'Property listing leads directly allocated from campaign sources will appear here.';
 
     final toolbar = Padding(
       padding: const EdgeInsets.only(bottom: 8),

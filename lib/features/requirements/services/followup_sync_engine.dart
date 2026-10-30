@@ -490,8 +490,8 @@ class FollowupSyncEngine {
         final reqStatusLower = req.status.trim().toLowerCase();
         final isWon = reqStatusLower == 'won' || reqStatusLower == 'closed' || reqStatusLower == 'deal won';
         final isRejected = reqStatusLower.startsWith('rejected') || reqStatusLower == 'dead' || reqStatusLower == 'bin' || reqStatusLower == 'suspended';
-        final isInterested = reqStatusLower == 'interested' || reqStatusLower == 'active' || reqStatusLower == 'live';
-        if (isWon || isRejected || isInterested) continue;
+        // Active/Interested leads with followups are included
+        if (isWon || isRejected) continue;
 
         // Prevent duplicate follow-up records for the same client
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');
@@ -572,7 +572,7 @@ class FollowupSyncEngine {
         if (!hasFollowup) continue;
         if (isSiteVisitStatus(reqStatus)) continue;
         final rStatusLower = reqStatus.trim().toLowerCase();
-        if (rStatusLower.startsWith('rejected') || rStatusLower == 'won' || rStatusLower == 'closed' || rStatusLower == 'interested' || rStatusLower == 'active' || rStatusLower == 'live') continue;
+        if (rStatusLower.startsWith('rejected') || rStatusLower == 'won' || rStatusLower == 'closed') continue;
         if (!_matchesListingType(req, targetListingType)) continue;
 
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');

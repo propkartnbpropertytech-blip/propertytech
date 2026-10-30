@@ -618,6 +618,27 @@ class PropertiesRepository {
     }
   }
 
+  Future<List<PropertyModel>> searchPropertiesServer(String query, {int limit = 50}) async {
+    try {
+      final response = await _propertiesService.getProperties(
+        search: query,
+        page: 1,
+        limit: limit,
+      );
+      final data = response['data'];
+      final list = data is Map ? data['properties'] : null;
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((row) => PropertyModel.fromJson(Map<String, dynamic>.from(row)))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>> checkDuplicate(Map<String, dynamic> checkParams) async {
     try {
       final response = await _propertiesService.checkDuplicate(checkParams);

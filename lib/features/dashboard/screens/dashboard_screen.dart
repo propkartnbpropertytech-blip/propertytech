@@ -28,6 +28,7 @@ import '../../../core/design_system/widgets/skeletons.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../telecaller/screens/telecaller_dashboard_screen.dart';
 import '../../sales/screens/sales_dashboard_screen.dart';
+import 'super_admin_dashboard_screen.dart';
 import '../../requirements/bloc/requirements_bloc.dart';
 import '../../campaign/bloc/campaign_leads_bloc.dart';
 import '../bloc/dashboard_bloc.dart';
@@ -177,6 +178,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     } else {
       _nameShimmerController.value = 1.0;
     }
+    final authState = context.read<AuthBloc>().state;
+    final role = authState is Authenticated ? authState.user.role : '';
+    if (RoleGuard.isSuperAdmin(role)) {
+      return;
+    }
     final currentDashboardState = context.read<DashboardBloc>().state;
     if (currentDashboardState is! DashboardLoadedState) {
       context.read<DashboardBloc>().add(LoadDashboard());
@@ -204,7 +210,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     final Widget dashboardView;
-    if (RoleGuard.isTelecaller(role)) {
+    if (RoleGuard.isSuperAdmin(role)) {
+      dashboardView = const SuperAdminDashboardScreen();
+    } else if (RoleGuard.isTelecaller(role)) {
       dashboardView = const TelecallerDashboardScreen();
     } else if (RoleGuard.isSales(role)) {
       dashboardView = const SalesDashboardScreen();
