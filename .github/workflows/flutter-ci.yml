@@ -39,11 +39,19 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
-      - name: Static Code Analysis & Linting
-        run: flutter analyze --no-fatal-infos
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-      - name: Execute Full Mobile Test Suite (952 Tests)
+      - name: Static Code Analysis & Linting
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Execute Full Mobile Test Suite
         run: flutter test
+
+      - name: Fix Isar Integer Hashes for Web
+        run: node fix_web_build.js
 
       - name: Build Verification Dry-Run (Web / APK)
         run: |

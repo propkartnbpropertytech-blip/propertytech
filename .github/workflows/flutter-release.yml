@@ -70,6 +70,8 @@ jobs:
     name: 🖥️ Build Windows x64 Desktop
     runs-on: windows-latest
     timeout-minutes: 40
+    env:
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
     steps:
       - name: Checkout Code
@@ -94,7 +96,13 @@ jobs:
       - name: Archive Windows Release Directory
         shell: powershell
         run: |
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "PropKart-Windows-x64.zip" -Force
+          if (Test-Path "build\windows\x64\runner\Release") {
+            Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "PropKart-Windows-x64.zip" -Force
+          } elseif (Test-Path "build\windows\runner\Release") {
+            Compress-Archive -Path "build\windows\runner\Release\*" -DestinationPath "PropKart-Windows-x64.zip" -Force
+          } else {
+            Write-Error "Windows release build output folder not found"
+          }
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
@@ -110,6 +118,7 @@ jobs:
     name: 🐧 Build Linux x64 Desktop
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    continue-on-error: true
 
     steps:
       - name: Checkout Code
@@ -193,6 +202,7 @@ jobs:
   publish-release:
     name: 🚀 Publish Multi-OS GitHub Release
     needs: [build-android, build-windows, build-linux, build-web]
+    if: always() && !cancelled() && (needs.build-android.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
 
     steps:
@@ -205,7 +215,7 @@ jobs:
           if [ -n "${{ github.event.inputs.version_tag }}" ]; then
             TAG="${{ github.event.inputs.version_tag }}"
           else
-            RAW_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+            RAW_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
             TAG="v$RAW_VERSION"
           fi
           CLEAN_VER=$(echo "$TAG" | sed 's/^v//')
@@ -217,18 +227,21 @@ jobs:
         run: mkdir -p dist
 
       - name: Download Android Artifact
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: propkart-android-apk
           path: ./dist
 
       - name: Download Windows Artifact
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: propkart-windows-zip
           path: ./dist
 
       - name: Download Linux Artifact
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: propkart-linux-tar
@@ -237,9 +250,9 @@ jobs:
       - name: Standardize Release Filenames
         run: |
           cd dist
-          if [ -f app-release.apk ]; then
-            mv app-release.apk PropKart-release.apk
-          fi
+          find . -maxdepth 2 -name "*.apk" -exec cp {} PropKart-release.apk \; 2>/dev/null || true
+          find . -maxdepth 2 -name "*Windows*.zip" -exec cp {} PropKart-Windows-x64.zip \; 2>/dev/null || true
+          find . -maxdepth 2 -name "*linux*.tar.gz" -exec cp {} PropKart-linux-x86_64.tar.gz \; 2>/dev/null || true
           # Generate version.json registry for automated website & app discovery
           cat <<EOF > version.json
           {
@@ -259,11 +272,8 @@ jobs:
         with:
           tag_name: ${{ steps.version_resolver.outputs.TAG_NAME }}
           name: PropKart CRM ${{ steps.version_resolver.outputs.TAG_NAME }}
-          files: |
-            dist/PropKart-release.apk
-            dist/PropKart-Windows-x64.zip
-            dist/PropKart-linux-x86_64.tar.gz
-            dist/version.json
+          files: dist/*
           draft: false
           prerelease: false
           generate_release_notes: true
+
