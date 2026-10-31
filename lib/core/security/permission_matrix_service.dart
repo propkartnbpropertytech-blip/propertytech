@@ -54,6 +54,7 @@ class PermissionMatrixService extends ChangeNotifier {
   static PermissionMatrixService get instance => _instance;
 
   Timer? _pollingTimer;
+  bool _syncInFlight = false;
 
   PermissionMatrixService._internal() {
     _init();
@@ -62,9 +63,31 @@ class PermissionMatrixService extends ChangeNotifier {
 
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    // Permissions rarely change. A short poll was rebuilding the router on every tick.
+    _pollingTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      if (_syncInFlight) return;
       syncFromBackend();
     });
+  }
+
+  bool _putOverride(String role, String key, bool enabled) {
+    final current = _overrides[role];
+    if (current != null && current[key] == enabled) return false;
+    _overrides.putIfAbsent(role, () => {})[key] = enabled;
+    return true;
+  }
+
+  bool _applyRoleAssignments(String role, Map<String, dynamic> roleMap) {
+    var changed = false;
+    roleMap.forEach((key, value) {
+      final enabled = value == true;
+      if (_putOverride(role, key, enabled)) changed = true;
+      if (key == 'page.recycle_bin' && _putOverride(role, 'page.bin', enabled)) changed = true;
+      if (key == 'page.bin' && _putOverride(role, 'page.recycle_bin', enabled)) changed = true;
+      if (key == 'page.employees' && _putOverride(role, 'page.users', enabled)) changed = true;
+      if (key == 'page.users' && _putOverride(role, 'page.employees', enabled)) changed = true;
+    });
+    return changed;
   }
 
   static const String _storageKey = 'propkart_role_permission_matrix_v2';
@@ -845,40 +868,40 @@ class PermissionMatrixService extends ChangeNotifier {
     }
   }
 
-  /// Syncs dynamic feature permissions directly from backend/database
+  /// Syncs dynamic feature permissions directly from backend/database.
+  /// Listeners are told only when a role's permissions actually change, so a
+  /// repeated poll does not rebuild the router or the open screen.
   Future<void> syncFromBackend() async {
+    if (_syncInFlight) return;
+    _syncInFlight = true;
     try {
       final res = await DioClient.dio.get('/permissions/matrix/roles');
       if (res.statusCode == 200 && res.data != null) {
         final data = res.data['data'];
         if (data is Map && data['assignments'] is Map) {
           final assignments = data['assignments'] as Map;
+          var changed = false;
           for (final role in ['Admin', 'Telecaller', 'Sales']) {
             if (assignments[role] is Map) {
               final roleMap = Map<String, dynamic>.from(assignments[role] as Map);
-              if (!_overrides.containsKey(role)) {
-                _overrides[role] = {};
-              }
-              roleMap.forEach((k, v) {
-                final enabled = v == true;
-                _overrides[role]![k] = enabled;
-                // Normalize aliases
-                if (k == 'page.recycle_bin') _overrides[role]!['page.bin'] = enabled;
-                if (k == 'page.bin') _overrides[role]!['page.recycle_bin'] = enabled;
-                if (k == 'page.employees') _overrides[role]!['page.users'] = enabled;
-                if (k == 'page.users') _overrides[role]!['page.employees'] = enabled;
-              });
+              if (_applyRoleAssignments(role, roleMap)) changed = true;
             }
           }
-          notifyListeners();
-          unawaited(_saveToStorage());
+          if (changed) {
+            notifyListeners();
+            unawaited(_saveToStorage());
+          }
           return;
         }
       }
     } catch (_) {
       // Non-blocking; continue to my-controls fallback
+    } finally {
+      _syncInFlight = false;
     }
 
+    if (_syncInFlight) return;
+    _syncInFlight = true;
     try {
       final resMy = await DioClient.dio.get('/permissions/my-controls');
       if (resMy.statusCode == 200 && resMy.data != null) {
@@ -888,23 +911,26 @@ class PermissionMatrixService extends ChangeNotifier {
           final controls = data['controls'];
           if (role != 'Super Admin' && controls is List) {
             final activeSet = controls.map((e) => e.toString()).toSet();
-            if (!_overrides.containsKey(role)) {
-              _overrides[role] = {};
-            }
+            var changed = false;
             for (final p in allPermissions) {
               final isAllowed = activeSet.contains(p.key) ||
                   (p.key == 'page.recycle_bin' && activeSet.contains('page.bin')) ||
                   (p.key == 'page.bin' && activeSet.contains('page.recycle_bin')) ||
                   (p.key == 'page.employees' && activeSet.contains('page.users')) ||
                   (p.key == 'page.users' && activeSet.contains('page.employees'));
-              _overrides[role]![p.key] = isAllowed;
+              if (_putOverride(role, p.key, isAllowed)) changed = true;
             }
-            notifyListeners();
-            unawaited(_saveToStorage());
+            if (changed) {
+              notifyListeners();
+              unawaited(_saveToStorage());
+            }
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _syncInFlight = false;
+    }
   }
 
   /// Evaluates whether a [role] has a specific [permissionKey].

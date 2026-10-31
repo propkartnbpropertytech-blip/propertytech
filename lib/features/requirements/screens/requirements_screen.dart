@@ -1037,6 +1037,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
+  String? _followupQuickWindow;
   String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
 
   String _normalizeFollowupSubTab(String val) {
@@ -11223,8 +11224,20 @@ _recomputeFilteredRequirements();
               final followupToReqMap = syncResult.followupToReqMap;
               final distinctSalespersons = syncResult.distinctSalespersons;
 
+              final windowNow = DateTime.now();
+              String? windowOf(DashboardFollowup item) => followupQuickWindow(
+                dateRaw: item.followupDate,
+                status: item.status,
+                now: windowNow,
+              );
+              final dueTodayCount = allClientsFollowups.where((item) => windowOf(item) == 'today').length;
+              final overdueCount = allClientsFollowups.where((item) => windowOf(item) == 'overdue').length;
+              final next7Count = allClientsFollowups.where((item) => windowOf(item) == 'next7').length;
+
               List<DashboardFollowup> selectedList;
-              if (_selectedFollowupSubTab == 'Due') {
+              if (_followupQuickWindow != null) {
+                selectedList = allClientsFollowups.where((item) => windowOf(item) == _followupQuickWindow).toList();
+              } else if (_selectedFollowupSubTab == 'Due') {
                 selectedList = dueFollowups;
               } else if (_selectedFollowupSubTab == 'Future') {
                 selectedList = futureFollowups;
@@ -11364,6 +11377,45 @@ _recomputeFilteredRequirements();
                         buildSubTabPill(allLabel, "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: CRMSpacing.s),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilterChip(
+                        label: Text('Due today ($dueTodayCount)'),
+                        selected: _followupQuickWindow == 'today',
+                        onSelected: (selected) => setState(() {
+                          _followupQuickWindow = selected ? 'today' : null;
+                          _currentFollowupPage = 1;
+                        }),
+                      ),
+                      FilterChip(
+                        label: Text('Overdue ($overdueCount)'),
+                        selected: _followupQuickWindow == 'overdue',
+                        onSelected: (selected) => setState(() {
+                          _followupQuickWindow = selected ? 'overdue' : null;
+                          _currentFollowupPage = 1;
+                        }),
+                      ),
+                      FilterChip(
+                        label: Text('Next 7 days ($next7Count)'),
+                        selected: _followupQuickWindow == 'next7',
+                        onSelected: (selected) => setState(() {
+                          _followupQuickWindow = selected ? 'next7' : null;
+                          _currentFollowupPage = 1;
+                        }),
+                      ),
+                      if (_followupQuickWindow != null)
+                        ActionChip(
+                          label: const Text('Clear'),
+                          onPressed: () => setState(() {
+                            _followupQuickWindow = null;
+                            _currentFollowupPage = 1;
+                          }),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: CRMSpacing.m),
                   Builder(
@@ -11953,915 +12005,14 @@ _recomputeFilteredRequirements();
   }
 
   void _showSharePropertiesDialog(RequirementModel req) {
-    final searchController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) {
-        List<PropertyMatchResult> allMatches = [];
-        final Set<String> selectedPropIds = {};
-        bool isInitLoading = true;
-        bool isGeneratingLink = false;
-        bool isSharingPdf = false;
-        String? error;
-        String? generatedLink;
-        String searchQuery = '';
-        int? minScoreFilter;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> loadMatches() async {
-              try {
-                final List<PropertyMatchResult> results = [];
-
-                // 1. Authoritative Backend Matching
-                try {
-                  final serverResponse = await RequirementsRepository().getRequirementMatches(
-                    req.id,
-                    minScore: MatchCriteriaManager().threshold,
-                  );
-                  final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
-                  final rawMatches = data['matches'] as List? ?? [];
-                  if (rawMatches.isNotEmpty || data.containsKey('matching_metadata')) {
-                    for (final item in rawMatches) {
-                      final pJson = item['property'] as Map<String, dynamic>? ?? {};
-                      final prop = PropertyModel.fromJson(pJson);
-                      if (!PropertyRequirementMatcher.isEligibleByCategoryAndType(prop, req)) continue;
-                      results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
-                    }
-                  }
-                } catch (serverErr) {
-                  debugPrint("⚠️ [Share Dialog Backend Match Fallback] $serverErr");
-                }
-
-                // 2. Offline / Local fallback if backend returns empty or fails
-                if (results.isEmpty) {
-                  final properties = await PropertiesRepository().getProperties();
-                  for (final p in properties) {
-                    if (await _isRequirementPropertyMatchAsync(p, req)) {
-                      final res = PropertyRequirementMatcher.match(p, req);
-                      results.add(res);
-                    }
-                  }
-                }
-
-                // 3. Strictly sort by match percentage descending (highest first)
-                results.sort((a, b) {
-                  final cmp = b.matchPercentage.compareTo(a.matchPercentage);
-                  if (cmp != 0) return cmp;
-                  return a.property.price.compareTo(b.property.price);
-                });
-
-                setDialogState(() {
-                  allMatches = results;
-                  isInitLoading = false;
-                });
-              } catch (e) {
-                setDialogState(() {
-                  error = "Failed to load matching properties.";
-                  isInitLoading = false;
-                });
-              }
-            }
-
-            if (isInitLoading && error == null && generatedLink == null) {
-              loadMatches();
-            }
-
-            if (generatedLink != null) {
-              return AlertDialog(
-                backgroundColor: CRMColors.cardBgOf(context),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
-                title: Text("Share Link Created", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(CRMSpacing.s),
-                      decoration: BoxDecoration(
-                        color: CRMColors.backgroundOf(context),
-                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                        border: Border.all(color: CRMColors.borderOf(context)),
-                      ),
-                      child: SelectableText(
-                        generatedLink!,
-                        style: CRMTypography.caption.copyWith(color: CRMColors.primary),
-                      ),
-                    ),
-                    const SizedBox(height: CRMSpacing.m),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.copy_rounded, size: 16),
-                            label: const Text("Copy"),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: generatedLink!));
-                              AppStatusSnackBar.show(
-                                context,
-                                message: "Link copied to clipboard!",
-                                isSuccess: true,
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: CRMSpacing.s),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: kWhatsAppGreen, foregroundColor: Colors.white),
-                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                            label: const Text("WhatsApp"),
-                            onPressed: () async {
-                              final text = Uri.encodeComponent("Hello, here is the curated list of properties matching your requirements: $generatedLink");
-                              final url = "https://wa.me/?text=$text";
-                              final uri = Uri.parse(url);
-                              if (await canLaunchUrl(uri)) {
-                                await launchUrl(uri, mode: LaunchMode.externalApplication);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: CRMSpacing.s),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.share_rounded, size: 16),
-                      label: const Text("Share"),
-                      onPressed: () async {
-                        try {
-                          await Share.share(generatedLink!);
-                        } catch (e) {
-                          await Clipboard.setData(ClipboardData(text: generatedLink!));
-                          if (context.mounted) {
-                            AppStatusSnackBar.show(
-                              context,
-                              message: "Link copied to clipboard!",
-                              isSuccess: true,
-                            );
-                          }
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("Close"),
-                  ),
-                ],
-              );
-            }
-
-            // Compute filtered list based on search and min-score filter
-            final filteredMatches = allMatches.where((m) {
-              if (minScoreFilter != null && m.matchPercentage < minScoreFilter!) {
-                return false;
-              }
-              if (searchQuery.trim().isNotEmpty) {
-                final q = searchQuery.trim().toLowerCase();
-                final p = m.property;
-                final bhk = (p.configurationName ?? "${p.bedrooms} BHK").toLowerCase();
-                final area = p.areaName.toLowerCase();
-                final code = p.propertyCode.toLowerCase();
-                final title = p.title.toLowerCase();
-                final reasons = m.matchedCriteria.join(' ').toLowerCase();
-                final match = bhk.contains(q) || area.contains(q) || code.contains(q) || title.contains(q) || reasons.contains(q);
-                if (!match) return false;
-              }
-              return true;
-            }).toList();
-
-            Future<void> shareViaWhatsAppDirect() async {
-              setDialogState(() => isGeneratingLink = true);
-              try {
-                final resData = await RequirementsRepository().createShareSession({
-                  'requirement_id': req.id,
-                  'property_ids': selectedPropIds.toList(),
-                  'expiry_days': 7
-                });
-                if (resData != null && resData['success'] == true) {
-                  final sessionId = resData['data']['session']['id'];
-                  final authState = context.read<AuthBloc>().state;
-                  String? currentAgentName;
-                  String? currentAgentMobile;
-                  if (authState is Authenticated) {
-                    currentAgentName = authState.user.fullName;
-                    currentAgentMobile = authState.user.mobile;
-                  }
-
-                  var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
-                  final queryParams = <String>[];
-                  if (currentAgentName != null && currentAgentName.isNotEmpty) {
-                    queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
-                  }
-                  if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
-                    queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
-                  }
-                  if (queryParams.isNotEmpty) {
-                    link += "?${queryParams.join('&')}";
-                  }
-
-                  final selectedItems = allMatches.where((m) => selectedPropIds.contains(m.property.id)).toList();
-                  final StringBuffer sb = StringBuffer();
-                  final clientGreeting = req.clientName.trim().isNotEmpty ? req.clientName.trim() : 'Sir/Madam';
-                  sb.writeln("Hello $clientGreeting,");
-                  sb.writeln("Here are the top matching properties curated for your requirement:");
-                  sb.writeln("");
-                  int counter = 1;
-                  for (final item in selectedItems) {
-                    final p = item.property;
-                    final bhk = p.configurationName ?? "${p.bedrooms} BHK";
-                    final price = '₹${BudgetFormatter.format(p.price)}';
-                    sb.writeln("$counter. *$bhk in ${p.areaName}* – $price (${item.matchPercentage}% Match) [${p.propertyCode}]");
-                    counter++;
-                  }
-                  sb.writeln("");
-                  sb.writeln("View photos, amenities & complete details here:\n$link");
-
-                  final phone = req.clientMobile;
-                  final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-                  String formattedPhone = cleanPhone;
-                  if (cleanPhone.length == 10) {
-                    formattedPhone = '91$cleanPhone';
-                  }
-
-                  final encodedMsg = Uri.encodeComponent(sb.toString());
-                  final nativeUrl = "whatsapp://send?phone=$formattedPhone&text=$encodedMsg";
-                  final nativeUri = Uri.parse(nativeUrl);
-
-                  if (await canLaunchUrl(nativeUri)) {
-                    await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
-                  } else {
-                    final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone&text=$encodedMsg";
-                    final webUri = Uri.parse(webUrl);
-                    if (await canLaunchUrl(webUri)) {
-                      await launchUrl(webUri, mode: LaunchMode.externalApplication);
-                    } else {
-                      final fallbackUrl = "https://wa.me/$formattedPhone?text=$encodedMsg";
-                      final fallbackUri = Uri.parse(fallbackUrl);
-                      if (await canLaunchUrl(fallbackUri)) {
-                        await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
-                      }
-                    }
-                  }
-
-                  setDialogState(() {
-                    generatedLink = link;
-                    isGeneratingLink = false;
-                  });
-                } else {
-                  setDialogState(() {
-                    error = "Failed to create share session.";
-                    isGeneratingLink = false;
-                  });
-                }
-              } catch (e) {
-                setDialogState(() {
-                  error = "Failed to share via WhatsApp: $e";
-                  isGeneratingLink = false;
-                });
-              }
-            }
-
-            final double screenWidth = MediaQuery.of(context).size.width;
-            final double dialogWidth = (screenWidth < 560 ? (screenWidth - 32) : 500.0).clamp(280.0, 500.0);
-
-            return Stack(
-              children: [
-                AlertDialog(
-                  backgroundColor: CRMColors.cardBgOf(context),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
-                  insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
-                  titlePadding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
-                  contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                  title: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
-                          color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(Icons.share_rounded, size: 18, color: CRMColors.primaryOf(context)),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Share Matching Properties",
-                              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontSize: 16),
-                            ),
-                            Text(
-                              "Ranked by Match Score • ${req.clientName.trim().isNotEmpty ? req.clientName : 'Client'}",
-                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  content: isInitLoading
-                      ? SizedBox(
-                          height: 200,
-                          width: dialogWidth,
-                          child: const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircularProgressIndicator(),
-                                SizedBox(height: 12),
-                                Text("Analyzing and ranking matches...", style: TextStyle(fontSize: 12)),
-                              ],
-                            ),
-                          ),
-                        )
-                      : error != null
-                          ? SizedBox(
-                              width: dialogWidth,
-                              height: 100,
-                              child: Center(child: Text(error!, style: const TextStyle(color: CRMColors.danger))),
-                            )
-                          : allMatches.isEmpty
-                              ? SizedBox(
-                                  width: dialogWidth,
-                                  height: 100,
-                                  child: const Center(child: Text("No matching properties found for this requirement.")),
-                                )
-                              : SizedBox(
-                                  width: dialogWidth,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      // Search Bar
-                                      TextField(
-                                        controller: searchController,
-                                        style: const TextStyle(fontSize: 13),
-                                        decoration: InputDecoration(
-                                          hintText: "Filter by locality, BHK, price, code...",
-                                          hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
-                                          prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                                          suffixIcon: searchQuery.isNotEmpty
-                                              ? IconButton(
-                                                  icon: const Icon(Icons.clear_rounded, size: 16),
-                                                  onPressed: () {
-                                                    setDialogState(() {
-                                                      searchController.clear();
-                                                      searchQuery = '';
-                                                    });
-                                                  },
-                                                )
-                                              : null,
-                                          isDense: true,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
-                                          ),
-                                          filled: true,
-                                          fillColor: CRMColors.backgroundOf(context),
-                                        ),
-                                        onChanged: (val) {
-                                          setDialogState(() {
-                                            searchQuery = val;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 8),
-                                      // Filter Chips & Quick Selectors Bar (Responsive Wrap)
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        crossAxisAlignment: WrapCrossAlignment.center,
-                                        alignment: WrapAlignment.spaceBetween,
-                                        children: [
-                                          Wrap(
-                                            spacing: 6,
-                                            runSpacing: 4,
-                                            crossAxisAlignment: WrapCrossAlignment.center,
-                                            children: [
-                                              // All filter
-                                              InkWell(
-                                                onTap: () => setDialogState(() => minScoreFilter = null),
-                                                borderRadius: BorderRadius.circular(12),
-                                                child: Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                  decoration: BoxDecoration(
-                                                    color: minScoreFilter == null
-                                                        ? CRMColors.primaryOf(context).withValues(alpha: 0.12)
-                                                        : CRMColors.backgroundOf(context),
-                                                    borderRadius: BorderRadius.circular(12),
-                                                    border: Border.all(
-                                                      color: minScoreFilter == null
-                                                          ? CRMColors.primaryOf(context)
-                                                          : CRMColors.borderOf(context),
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    "All (${allMatches.length})",
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: minScoreFilter == null ? FontWeight.w700 : FontWeight.w500,
-                                                      color: minScoreFilter == null ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              // 90%+ filter chip
-                                              if (allMatches.any((m) => m.matchPercentage >= 90))
-                                                InkWell(
-                                                  onTap: () => setDialogState(() => minScoreFilter = minScoreFilter == 90 ? null : 90),
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                    decoration: BoxDecoration(
-                                                      color: minScoreFilter == 90
-                                                          ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                                                          : CRMColors.backgroundOf(context),
-                                                      borderRadius: BorderRadius.circular(12),
-                                                      border: Border.all(
-                                                        color: minScoreFilter == 90
-                                                            ? const Color(0xFF059669)
-                                                            : CRMColors.borderOf(context),
-                                                      ),
-                                                    ),
-                                                    child: Text(
-                                                      "90%+ (${allMatches.where((m) => m.matchPercentage >= 90).length})",
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: minScoreFilter == 90 ? FontWeight.w700 : FontWeight.w500,
-                                                        color: minScoreFilter == 90 ? const Color(0xFF059669) : CRMColors.textSecondaryOf(context),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          Wrap(
-                                            spacing: 6,
-                                            runSpacing: 4,
-                                            crossAxisAlignment: WrapCrossAlignment.center,
-                                            children: [
-                                              // Top 3 quick button
-                                              InkWell(
-                                                onTap: filteredMatches.isEmpty ? null : () {
-                                                  setDialogState(() {
-                                                    selectedPropIds.clear();
-                                                    for (final m in filteredMatches.take(3)) {
-                                                      selectedPropIds.add(m.property.id);
-                                                    }
-                                                  });
-                                                },
-                                                child: Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: CRMColors.surfaceElevatedOf(context),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: CRMColors.borderOf(context)),
-                                                  ),
-                                                  child: const Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Icon(Icons.bolt_rounded, size: 12, color: Color(0xFFD97706)),
-                                                      SizedBox(width: 2),
-                                                      Text("Top 3", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                              // Select / Deselect All
-                                              InkWell(
-                                                onTap: filteredMatches.isEmpty ? null : () {
-                                                  setDialogState(() {
-                                                    final allSel = filteredMatches.every((m) => selectedPropIds.contains(m.property.id));
-                                                    if (allSel) {
-                                                      for (final m in filteredMatches) {
-                                                        selectedPropIds.remove(m.property.id);
-                                                      }
-                                                    } else {
-                                                      for (final m in filteredMatches) {
-                                                        selectedPropIds.add(m.property.id);
-                                                      }
-                                                    }
-                                                  });
-                                                },
-                                                child: Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: CRMColors.surfaceElevatedOf(context),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: CRMColors.borderOf(context)),
-                                                  ),
-                                                  child: Text(
-                                                    filteredMatches.every((m) => selectedPropIds.contains(m.property.id)) ? "Deselect" : "All",
-                                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      // Selected Counter strip
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: selectedPropIds.isNotEmpty
-                                              ? CRMColors.primary.withValues(alpha: 0.08)
-                                              : CRMColors.backgroundOf(context),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              selectedPropIds.isNotEmpty ? Icons.check_circle_rounded : Icons.info_outline_rounded,
-                                              size: 13,
-                                              color: selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              "${selectedPropIds.length} of ${filteredMatches.length} selected",
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
-                                              ),
-                                            ),
-                                            if (selectedPropIds.isNotEmpty) ...[
-                                              const Spacer(),
-                                              InkWell(
-                                                onTap: () => setDialogState(() => selectedPropIds.clear()),
-                                                child: const Text(
-                                                  "Clear",
-                                                  style: TextStyle(fontSize: 11, color: CRMColors.danger, fontWeight: FontWeight.w600),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      // List of prioritized matches
-                                      SizedBox(
-                                        height: 310,
-                                        child: filteredMatches.isEmpty
-                                            ? Center(
-                                                child: Text(
-                                                  searchQuery.isNotEmpty
-                                                      ? "No matches found matching '$searchQuery'"
-                                                      : "No properties meet the current filter.",
-                                                  style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
-                                                ),
-                                              )
-                                            : ListView.separated(
-                                                itemCount: filteredMatches.length,
-                                                separatorBuilder: (context, idx) => Divider(
-                                                  height: 1,
-                                                  color: CRMColors.borderOf(context).withValues(alpha: 0.4),
-                                                ),
-                                                itemBuilder: (context, idx) {
-                                                  final m = filteredMatches[idx];
-                                                  final p = m.property;
-                                                  final isSelected = selectedPropIds.contains(p.id);
-                                                  final bhk = p.configurationName ?? "${p.bedrooms} BHK";
-                                                  final price = '₹${BudgetFormatter.format(p.price)}';
-                                                  final area = p.areaName.isNotEmpty ? p.areaName : 'Ahmedabad';
-                                                  final score = m.matchPercentage;
-
-                                                  Color badgeBg;
-                                                  Color badgeText;
-                                                  if (score >= 90) {
-                                                    badgeBg = const Color(0xFF10B981).withValues(alpha: 0.14);
-                                                    badgeText = const Color(0xFF047857);
-                                                  } else if (score >= 75) {
-                                                    badgeBg = const Color(0xFF3B82F6).withValues(alpha: 0.14);
-                                                    badgeText = const Color(0xFF1D4ED8);
-                                                  } else {
-                                                    badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.14);
-                                                    badgeText = const Color(0xFFB45309);
-                                                  }
-
-                                                  return Material(
-                                                    color: isSelected
-                                                        ? CRMColors.primary.withValues(alpha: 0.06)
-                                                        : Colors.transparent,
-                                                    child: InkWell(
-                                                      onTap: (isGeneratingLink || isSharingPdf)
-                                                          ? null
-                                                          : () {
-                                                              setDialogState(() {
-                                                                if (isSelected) {
-                                                                  selectedPropIds.remove(p.id);
-                                                                } else {
-                                                                  selectedPropIds.add(p.id);
-                                                                }
-                                                              });
-                                                            },
-                                                      child: Padding(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                                        child: Row(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Padding(
-                                                              padding: const EdgeInsets.only(top: 2, right: 8),
-                                                              child: SizedBox(
-                                                                width: 18,
-                                                                height: 18,
-                                                                child: Checkbox(
-                                                                  value: isSelected,
-                                                                  activeColor: CRMColors.primary,
-                                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                                                  onChanged: (isGeneratingLink || isSharingPdf)
-                                                                      ? null
-                                                                      : (val) {
-                                                                          setDialogState(() {
-                                                                            if (val == true) {
-                                                                              selectedPropIds.add(p.id);
-                                                                            } else {
-                                                                              selectedPropIds.remove(p.id);
-                                                                            }
-                                                                          });
-                                                                        },
-                                                                ),
-                                                             ),
-                                                            ),
-                                                            Expanded(
-                                                              child: Column(
-                                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                                children: [
-                                                                  Row(
-                                                                    children: [
-                                                                      Expanded(
-                                                                        child: Text(
-                                                                          "$bhk in $area",
-                                                                          style: TextStyle(
-                                                                            fontSize: 13,
-                                                                            fontWeight: FontWeight.w600,
-                                                                            color: CRMColors.textOf(context),
-                                                                          ),
-                                                                          maxLines: 1,
-                                                                          overflow: TextOverflow.ellipsis,
-                                                                        ),
-                                                                      ),
-                                                                      const SizedBox(width: 6),
-                                                                      Container(
-                                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                                                        decoration: BoxDecoration(
-                                                                          color: badgeBg,
-                                                                          borderRadius: BorderRadius.circular(10),
-                                                                          border: Border.all(color: badgeText.withValues(alpha: 0.25)),
-                                                                        ),
-                                                                        child: Row(
-                                                                          mainAxisSize: MainAxisSize.min,
-                                                                          children: [
-                                                                            Icon(Icons.verified_rounded, size: 10, color: badgeText),
-                                                                            const SizedBox(width: 2.5),
-                                                                            Text(
-                                                                              "$score% Match",
-                                                                              style: TextStyle(
-                                                                                fontSize: 10.5,
-                                                                                fontWeight: FontWeight.w700,
-                                                                                color: badgeText,
-                                                                              ),
-                                                                            ),
-                                                                          ],
-                                                                        ),
-                                                                      ),
-                                                                    ],
-                                                                  ),
-                                                                  const SizedBox(height: 2),
-                                                                  Row(
-                                                                    children: [
-                                                                      Text(
-                                                                        price,
-                                                                        style: TextStyle(
-                                                                          fontSize: 12,
-                                                                          fontWeight: FontWeight.w700,
-                                                                          color: CRMColors.primaryOf(context),
-                                                                        ),
-                                                                      ),
-                                                                      if (p.propertyCode.isNotEmpty) ...[
-                                                                        const SizedBox(width: 5),
-                                                                        Text(
-                                                                          "(${p.propertyCode})",
-                                                                          style: TextStyle(
-                                                                            fontSize: 11,
-                                                                            color: CRMColors.textSecondaryOf(context),
-                                                                          ),
-                                                                        ),
-                                                                      ],
-                                                                      if (p.listingTypeName != null && p.listingTypeName!.isNotEmpty) ...[
-                                                                        const SizedBox(width: 5),
-                                                                        Container(
-                                                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                                                          decoration: BoxDecoration(
-                                                                            color: CRMColors.backgroundOf(context),
-                                                                            borderRadius: BorderRadius.circular(3),
-                                                                            border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
-                                                                          ),
-                                                                          child: Text(
-                                                                            p.listingTypeName!,
-                                                                            style: TextStyle(
-                                                                              fontSize: 9.5,
-                                                                              color: CRMColors.textSecondaryOf(context),
-                                                                            ),
-                                                                          ),
-                                                                        ),
-                                                                      ],
-                                                                    ],
-                                                                  ),
-                                                                  if (m.matchedCriteria.isNotEmpty) ...[
-                                                                    const SizedBox(height: 3),
-                                                                    Wrap(
-                                                                      spacing: 4,
-                                                                      runSpacing: 2,
-                                                                      children: m.matchedCriteria.take(3).map((r) => Container(
-                                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                                                        decoration: BoxDecoration(
-                                                                          color: CRMColors.success.withValues(alpha: 0.08),
-                                                                          borderRadius: BorderRadius.circular(3),
-                                                                        ),
-                                                                        child: Text(
-                                                                          r,
-                                                                          style: const TextStyle(
-                                                                            fontSize: 9.5,
-                                                                            color: CRMColors.success,
-                                                                            fontWeight: FontWeight.w500,
-                                                                          ),
-                                                                          maxLines: 1,
-                                                                          overflow: TextOverflow.ellipsis,
-                                                                        ),
-                                                                      )).toList(),
-                                                                    ),
-                                                                  ],
-                                                                ],
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                  actions: [
-                    TextButton(
-                      onPressed: (isGeneratingLink || isSharingPdf) ? null : () => Navigator.pop(context),
-                      child: const Text("Cancel"),
-                    ),
-                    if (!isInitLoading && error == null && allMatches.isNotEmpty)
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        alignment: WrapAlignment.end,
-                        children: [
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
-                            label: const Text("Share PDF", style: TextStyle(fontSize: 12)),
-                            style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            ),
-                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
-                                ? null
-                                : () async {
-                                    final selected = allMatches
-                                        .where((m) => selectedPropIds.contains(m.property.id))
-                                        .map((m) => m.property)
-                                        .toList();
-                                    await PropertyPdfContentSelectionDialog.show(
-                                      context,
-                                      properties: selected,
-                                      recipientPhone: req.clientMobile,
-                                    );
-                                  },
-                          ),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.link_rounded, size: 15),
-                            label: const Text("Generate Link", style: TextStyle(fontSize: 12)),
-                            style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            ),
-                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
-                                ? null
-                                : () async {
-                                    setDialogState(() => isGeneratingLink = true);
-                                    try {
-                                      final resData = await RequirementsRepository().createShareSession({
-                                        'requirement_id': req.id,
-                                        'property_ids': selectedPropIds.toList(),
-                                        'expiry_days': 7
-                                      });
-                                      if (resData != null && resData['success'] == true) {
-                                        final sessionId = resData['data']['session']['id'];
-                                        final authState = context.read<AuthBloc>().state;
-                                        String? currentAgentName;
-                                        String? currentAgentMobile;
-                                        if (authState is Authenticated) {
-                                          currentAgentName = authState.user.fullName;
-                                          currentAgentMobile = authState.user.mobile;
-                                        }
-
-                                        setDialogState(() {
-                                          var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
-                                          final queryParams = <String>[];
-                                          if (currentAgentName != null && currentAgentName.isNotEmpty) {
-                                            queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
-                                          }
-                                          if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
-                                            queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
-                                          }
-                                          if (queryParams.isNotEmpty) {
-                                            link += "?${queryParams.join('&')}";
-                                          }
-                                          generatedLink = link;
-                                          isGeneratingLink = false;
-                                        });
-                                      } else {
-                                        setDialogState(() {
-                                          error = "Failed to generate link.";
-                                          isGeneratingLink = false;
-                                        });
-                                      }
-                                    } catch (e) {
-                                      setDialogState(() {
-                                        error = "Failed to generate link.";
-                                        isGeneratingLink = false;
-                                      });
-                                    }
-                                  },
-                          ),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: kWhatsAppGreen,
-                              foregroundColor: Colors.white,
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            ),
-                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
-                            label: const Text("Share on WhatsApp", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                            onPressed: selectedPropIds.isEmpty || isGeneratingLink || isSharingPdf
-                                ? null
-                                : () => shareViaWhatsAppDirect(),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-                if (isGeneratingLink || isSharingPdf)
-                  Positioned.fill(
-                    child: Container(
-                      color: CRMColors.overlayOf(context),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(),
-                            const SizedBox(height: CRMSpacing.s),
-                            Text(
-                              isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating share link & message...',
-                              style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        );
-      },
-    ).then((_) => searchController.dispose());
+      builder: (dialogContext) => _ShareMatchingPropertiesDialog(requirement: req),
+    );
   }
 
-  void _showRequirementDetailDrawer(RequirementModel req) {
+
+      void _showRequirementDetailDrawer(RequirementModel req) {
     AuditTelemetryService.instance.trackPropertyTouch(
       propertyId: req.id,
       propertyTitle: req.clientName,
@@ -17973,6 +17124,957 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
         ),
         ),
       ),
+    );
+  }
+}
+
+class _ShareMatchingPropertiesDialog extends StatefulWidget {
+  final RequirementModel requirement;
+
+  const _ShareMatchingPropertiesDialog({
+    required this.requirement,
+  });
+
+  @override
+  State<_ShareMatchingPropertiesDialog> createState() =>
+      _ShareMatchingPropertiesDialogState();
+}
+
+class _ShareMatchingPropertiesDialogState
+    extends State<_ShareMatchingPropertiesDialog> {
+  final Set<String> _selectedPropIds = {};
+  List<PropertyMatchResult> _allMatches = [];
+  bool _isInitLoading = true;
+  bool _isFetching = false;
+  bool _isGeneratingLink = false;
+  bool _isSharingPdf = false;
+  String? _error;
+  String? _generatedLink;
+  String _searchQuery = '';
+  int? _minScoreFilter;
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    _loadMatches();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMatches() async {
+    if (_isFetching) return;
+    _isFetching = true;
+    try {
+      final req = widget.requirement;
+      final List<PropertyMatchResult> results = [];
+
+      // 1. Authoritative Backend Matching
+      try {
+        final serverResponse = await RequirementsRepository().getRequirementMatches(
+          req.id,
+          minScore: MatchCriteriaManager().threshold,
+        );
+        final data = serverResponse['data'] as Map<String, dynamic>? ?? {};
+        final rawMatches = data['matches'] as List? ?? [];
+        if (rawMatches.isNotEmpty || data.containsKey('matching_metadata')) {
+          for (final item in rawMatches) {
+            final pJson = item['property'] as Map<String, dynamic>? ?? {};
+            final prop = PropertyModel.fromJson(pJson);
+            if (!PropertyRequirementMatcher.isEligibleByCategoryAndType(prop, req)) continue;
+            results.add(PropertyMatchResult.fromServerJson(item as Map<String, dynamic>, prop));
+          }
+        }
+      } catch (serverErr) {
+        debugPrint("⚠️ [Share Dialog Backend Match Fallback] $serverErr");
+      }
+
+      // 2. Offline / Local fallback if backend returns empty or fails
+      if (results.isEmpty) {
+        final properties = await PropertiesRepository().getProperties();
+        for (final p in properties) {
+          if (await _RequirementsScreenState._isRequirementPropertyMatchAsync(p, req)) {
+            final res = PropertyRequirementMatcher.match(p, req);
+            results.add(res);
+          }
+        }
+      }
+
+      // 3. Strictly sort by match percentage descending (highest first)
+      results.sort((a, b) {
+        final cmp = b.matchPercentage.compareTo(a.matchPercentage);
+        if (cmp != 0) return cmp;
+        return a.property.price.compareTo(b.property.price);
+      });
+
+      if (mounted) {
+        setState(() {
+          _allMatches = results;
+          _isInitLoading = false;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = "Failed to load matching properties.";
+          _isInitLoading = false;
+        });
+      }
+    } finally {
+      _isFetching = false;
+    }
+  }
+
+  Future<void> _shareViaWhatsAppDirect() async {
+    final req = widget.requirement;
+    setState(() => _isGeneratingLink = true);
+    try {
+      final resData = await RequirementsRepository().createShareSession({
+        'requirement_id': req.id,
+        'property_ids': _selectedPropIds.toList(),
+        'expiry_days': 7,
+      });
+      if (resData != null && resData['success'] == true) {
+        final sessionId = resData['data']['session']['id'];
+        final authState = context.read<AuthBloc>().state;
+        String? currentAgentName;
+        String? currentAgentMobile;
+        if (authState is Authenticated) {
+          currentAgentName = authState.user.fullName;
+          currentAgentMobile = authState.user.mobile;
+        }
+
+        var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+        final queryParams = <String>[];
+        if (currentAgentName != null && currentAgentName.isNotEmpty) {
+          queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+        }
+        if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+          queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+        }
+        if (queryParams.isNotEmpty) {
+          link += "?${queryParams.join('&')}";
+        }
+
+        final selectedItems = _allMatches.where((m) => _selectedPropIds.contains(m.property.id)).toList();
+        final StringBuffer sb = StringBuffer();
+        final clientGreeting = req.clientName.trim().isNotEmpty ? req.clientName.trim() : 'Sir/Madam';
+        sb.writeln("Hello $clientGreeting,");
+        sb.writeln("Here are the top matching properties curated for your requirement:");
+        sb.writeln("");
+        int counter = 1;
+        for (final item in selectedItems) {
+          final p = item.property;
+          final bhk = p.configurationName ?? "${p.bedrooms} BHK";
+          final price = '₹${BudgetFormatter.format(p.price)}';
+          sb.writeln("$counter. *$bhk in ${p.areaName}* – $price (${item.matchPercentage}% Match) [${p.propertyCode}]");
+          counter++;
+        }
+        sb.writeln("");
+        sb.writeln("View photos, amenities & complete details here:\n$link");
+
+        final phone = req.clientMobile;
+        final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+        String formattedPhone = cleanPhone;
+        if (cleanPhone.length == 10) {
+          formattedPhone = '91$cleanPhone';
+        }
+
+        final encodedMsg = Uri.encodeComponent(sb.toString());
+        final nativeUrl = "whatsapp://send?phone=$formattedPhone&text=$encodedMsg";
+        final nativeUri = Uri.parse(nativeUrl);
+
+        if (await canLaunchUrl(nativeUri)) {
+          await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
+        } else {
+          final webUrl = "https://web.whatsapp.com/send?phone=$formattedPhone&text=$encodedMsg";
+          final webUri = Uri.parse(webUrl);
+          if (await canLaunchUrl(webUri)) {
+            await launchUrl(webUri, mode: LaunchMode.externalApplication);
+          } else {
+            final fallbackUrl = "https://wa.me/$formattedPhone?text=$encodedMsg";
+            final fallbackUri = Uri.parse(fallbackUrl);
+            if (await canLaunchUrl(fallbackUri)) {
+              await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+            }
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _generatedLink = link;
+            _isGeneratingLink = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _error = "Failed to create share session.";
+            _isGeneratingLink = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = "Failed to share via WhatsApp: $e";
+          _isGeneratingLink = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final req = widget.requirement;
+
+    if (_generatedLink != null) {
+      return AlertDialog(
+        backgroundColor: CRMColors.cardBgOf(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+        title: Text("Share Link Created", style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context))),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(CRMSpacing.s),
+              decoration: BoxDecoration(
+                color: CRMColors.backgroundOf(context),
+                borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                border: Border.all(color: CRMColors.borderOf(context)),
+              ),
+              child: SelectableText(
+                _generatedLink!,
+                style: CRMTypography.caption.copyWith(color: CRMColors.primary),
+              ),
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text("Copy"),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _generatedLink!));
+                      AppStatusSnackBar.show(
+                        context,
+                        message: "Link copied to clipboard!",
+                        isSuccess: true,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: CRMSpacing.s),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: kWhatsAppGreen, foregroundColor: Colors.white),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                    label: const Text("WhatsApp"),
+                    onPressed: () async {
+                      final text = Uri.encodeComponent("Hello, here is the curated list of properties matching your requirements: $_generatedLink");
+                      final url = "https://wa.me/?text=$text";
+                      final uri = Uri.parse(url);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CRMSpacing.s),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.share_rounded, size: 16),
+              label: const Text("Share"),
+              onPressed: () async {
+                try {
+                  await Share.share(_generatedLink!);
+                } catch (e) {
+                  await Clipboard.setData(ClipboardData(text: _generatedLink!));
+                  if (context.mounted) {
+                    AppStatusSnackBar.show(
+                      context,
+                      message: "Link copied to clipboard!",
+                      isSuccess: true,
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close"),
+          ),
+        ],
+      );
+    }
+
+    // Compute filtered list based on search and min-score filter
+    final filteredMatches = _allMatches.where((m) {
+      if (_minScoreFilter != null && m.matchPercentage < _minScoreFilter!) {
+        return false;
+      }
+      if (_searchQuery.trim().isNotEmpty) {
+        final q = _searchQuery.trim().toLowerCase();
+        final p = m.property;
+        final bhk = (p.configurationName ?? "${p.bedrooms} BHK").toLowerCase();
+        final area = p.areaName.toLowerCase();
+        final code = p.propertyCode.toLowerCase();
+        final title = p.title.toLowerCase();
+        final reasons = m.matchedCriteria.join(' ').toLowerCase();
+        final match = bhk.contains(q) || area.contains(q) || code.contains(q) || title.contains(q) || reasons.contains(q);
+        if (!match) return false;
+      }
+      return true;
+    }).toList();
+
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double dialogWidth = (screenWidth < 560 ? (screenWidth - 32) : 500.0).clamp(280.0, 500.0);
+
+    return Stack(
+      children: [
+        AlertDialog(
+          backgroundColor: CRMColors.cardBgOf(context),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.m)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+          titlePadding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+          contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: CRMColors.primaryOf(context).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.share_rounded, size: 18, color: CRMColors.primaryOf(context)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Share Matching Properties",
+                      style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context), fontSize: 16),
+                    ),
+                    Text(
+                      "Ranked by Match Score • ${req.clientName.trim().isNotEmpty ? req.clientName : 'Client'}",
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: (_isGeneratingLink || _isSharingPdf) ? null : () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          content: _isInitLoading
+              ? SizedBox(
+                  height: 200,
+                  width: dialogWidth,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 12),
+                        Text("Analyzing and ranking matches...", style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                )
+              : _error != null
+                  ? SizedBox(
+                      width: dialogWidth,
+                      height: 100,
+                      child: Center(child: Text(_error!, style: const TextStyle(color: CRMColors.danger))),
+                    )
+                  : _allMatches.isEmpty
+                      ? SizedBox(
+                          width: dialogWidth,
+                          height: 100,
+                          child: const Center(child: Text("No matching properties found for this requirement.")),
+                        )
+                      : SizedBox(
+                          width: dialogWidth,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Search Bar
+                              TextField(
+                                controller: _searchController,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: InputDecoration(
+                                  hintText: "Filter by locality, BHK, price, code...",
+                                  hintStyle: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                                  suffixIcon: _searchQuery.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear_rounded, size: 16),
+                                          onPressed: () {
+                                            setState(() {
+                                              _searchController.clear();
+                                              _searchQuery = '';
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+                                  ),
+                                  filled: true,
+                                  fillColor: CRMColors.backgroundOf(context),
+                                ),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _searchQuery = val;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              // Filter Chips & Quick Selectors Bar (Responsive Wrap)
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                alignment: WrapAlignment.spaceBetween,
+                                children: [
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      // All filter
+                                      InkWell(
+                                        onTap: () => setState(() => _minScoreFilter = null),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: _minScoreFilter == null
+                                                ? CRMColors.primaryOf(context).withValues(alpha: 0.12)
+                                                : CRMColors.backgroundOf(context),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: _minScoreFilter == null
+                                                  ? CRMColors.primaryOf(context)
+                                                  : CRMColors.borderOf(context),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            "All (${_allMatches.length})",
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: _minScoreFilter == null ? FontWeight.w700 : FontWeight.w500,
+                                              color: _minScoreFilter == null ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      // 90%+ filter chip
+                                      if (_allMatches.any((m) => m.matchPercentage >= 90))
+                                        InkWell(
+                                          onTap: () => setState(() => _minScoreFilter = _minScoreFilter == 90 ? null : 90),
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: _minScoreFilter == 90
+                                                  ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                                  : CRMColors.backgroundOf(context),
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: _minScoreFilter == 90
+                                                    ? const Color(0xFF059669)
+                                                    : CRMColors.borderOf(context),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              "90%+ (${_allMatches.where((m) => m.matchPercentage >= 90).length})",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: _minScoreFilter == 90 ? FontWeight.w700 : FontWeight.w500,
+                                                color: _minScoreFilter == 90 ? const Color(0xFF059669) : CRMColors.textSecondaryOf(context),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      // Top 3 quick button
+                                      InkWell(
+                                        onTap: filteredMatches.isEmpty ? null : () {
+                                          setState(() {
+                                            _selectedPropIds.clear();
+                                            for (final m in filteredMatches.take(3)) {
+                                              _selectedPropIds.add(m.property.id);
+                                            }
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: CRMColors.surfaceElevatedOf(context),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: CRMColors.borderOf(context)),
+                                          ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.bolt_rounded, size: 12, color: Color(0xFFD97706)),
+                                              SizedBox(width: 2),
+                                              Text("Top 3", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      // Select / Deselect All
+                                      InkWell(
+                                        onTap: filteredMatches.isEmpty ? null : () {
+                                          setState(() {
+                                            final allSel = filteredMatches.every((m) => _selectedPropIds.contains(m.property.id));
+                                            if (allSel) {
+                                              for (final m in filteredMatches) {
+                                                _selectedPropIds.remove(m.property.id);
+                                              }
+                                            } else {
+                                              for (final m in filteredMatches) {
+                                                _selectedPropIds.add(m.property.id);
+                                              }
+                                            }
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: CRMColors.surfaceElevatedOf(context),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: CRMColors.borderOf(context)),
+                                          ),
+                                          child: Text(
+                                            filteredMatches.every((m) => _selectedPropIds.contains(m.property.id)) ? "Deselect" : "All",
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              // Selected Counter strip
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _selectedPropIds.isNotEmpty
+                                      ? CRMColors.primary.withValues(alpha: 0.08)
+                                      : CRMColors.backgroundOf(context),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _selectedPropIds.isNotEmpty ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                                      size: 13,
+                                      color: _selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      "${_selectedPropIds.length} of ${filteredMatches.length} selected",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedPropIds.isNotEmpty ? CRMColors.primary : CRMColors.textSecondaryOf(context),
+                                      ),
+                                    ),
+                                    if (_selectedPropIds.isNotEmpty) ...[
+                                      const Spacer(),
+                                      InkWell(
+                                        onTap: () => setState(() => _selectedPropIds.clear()),
+                                        child: const Text(
+                                          "Clear",
+                                          style: TextStyle(fontSize: 11, color: CRMColors.danger, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              // List of prioritized matches
+                              SizedBox(
+                                height: 310,
+                                child: filteredMatches.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          _searchQuery.isNotEmpty
+                                              ? "No matches found matching '$_searchQuery'"
+                                              : "No properties meet the current filter.",
+                                          style: TextStyle(fontSize: 12, color: CRMColors.textSecondaryOf(context)),
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: filteredMatches.length,
+                                        separatorBuilder: (context, idx) => Divider(
+                                          height: 1,
+                                          color: CRMColors.borderOf(context).withValues(alpha: 0.4),
+                                        ),
+                                        itemBuilder: (context, idx) {
+                                          final m = filteredMatches[idx];
+                                          final p = m.property;
+                                          final isSelected = _selectedPropIds.contains(p.id);
+                                          final bhk = p.configurationName ?? "${p.bedrooms} BHK";
+                                          final price = '₹${BudgetFormatter.format(p.price)}';
+                                          final area = p.areaName.isNotEmpty ? p.areaName : 'Ahmedabad';
+                                          final score = m.matchPercentage;
+
+                                          Color badgeBg;
+                                          Color badgeText;
+                                          if (score >= 90) {
+                                            badgeBg = const Color(0xFF10B981).withValues(alpha: 0.14);
+                                            badgeText = const Color(0xFF047857);
+                                          } else if (score >= 75) {
+                                            badgeBg = const Color(0xFF3B82F6).withValues(alpha: 0.14);
+                                            badgeText = const Color(0xFF1D4ED8);
+                                          } else {
+                                            badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.14);
+                                            badgeText = const Color(0xFFB45309);
+                                          }
+
+                                          return Material(
+                                            color: isSelected
+                                                ? CRMColors.primary.withValues(alpha: 0.06)
+                                                : Colors.transparent,
+                                            child: InkWell(
+                                              onTap: (_isGeneratingLink || _isSharingPdf)
+                                                  ? null
+                                                  : () {
+                                                      setState(() {
+                                                        if (isSelected) {
+                                                          _selectedPropIds.remove(p.id);
+                                                        } else {
+                                                          _selectedPropIds.add(p.id);
+                                                        }
+                                                      });
+                                                    },
+                                              child: Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                child: Row(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(top: 2, right: 8),
+                                                      child: SizedBox(
+                                                        width: 18,
+                                                        height: 18,
+                                                        child: Checkbox(
+                                                          value: isSelected,
+                                                          activeColor: CRMColors.primary,
+                                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                          onChanged: (_isGeneratingLink || _isSharingPdf)
+                                                              ? null
+                                                              : (val) {
+                                                                  setState(() {
+                                                                    if (val == true) {
+                                                                      _selectedPropIds.add(p.id);
+                                                                    } else {
+                                                                      _selectedPropIds.remove(p.id);
+                                                                    }
+                                                                  });
+                                                                },
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                          Row(
+                                                            children: [
+                                                              Expanded(
+                                                                child: Text(
+                                                                  "$bhk in $area",
+                                                                  style: TextStyle(
+                                                                    fontSize: 13,
+                                                                    fontWeight: FontWeight.w600,
+                                                                    color: CRMColors.textOf(context),
+                                                                  ),
+                                                                  maxLines: 1,
+                                                                  overflow: TextOverflow.ellipsis,
+                                                                ),
+                                                              ),
+                                                              const SizedBox(width: 6),
+                                                              Container(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                                decoration: BoxDecoration(
+                                                                  color: badgeBg,
+                                                                  borderRadius: BorderRadius.circular(10),
+                                                                  border: Border.all(color: badgeText.withValues(alpha: 0.25)),
+                                                                ),
+                                                                child: Row(
+                                                                  mainAxisSize: MainAxisSize.min,
+                                                                  children: [
+                                                                    Icon(Icons.verified_rounded, size: 10, color: badgeText),
+                                                                    const SizedBox(width: 2.5),
+                                                                    Text(
+                                                                      "$score% Match",
+                                                                      style: TextStyle(
+                                                                        fontSize: 10.5,
+                                                                        fontWeight: FontWeight.w700,
+                                                                        color: badgeText,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          const SizedBox(height: 2),
+                                                          Row(
+                                                            children: [
+                                                              Text(
+                                                                price,
+                                                                style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  fontWeight: FontWeight.w700,
+                                                                  color: CRMColors.primaryOf(context),
+                                                                ),
+                                                              ),
+                                                              if (p.propertyCode.isNotEmpty) ...[
+                                                                const SizedBox(width: 5),
+                                                                Text(
+                                                                  "(${p.propertyCode})",
+                                                                  style: TextStyle(
+                                                                    fontSize: 11,
+                                                                    color: CRMColors.textSecondaryOf(context),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                              if (p.listingTypeName != null && p.listingTypeName!.isNotEmpty) ...[
+                                                                const SizedBox(width: 5),
+                                                                Container(
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                                  decoration: BoxDecoration(
+                                                                    color: CRMColors.backgroundOf(context),
+                                                                    borderRadius: BorderRadius.circular(3),
+                                                                    border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.6)),
+                                                                  ),
+                                                                  child: Text(
+                                                                    p.listingTypeName!,
+                                                                    style: TextStyle(
+                                                                      fontSize: 9.5,
+                                                                      color: CRMColors.textSecondaryOf(context),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ],
+                                                          ),
+                                                          if (m.matchedCriteria.isNotEmpty) ...[
+                                                            const SizedBox(height: 3),
+                                                            Wrap(
+                                                              spacing: 4,
+                                                              runSpacing: 2,
+                                                              children: m.matchedCriteria.take(3).map((r) => Container(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                                decoration: BoxDecoration(
+                                                                  color: CRMColors.success.withValues(alpha: 0.08),
+                                                                  borderRadius: BorderRadius.circular(3),
+                                                                ),
+                                                                child: Text(
+                                                                  r,
+                                                                  style: const TextStyle(
+                                                                    fontSize: 9.5,
+                                                                    color: CRMColors.success,
+                                                                    fontWeight: FontWeight.w500,
+                                                                  ),
+                                                                  maxLines: 1,
+                                                                  overflow: TextOverflow.ellipsis,
+                                                                ),
+                                                              )).toList(),
+                                                            ),
+                                                          ],
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+          actions: [
+            TextButton(
+              onPressed: (_isGeneratingLink || _isSharingPdf) ? null : () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            if (!_isInitLoading && _error == null && _allMatches.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
+                    label: const Text("Share PDF", style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    onPressed: _selectedPropIds.isEmpty || _isGeneratingLink || _isSharingPdf
+                        ? null
+                        : () async {
+                            final selected = _allMatches
+                                .where((m) => _selectedPropIds.contains(m.property.id))
+                                .map((m) => m.property)
+                                .toList();
+                            await PropertyPdfContentSelectionDialog.show(
+                              context,
+                              properties: selected,
+                              recipientPhone: req.clientMobile,
+                            );
+                          },
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.link_rounded, size: 15),
+                    label: const Text("Generate Link", style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    onPressed: _selectedPropIds.isEmpty || _isGeneratingLink || _isSharingPdf
+                        ? null
+                        : () async {
+                            setState(() => _isGeneratingLink = true);
+                            try {
+                              final resData = await RequirementsRepository().createShareSession({
+                                'requirement_id': req.id,
+                                'property_ids': _selectedPropIds.toList(),
+                                'expiry_days': 7,
+                              });
+                              if (resData != null && resData['success'] == true) {
+                                final sessionId = resData['data']['session']['id'];
+                                final authState = context.read<AuthBloc>().state;
+                                String? currentAgentName;
+                                String? currentAgentMobile;
+                                if (authState is Authenticated) {
+                                  currentAgentName = authState.user.fullName;
+                                  currentAgentMobile = authState.user.mobile;
+                                }
+
+                                if (mounted) {
+                                  setState(() {
+                                    var link = "${AppConfig.publicShareBaseUrl}/$sessionId";
+                                    final queryParams = <String>[];
+                                    if (currentAgentName != null && currentAgentName.isNotEmpty) {
+                                      queryParams.add("agentName=${Uri.encodeComponent(currentAgentName)}");
+                                    }
+                                    if (currentAgentMobile != null && currentAgentMobile.isNotEmpty) {
+                                      queryParams.add("agentMobile=${Uri.encodeComponent(currentAgentMobile)}");
+                                    }
+                                    if (queryParams.isNotEmpty) {
+                                      link += "?${queryParams.join('&')}";
+                                    }
+                                    _generatedLink = link;
+                                    _isGeneratingLink = false;
+                                  });
+                                }
+                              } else {
+                                if (mounted) {
+                                  setState(() {
+                                    _error = "Failed to generate link.";
+                                    _isGeneratingLink = false;
+                                  });
+                                }
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                setState(() {
+                                  _error = "Failed to generate link.";
+                                  _isGeneratingLink = false;
+                                });
+                              }
+                            }
+                          },
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kWhatsAppGreen,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
+                    label: const Text("Share on WhatsApp", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    onPressed: _selectedPropIds.isEmpty || _isGeneratingLink || _isSharingPdf
+                        ? null
+                        : () => _shareViaWhatsAppDirect(),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        if (_isGeneratingLink || _isSharingPdf)
+          Positioned.fill(
+            child: Container(
+              color: CRMColors.overlayOf(context),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: CRMSpacing.s),
+                    Text(
+                      _isSharingPdf ? 'Preparing property PDF(s)...' : 'Generating share link & message...',
+                      style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

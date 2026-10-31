@@ -18,6 +18,7 @@ import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/search/search_request_gate.dart';
 import '../../../core/api/cloudinary_uploader.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http_parser/http_parser.dart';
@@ -32,6 +33,7 @@ class UsersScreen extends StatefulWidget {
 
 class _UsersScreenState extends State<UsersScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchRequestGate _searchGate = SearchRequestGate();
   String? _selectedRoleId;
   String _selectedStatus = "All";
 
@@ -49,6 +51,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
   @override
   void dispose() {
+    _searchGate.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -881,7 +884,9 @@ class _UsersScreenState extends State<UsersScreen> {
                       ),
                     ),
                   ),
-                  onChanged: (val) => _triggerFetch(),
+                  onChanged: (val) => _searchGate.schedule((_) {
+                    if (mounted) _triggerFetch();
+                  }),
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),

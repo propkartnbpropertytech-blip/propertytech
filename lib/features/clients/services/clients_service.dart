@@ -17,6 +17,10 @@ class ClientsService {
       if (source != null && source != 'All') {
         queryParameters['source'] = source;
       }
+      if (search != null && search.isNotEmpty) {
+        queryParameters['page'] = 1;
+        queryParameters['limit'] = 50;
+      }
 
       final response = await _apiClient.get(
         '/clients',

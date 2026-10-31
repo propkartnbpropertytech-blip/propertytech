@@ -16,6 +16,7 @@ import '../bloc/properties_bloc.dart';
 import '../repository/properties_repository.dart';
 import '../../../core/network/sync_manager.dart';
 import '../models/property_model.dart';
+import '../models/property_list_fallback.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PropertySearchScreen extends StatefulWidget {
@@ -45,6 +46,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   final Set<String> _shortlistedPropertyIds = {};
   List<PropertyModel> _cachedSearchProperties = [];
   List<PropertyModel>? _serverSearchProperties;
+  bool _propertySearchStale = false;
   int _propertySearchRequest = 0;
   StreamSubscription<Set<String>>? _propertySearchRefreshSub;
   PropertyMetadataModel? _cachedSearchMetadata;
@@ -124,10 +126,20 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     try {
       final models = await PropertiesRepository().searchPropertiesServer(query, limit: 50);
       if (!mounted || request != _propertySearchRequest) return;
-      setState(() => _serverSearchProperties = models);
+      setState(() {
+        _serverSearchProperties = models;
+        _propertySearchStale = false;
+      });
     } catch (_) {
       if (!mounted || request != _propertySearchRequest) return;
-      setState(() => _serverSearchProperties = []);
+      final fallback = PropertyListFallback.serverFailed(_cachedSearchProperties);
+      setState(() {
+        _serverSearchProperties = null;
+        _propertySearchStale = fallback.stale;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Showing saved properties. The latest server search did not complete.')),
+      );
     }
   }
 
@@ -431,6 +443,13 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   constraints: const BoxConstraints(maxWidth: 1100),
                   child: CustomScrollView(
                     slivers: [
+                      if (_propertySearchStale)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
+                            child: Text('Showing saved properties. The latest server search did not complete.'),
+                          ),
+                        ),
                       SliverPadding(
                         padding: EdgeInsets.symmetric(
                           horizontal: isMobile ? 12 : CRMSpacing.l,

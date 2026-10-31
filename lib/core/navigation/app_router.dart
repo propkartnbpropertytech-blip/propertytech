@@ -12,6 +12,7 @@ import '../../features/admin/screens/lead_allocation_monitor_screen.dart';
 import '../../features/admin/screens/lead_allocation_config_screen.dart';
 import '../../features/properties/screens/properties_screen.dart';
 import '../../features/properties/screens/property_search_screen.dart';
+import '../../features/search/screens/global_search_results_screen.dart';
 import '../../features/properties/screens/property_detail_screen.dart';
 import '../../features/properties/bloc/properties_bloc.dart';
 import '../../features/users/screens/users_screen.dart';
@@ -198,6 +199,20 @@ class AppRouter {
           type: state.uri.queryParameters['type'],
           code: state.uri.queryParameters['code'],
           token: state.uri.queryParameters['token'],
+        ),
+      ),
+      GoRoute(
+        path: '/search/results',
+        pageBuilder: (context, state) => crmFadeSlidePage(
+          key: state.pageKey,
+          name: state.name,
+          child: MobileSystemBackHandler(
+            homeLocation: '/get-started',
+            child: GlobalSearchResultsScreen(
+              query: state.uri.queryParameters['q'] ?? state.uri.queryParameters['search'] ?? '',
+              initialCategory: state.uri.queryParameters['category'] ?? 'properties',
+            ),
+          ),
         ),
       ),
       GoRoute(
@@ -498,14 +513,14 @@ class AppRouter {
             path: '/clients',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const ClientsScreen(),
+              child: ClientsScreen(initialSearch: state.uri.queryParameters['search']),
             ),
           ),
           GoRoute(
             path: '/owners',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const OwnersScreen(),
+              child: OwnersScreen(initialSearch: state.uri.queryParameters['search']),
             ),
           ),
           GoRoute(

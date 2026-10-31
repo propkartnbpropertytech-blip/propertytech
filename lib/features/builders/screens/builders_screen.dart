@@ -10,6 +10,7 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
+import '../../../core/search/search_request_gate.dart';
 
 class BuildersScreen extends StatefulWidget {
   const BuildersScreen({super.key});
@@ -20,6 +21,7 @@ class BuildersScreen extends StatefulWidget {
 
 class _BuildersScreenState extends State<BuildersScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchRequestGate _searchGate = SearchRequestGate();
   String _selectedTier = "All";
 
   @override
@@ -30,6 +32,7 @@ class _BuildersScreenState extends State<BuildersScreen> {
 
   @override
   void dispose() {
+    _searchGate.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -226,7 +229,9 @@ class _BuildersScreenState extends State<BuildersScreen> {
                     borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
                   ),
                 ),
-                onChanged: (val) => _triggerFetch(),
+                onChanged: (val) => _searchGate.schedule((_) {
+                  if (mounted) _triggerFetch();
+                }),
               );
               final searchButton = CRMButton(label: "Search", onPressed: _triggerFetch);
               if (stacked) {
