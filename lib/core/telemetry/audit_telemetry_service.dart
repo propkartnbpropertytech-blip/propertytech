@@ -4,6 +4,28 @@ import '../api/api_client.dart';
 import '../security/role_guard.dart';
 import '../storage/secure_storage.dart';
 
+Map<String, dynamic> buildSearchTelemetry({
+  required String query,
+  required String module,
+  int? resultCount,
+  int? filterCount,
+}) {
+  final trimmed = query.trim();
+  return {
+    'action': 'SEARCH',
+    'module': module,
+    'record_id': null,
+    'description': 'Search in $module (${resultCount ?? 0} results)',
+    'details': {
+      'query_length': trimmed.length,
+      'token_count': trimmed.isEmpty ? 0 : trimmed.split(RegExp(r'\s+')).length,
+      'module': module,
+      'result_count': resultCount,
+      'filter_count': filterCount ?? 0,
+    },
+  };
+}
+
 /// High-throughput, non-blocking telemetry and audit event ingestion service.
 /// Batches telemetry events in-memory and flushes periodically or on size thresholds.
 class AuditTelemetryService {
@@ -159,20 +181,17 @@ class AuditTelemetryService {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 800), () {
       final user = RoleGuard.currentUser;
+      final payload = buildSearchTelemetry(
+        query: trimmed,
+        module: module,
+        resultCount: resultCount,
+        filterCount: filters?.length,
+      );
       _enqueue({
-        'action': 'SEARCH',
-        'module': module,
+        ...payload,
         'path': '/search',
         'event_name': 'search_query',
         'record_type': 'Search',
-        'record_id': trimmed,
-        'description': 'Searched "$trimmed" in $module (${resultCount ?? 0} results)',
-        'details': {
-          'query': trimmed,
-          'module': module,
-          'result_count': resultCount,
-          if (filters != null) 'filters': filters,
-        },
         'user_id': user?.id,
         'user_name': user?.fullName,
         'user_email': user?.email,

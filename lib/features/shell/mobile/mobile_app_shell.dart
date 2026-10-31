@@ -121,7 +121,7 @@ class _MobileAppShellState extends State<MobileAppShell> {
 
     final overflow = <_OverflowAction>[
       if (searchInOverflow)
-        _OverflowAction('search', 'Search', Icons.search_rounded, onSearch),
+        _OverflowAction('search', 'AI Search', Icons.auto_awesome_rounded, onSearch),
       _OverflowAction(
         'quick_actions',
         'Quick actions',

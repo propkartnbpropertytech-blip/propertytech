@@ -1,3 +1,13 @@
+double _asDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int _asInt(dynamic value) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? _asDouble(value).toInt();
+}
+
 class DashboardSummary {
   final int totalProperties;
   final int available;
@@ -156,7 +166,7 @@ class RecentProperty {
       code: json['code'] ?? '',
       title: json['title'] ?? '',
       area: json['area'] ?? 'N/A',
-      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      price: _asDouble(json['price']),
       status: json['status'] ?? 'N/A',
       areaName: json['areaName'] ?? 'N/A',
       listingType: json['listingType'] ?? 'Sale',
@@ -270,7 +280,7 @@ class DashboardLocationItem {
       categoryName: json['categoryName'] ?? json['category_name'] ?? 'Residential',
       listingType: json['listingType'] ?? json['listing_type'] ?? 'Rent',
       status: json['status'] ?? json['property_status']?['name'] ?? 'Available',
-      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      price: _asDouble(json['price']),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
           : null,

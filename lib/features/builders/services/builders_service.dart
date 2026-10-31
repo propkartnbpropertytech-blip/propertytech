@@ -10,6 +10,8 @@ class BuildersService {
       final Map<String, dynamic> queryParameters = {};
       if (search != null && search.isNotEmpty) {
         queryParameters['search'] = search;
+        queryParameters['page'] = 1;
+        queryParameters['limit'] = 50;
       }
       if (tier != null && tier != 'All') {
         queryParameters['tier'] = tier;

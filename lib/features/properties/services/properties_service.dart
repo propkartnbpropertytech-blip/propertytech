@@ -52,9 +52,10 @@ class PropertiesService {
     bool? includeDeleted,
     int? page,
     int? limit,
+    Map<String, String> filters = const {},
   }) async {
     try {
-      final Map<String, dynamic> queryParameters = {};
+      final Map<String, dynamic> queryParameters = {...filters};
       if (search != null && search.isNotEmpty) {
         queryParameters['search'] = search;
       }

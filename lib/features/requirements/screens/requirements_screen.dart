@@ -1062,6 +1062,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
+  String? _followupQuickWindow;
   String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
 
   String _normalizeFollowupSubTab(String val) {
@@ -12549,8 +12550,20 @@ _recomputeFilteredRequirements();
               final allClientsFollowups = _scopeCampaignFollowups(syncResult.allClients, followupToReqMap);
               final distinctSalespersons = syncResult.distinctSalespersons;
 
+              final windowNow = DateTime.now();
+              String? windowOf(DashboardFollowup item) => followupQuickWindow(
+                dateRaw: item.followupDate,
+                status: item.status,
+                now: windowNow,
+              );
+              final dueTodayCount = allClientsFollowups.where((item) => windowOf(item) == 'today').length;
+              final overdueCount = allClientsFollowups.where((item) => windowOf(item) == 'overdue').length;
+              final next7Count = allClientsFollowups.where((item) => windowOf(item) == 'next7').length;
+
               List<DashboardFollowup> selectedList;
-              if (_selectedFollowupSubTab == 'Due') {
+              if (_followupQuickWindow != null) {
+                selectedList = allClientsFollowups.where((item) => windowOf(item) == _followupQuickWindow).toList();
+              } else if (_selectedFollowupSubTab == 'Due') {
                 selectedList = dueFollowups;
               } else if (_selectedFollowupSubTab == 'Future') {
                 selectedList = futureFollowups;
@@ -12737,6 +12750,45 @@ _recomputeFilteredRequirements();
                         buildSubTabPill(allLabel, "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: CRMSpacing.s),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilterChip(
+                        label: Text('Due today ($dueTodayCount)'),
+                        selected: _followupQuickWindow == 'today',
+                        onSelected: (selected) => setState(() {
+                          _followupQuickWindow = selected ? 'today' : null;
+                          _currentFollowupPage = 1;
+                        }),
+                      ),
+                      FilterChip(
+                        label: Text('Overdue ($overdueCount)'),
+                        selected: _followupQuickWindow == 'overdue',
+                        onSelected: (selected) => setState(() {
+                          _followupQuickWindow = selected ? 'overdue' : null;
+                          _currentFollowupPage = 1;
+                        }),
+                      ),
+                      FilterChip(
+                        label: Text('Next 7 days ($next7Count)'),
+                        selected: _followupQuickWindow == 'next7',
+                        onSelected: (selected) => setState(() {
+                          _followupQuickWindow = selected ? 'next7' : null;
+                          _currentFollowupPage = 1;
+                        }),
+                      ),
+                      if (_followupQuickWindow != null)
+                        ActionChip(
+                          label: const Text('Clear'),
+                          onPressed: () => setState(() {
+                            _followupQuickWindow = null;
+                            _currentFollowupPage = 1;
+                          }),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: CRMSpacing.m),
                   Builder(
@@ -13327,7 +13379,6 @@ _recomputeFilteredRequirements();
   }
 
   void _showSharePropertiesDialog(RequirementModel req) {
-    final searchController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) {
@@ -14247,7 +14298,8 @@ _recomputeFilteredRequirements();
     ).then((_) => searchController.dispose());
   }
 
-  void _showRequirementDetailDrawer(RequirementModel req) {
+
+      void _showRequirementDetailDrawer(RequirementModel req) {
     AuditTelemetryService.instance.trackPropertyTouch(
       propertyId: req.id,
       propertyTitle: req.clientName,

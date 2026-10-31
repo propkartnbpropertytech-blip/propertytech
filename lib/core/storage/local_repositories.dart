@@ -5,6 +5,7 @@ import 'isar_service.dart';
 import 'dart:convert';
 import 'web_storage/web_storage_service.dart';
 import 'web_storage/web_storage_migration.dart';
+import '../search/directory_search.dart';
 
 class PropertyLocalRepository {
   Isar get _isar => IsarService().isar;
@@ -837,8 +838,15 @@ class BuilderLocalRepository {
       }
       var list = inMemory.values.toList();
       if (search != null && search.isNotEmpty) {
-        final query = search.toLowerCase();
-        list = list.where((b) => b.companyName.toLowerCase().contains(query)).toList();
+        list = list.where((b) => builderSearchMatches(
+          companyName: b.companyName,
+          contactPerson: b.contactPerson,
+          mobile: b.mobile,
+          email: b.email,
+          activeProjects: b.activeProjects,
+          remarks: b.remarks,
+          query: search,
+        )).toList();
       }
       if (tier != null) list = list.where((b) => b.tier == tier).toList();
       return list;
@@ -848,7 +856,19 @@ class BuilderLocalRepository {
     QueryBuilder<BuilderLocal, BuilderLocal, QAfterFilterCondition> filtered = query;
 
     if (search != null && search.isNotEmpty) {
-      filtered = filtered.and().companyNameContains(search, caseSensitive: false);
+      filtered = filtered.and().group((q) => q
+        .companyNameContains(search, caseSensitive: false)
+        .or()
+        .contactPersonContains(search, caseSensitive: false)
+        .or()
+        .mobileContains(search)
+        .or()
+        .emailContains(search, caseSensitive: false)
+        .or()
+        .activeProjectsElementContains(search, caseSensitive: false)
+        .or()
+        .remarksContains(search, caseSensitive: false)
+      );
     }
     if (tier != null) filtered = filtered.and().tierEqualTo(tier);
 
@@ -949,8 +969,14 @@ class OwnerLocalRepository {
       }
       var list = inMemory.values.toList();
       if (search != null && search.isNotEmpty) {
-        final query = search.toLowerCase();
-        list = list.where((o) => o.name.toLowerCase().contains(query)).toList();
+        list = list.where((o) => ownerSearchMatches(
+          name: o.name,
+          mobile: o.mobile,
+          email: o.email,
+          address: o.address,
+          remarks: o.remarks,
+          query: search,
+        )).toList();
       }
       return list;
     }
@@ -959,7 +985,17 @@ class OwnerLocalRepository {
     QueryBuilder<OwnerLocal, OwnerLocal, QAfterFilterCondition> filtered = query;
 
     if (search != null && search.isNotEmpty) {
-      filtered = filtered.and().nameContains(search, caseSensitive: false);
+      filtered = filtered.and().group((q) => q
+        .nameContains(search, caseSensitive: false)
+        .or()
+        .mobileContains(search)
+        .or()
+        .emailContains(search, caseSensitive: false)
+        .or()
+        .addressContains(search, caseSensitive: false)
+        .or()
+        .remarksContains(search, caseSensitive: false)
+      );
     }
 
     return await filtered.sortByCreatedAtDesc().findAll();
@@ -1428,7 +1464,13 @@ class ClientLocalRepository {
       var list = inMemory.values.toList();
       if (search != null && search.isNotEmpty) {
         final query = search.toLowerCase();
-        list = list.where((c) => c.name.toLowerCase().contains(query) || c.mobile.contains(query) || c.email.toLowerCase().contains(query)).toList();
+        list = list.where((c) => clientSearchMatches(
+          name: c.name,
+          email: c.email,
+          mobile: c.mobile,
+          remarks: c.remarks,
+          query: query,
+        )).toList();
       }
       if (stage != null && stage != 'All') {
         list = list.where((c) => c.stage == stage).toList();
@@ -1449,6 +1491,8 @@ class ClientLocalRepository {
         .mobileContains(search)
         .or()
         .emailContains(search, caseSensitive: false)
+        .or()
+        .remarksContains(search, caseSensitive: false)
       );
     }
     if (stage != null && stage != 'All') {

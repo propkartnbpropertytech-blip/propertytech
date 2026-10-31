@@ -166,7 +166,7 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
     }
     if (mounted) setState(() => _serverMatchIds = null);
     try {
-      final res = await DioClient.dio.get('/users', queryParameters: {'search': raw.trim()});
+      final res = await DioClient.dio.get('/users', queryParameters: {'search': raw.trim(), 'limit': '200'});
       if (!mounted || request != _treeSearchRequest) return;
       final data = res.data is Map ? res.data['data'] : null;
       final rawList = data is Map && data['users'] is List ? data['users'] as List : (data is List ? data : const []);
