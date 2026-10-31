@@ -13,10 +13,13 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
+import '../../../core/search/search_request_gate.dart';
 import '../../../core/utils/budget_formatter.dart';
 
 class OwnersScreen extends StatefulWidget {
-  const OwnersScreen({super.key});
+  final String? initialSearch;
+
+  const OwnersScreen({super.key, this.initialSearch});
 
   @override
   State<OwnersScreen> createState() => _OwnersScreenState();
@@ -24,9 +27,11 @@ class OwnersScreen extends StatefulWidget {
 
 class _OwnersScreenState extends State<OwnersScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchRequestGate _searchGate = SearchRequestGate();
 
   @override
   void dispose() {
+    _searchGate.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -34,6 +39,8 @@ class _OwnersScreenState extends State<OwnersScreen> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialSearch?.trim();
+    if (initial != null && initial.isNotEmpty) _searchController.text = initial;
     _triggerFetch();
   }
 
@@ -228,7 +235,9 @@ class _OwnersScreenState extends State<OwnersScreen> {
                 borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
               ),
             ),
-            onChanged: (val) => _triggerFetch(),
+            onChanged: (val) => _searchGate.schedule((_) {
+              if (mounted) _triggerFetch();
+            }),
           );
           final actions = Row(
             children: [

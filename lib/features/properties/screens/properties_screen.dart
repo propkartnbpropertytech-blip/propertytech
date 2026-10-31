@@ -28,6 +28,7 @@ import '../../auth/models/user_model.dart';
 import '../bloc/properties_bloc.dart';
 import '../models/property_model.dart';
 import '../repository/properties_repository.dart';
+import '../../../core/network/sync_manager.dart';
 import 'add_edit_property_screen.dart';
 import '../widgets/property_kpi_summary_bar.dart';
 import '../../../core/utils/currency.dart';
@@ -44,6 +45,8 @@ import '../../../core/telemetry/audit_dwell_tracker.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 import '../models/property_view_model.dart';
+import '../models/property_list_fallback.dart';
+import '../models/property_server_query.dart';
 
 class PropertiesScreen extends StatefulWidget {
   final String? openPropertyId;
@@ -77,7 +80,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   PropertyMetadataModel? _cachedMetadata;
   List<PropertyModel> _cachedProperties = [];
   List<PropertyModel>? _serverSearchProperties;
+  bool _propertySearchStale = false;
+  String? _pendingServerKey;
   int _propertySearchRequest = 0;
+  StreamSubscription<Set<String>>? _propertySearchRefreshSub;
   Set<String> _cachedBookmarkedIds = {};
   String? _selectedPriceSortOrRange;
   double? _minPrice;
@@ -119,7 +125,18 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   List<PropertyModel> _getEffectiveFilteredProperties(String? currentUserId, [List<PropertyModel>? rawList, PropertyMetadataModel? metadata]) {
     final list = rawList ?? _cachedProperties;
-    if (list.isEmpty) {
+    if (_propertyListNeedsServer()) {
+      final requestKey = _buildPropertyFilterCacheKey(currentUserId, const []);
+      if (_pendingServerKey != requestKey) {
+        _pendingServerKey = requestKey;
+        _onSearchChangedDebounced();
+      }
+    } else if (_serverSearchProperties != null || _propertySearchStale) {
+      _serverSearchProperties = null;
+      _propertySearchStale = false;
+      _pendingServerKey = null;
+    }
+    if (list.isEmpty && _serverSearchProperties == null) {
       _allViewModels = [];
       _filteredViewModels = [];
       _filteredProperties = [];
@@ -145,6 +162,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChangedDebounced);
+    _propertySearchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted || _searchController.text.trim().isEmpty) return;
+      if (tables.contains('properties')) _fetchServerPropertySearch();
+    });
     _loadArchivedPropertyIds();
     _loadProperties();
   }
@@ -159,28 +180,71 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Future<void> _fetchServerPropertySearch() async {
     final query = _searchController.text.trim();
     final request = ++_propertySearchRequest;
-    if (query.isEmpty) {
+    if (!_propertyListNeedsServer()) {
       if (!mounted) return;
-      setState(() => _serverSearchProperties = null);
+      setState(() {
+        _serverSearchProperties = null;
+        _propertySearchStale = false;
+      });
       _lastComputedPropertyFilterKey = null;
       _recomputeFilteredProperties();
       return;
     }
     try {
-      final models = await PropertiesRepository().searchPropertiesServer(query, limit: 50);
+      final models = await PropertiesRepository().searchPropertiesServer(
+        query,
+        limit: 50,
+        filters: _propertyServerFilters(),
+      );
       if (!mounted || request != _propertySearchRequest) return;
-
-
-
-
-
-      setState(() => _serverSearchProperties = models);
+      setState(() {
+        _serverSearchProperties = models;
+        _propertySearchStale = false;
+      });
       _lastComputedPropertyFilterKey = null;
       _recomputeFilteredProperties();
     } catch (_) {
       if (!mounted || request != _propertySearchRequest) return;
-      setState(() => _serverSearchProperties = []);
+      final fallback = PropertyListFallback.serverFailed(_cachedProperties);
+      setState(() {
+        _serverSearchProperties = null;
+        _propertySearchStale = fallback.stale;
+      });
+      _lastComputedPropertyFilterKey = null;
+      _recomputeFilteredProperties();
     }
+  }
+
+  Map<String, String> _propertyServerFilters() {
+    String? createdBy;
+    if (_myAddedOnly) {
+      final auth = context.read<AuthBloc>().state;
+      if (auth is Authenticated) createdBy = auth.user.id;
+    }
+    return PropertyServerQuery.parameters(
+      categoryId: _selectedCategory,
+      configurationIds: _selectedConfigurations,
+      areaIds: _selectedAreas,
+      listingTab: _activeListingTab,
+      minPrice: _minPrice,
+      maxPrice: _maxPrice,
+      statusName: _selectedStatusFilter,
+      furnishingName: _selectedFurnishingFilter,
+      bhkLabel: _activeBhkFilter,
+      imageFilter: _imageFilter,
+      noImagesOnly: _noImagesOnly,
+      datePreset: _selectedPropertyDateFilter,
+      customStart: _propertyCustomStartDate,
+      customEnd: _propertyCustomEndDate,
+      sort: _selectedPriceSortOrRange,
+      createdBy: createdBy,
+    );
+  }
+
+  bool _propertyListNeedsServer() {
+    if (_searchController.text.trim().isNotEmpty) return true;
+    final filters = Map<String, String>.of(_propertyServerFilters())..remove('listingName');
+    return filters.isNotEmpty;
   }
 
   void _recomputeFilteredProperties({bool notify = true, String? currentUserId}) {
@@ -270,6 +334,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   @override
   void dispose() {
     _searchDebounceTimer?.cancel();
+    _propertySearchRefreshSub?.cancel();
     _searchController.removeListener(_onSearchChangedDebounced);
     _searchController.dispose();
     _scrollController.dispose();
@@ -3917,6 +3982,14 @@ _recomputeFilteredProperties();
                 );
               },
             ),
+            if (_propertySearchStale)
+              Padding(
+                padding: const EdgeInsets.only(top: CRMSpacing.s),
+                child: Text(
+                  'Showing saved properties. The latest server search did not complete.',
+                  style: CRMTypography.caption.copyWith(color: CRMColors.warning),
+                ),
+              ),
             const SizedBox(height: CRMSpacing.m),
 
             LayoutBuilder(

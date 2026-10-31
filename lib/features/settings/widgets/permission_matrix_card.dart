@@ -1,3 +1,5 @@
+import 'page_control_settings_card.dart';
+import '../../../core/navigation/app_nav_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
@@ -26,6 +28,7 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
   String _searchQuery = '';
   int _activeViewTab = 0; // 0: Matrix Grid, 1: Role Drill-down, 2: App Shell Simulator
   String _selectedRoleForDrilldown = 'Admin';
+  bool _isDashboardExpanded = false;
   String _simulatorRole = 'Sales';
 
   late TabController _tabController;
@@ -45,6 +48,7 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
       }
     });
     PermissionMatrixService.instance.addListener(_onServiceChanged);
+    PermissionMatrixService.instance.syncFromBackend();
   }
 
   void _onServiceChanged() {
@@ -122,7 +126,7 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
 
         // ── 4. Main Body Content Based on Active View ─────────
         if (_activeViewTab == 0)
-          _buildMatrixGridView(context, isDark, primary, isMobile)
+          const PageControlSettingsCard()
         else if (_activeViewTab == 1)
           _buildRoleDrilldownView(context, isDark, primary, isMobile)
         else
@@ -484,8 +488,8 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
                   children: [
                     _buildViewTabButton(
                       context,
-                      label: 'Matrix Grid',
-                      icon: Icons.table_chart_outlined,
+                      label: 'Under Dev Page',
+                      icon: Icons.developer_mode_outlined,
                       index: 0,
                     ),
                     _buildViewTabButton(
@@ -533,64 +537,66 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
             ],
           ),
 
-          const SizedBox(height: CRMSpacing.m),
+          if (_activeViewTab != 0) ...[
+            const SizedBox(height: CRMSpacing.m),
 
-          // Search Field & Category Chips
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() => _searchQuery = val.trim()),
-                  style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
-                  decoration: InputDecoration(
-                    hintText: 'Search permissions by name, key, or category...',
-                    hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                    prefixIcon: Icon(Icons.search_rounded, size: 18, color: CRMColors.textSecondaryOf(context)),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                    filled: true,
-                    fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: primary),
+            // Search Field & Category Chips
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                    style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
+                    decoration: InputDecoration(
+                      hintText: 'Search permissions by name, key, or category...',
+                      hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      prefixIcon: Icon(Icons.search_rounded, size: 18, color: CRMColors.textSecondaryOf(context)),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 16),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      isDense: true,
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        borderSide: BorderSide(color: CRMColors.borderOf(context)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                        borderSide: BorderSide(color: primary),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: CRMSpacing.s),
-
-          // Categories Horizontal Filter Scroll
-          SizedBox(
-            height: 34,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _buildCategoryChip('All'),
-                ...PermissionCategory.all.map(_buildCategoryChip),
               ],
             ),
-          ),
+
+            const SizedBox(height: CRMSpacing.s),
+
+            // Categories Horizontal Filter Scroll
+            SizedBox(
+              height: 34,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildCategoryChip('All'),
+                  ...PermissionCategory.all.map(_buildCategoryChip),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -666,317 +672,121 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
     );
   }
 
-  // ── VIEW 1: Matrix Grid View ────────────────────────────────
-  Widget _buildMatrixGridView(
-    BuildContext context,
-    bool isDark,
-    Color primary,
-    bool isMobile,
-  ) {
-    final perms = _filteredPermissions;
-    final service = PermissionMatrixService.instance;
-
-    if (perms.isEmpty) {
-      return _buildEmptyState(context);
-    }
-
-    // Group permissions by category
-    final Map<String, List<PermissionItem>> grouped = {};
-    for (final p in perms) {
-      grouped.putIfAbsent(p.category, () => []).add(p);
-    }
-
-    return CRMCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Table Description & Quick Note
-          Padding(
-            padding: const EdgeInsets.all(CRMSpacing.m),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 16, color: primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Displaying ${perms.length} permission metrics. Toggle any switch to immediately alter role capabilities and page visibility.',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-
-          // Responsive Scrollable Table
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 850),
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(
-                  isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                ),
-                headingRowHeight: 46,
-                dataRowMinHeight: 54,
-                dataRowMaxHeight: 74,
-                horizontalMargin: 16,
-                columnSpacing: 24,
-                columns: const [
-                  DataColumn(
-                    label: Text(
-                      'PERMISSION METRIC & DETAILS',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'SUPER ADMIN',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'ADMIN',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'TELECALLER',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'SALES',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
-                    ),
-                  ),
-                ],
-                rows: _buildMatrixDataRows(grouped, service, context, primary),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<DataRow> _buildMatrixDataRows(
-    Map<String, List<PermissionItem>> grouped,
-    PermissionMatrixService service,
-    BuildContext context,
-    Color primary,
-  ) {
-    final List<DataRow> rows = [];
-
-    grouped.forEach((category, items) {
-      // Category Group Header Row
-      rows.add(
-        DataRow(
-          color: WidgetStateProperty.all(
-            primary.withValues(alpha: 0.05),
-          ),
-          cells: [
-            DataCell(
-              Row(
-                children: [
-                  Icon(
-                    _getCategoryIcon(category),
-                    size: 16,
-                    color: primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    category.toUpperCase(),
-                    style: CRMTypography.captionBold.copyWith(
-                      color: primary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '(${items.length})',
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Super Admin column for category
-            const DataCell(
-              Text(
-                '100% Locked',
-                style: TextStyle(fontSize: 11, color: Color(0xFFD97706), fontWeight: FontWeight.bold),
-              ),
-            ),
-            // Admin Bulk Toggle Cell
-            DataCell(
-              _buildCategoryQuickToggle(category, 'Admin', service),
-            ),
-            // Telecaller Bulk Toggle Cell
-            DataCell(
-              _buildCategoryQuickToggle(category, 'Telecaller', service),
-            ),
-            // Sales Bulk Toggle Cell
-            DataCell(
-              _buildCategoryQuickToggle(category, 'Sales', service),
-            ),
-          ],
+  // ── VIEW 2: Role Drill-down View ────────────────────────────
+  static const List<_AdminDrilldownPageConfig> _adminPages = [
+    _AdminDrilldownPageConfig(
+      key: 'page.dashboard',
+      title: 'Dashboard',
+      description: 'Access main overview KPIs, recent leads, and inventory summary (/dashboard).',
+      route: '/dashboard',
+      icon: Icons.grid_view_rounded,
+      subItems: [
+        _AdminDrilldownPageConfig(
+          key: 'page.dashboard.followups',
+          title: 'Follow-ups',
+          description: 'Scheduled client reminders and follow-up activities desk on Admin Dashboard.',
+          route: '/dashboard#followups',
+          icon: Icons.phone_callback_rounded,
         ),
-      );
-
-      // Permission Rows inside this category
-      for (final item in items) {
-        final adminAllowed = service.hasPermission('Admin', item.key);
-        final telecallerAllowed = service.hasPermission('Telecaller', item.key);
-        final salesAllowed = service.hasPermission('Sales', item.key);
-
-        rows.add(
-          DataRow(
-            cells: [
-              // Permission Name & Info
-              DataCell(
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 380),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              item.title,
-                              style: CRMTypography.bodyMedium.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: CRMColors.textOf(context),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (item.relatedRoute != null) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: CRMColors.primary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                item.relatedRoute!,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontFamily: 'monospace',
-                                  color: CRMColors.primary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        item.description,
-                        style: CRMTypography.caption.copyWith(
-                          color: CRMColors.textSecondaryOf(context),
-                          fontSize: 11,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Super Admin (Locked Checkmark)
-              const DataCell(
-                Tooltip(
-                  message: 'Super Admin master bypass: cannot be revoked.',
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle_rounded, color: Color(0xFFF59E0B), size: 20),
-                      SizedBox(width: 4),
-                      Icon(Icons.lock_rounded, size: 12, color: Color(0xFFF59E0B)),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Admin Toggle
-              DataCell(
-                Switch(
-                  value: adminAllowed,
-                  activeThumbColor: const Color(0xFF3B82F6),
-                  onChanged: (val) async {
-                    await service.setPermission('Admin', item.key, val);
-                  },
-                ),
-              ),
-
-              // Telecaller Toggle
-              DataCell(
-                Switch(
-                  value: telecallerAllowed,
-                  activeThumbColor: const Color(0xFF10B981),
-                  onChanged: (val) async {
-                    await service.setPermission('Telecaller', item.key, val);
-                  },
-                ),
-              ),
-
-              // Sales Toggle
-              DataCell(
-                Switch(
-                  value: salesAllowed,
-                  activeThumbColor: const Color(0xFF8B5CF6),
-                  onChanged: (val) async {
-                    await service.setPermission('Sales', item.key, val);
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-    });
-
-    return rows;
-  }
-
-  Widget _buildCategoryQuickToggle(
-    String category,
-    String role,
-    PermissionMatrixService service,
-  ) {
-    final perms = PermissionMatrixService.allPermissions.where((p) => p.category == category);
-    final allActive = perms.every((p) => service.hasPermission(role, p.key));
-    final anyActive = perms.any((p) => service.hasPermission(role, p.key));
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: Icon(
-            allActive ? Icons.check_box_rounded : (anyActive ? Icons.indeterminate_check_box_rounded : Icons.check_box_outline_blank_rounded),
-            size: 18,
-            color: allActive ? CRMColors.success : CRMColors.textSecondaryOf(context),
-          ),
-          tooltip: allActive ? 'Disable category for $role' : 'Enable category for $role',
-          onPressed: () async {
-            await service.setCategoryPermissions(role, category, !allActive);
-          },
+        _AdminDrilldownPageConfig(
+          key: 'page.dashboard.site_visits',
+          title: 'Site Visit Scheduled',
+          description: 'Scheduled property inspections and client site visits on Admin Dashboard.',
+          route: '/dashboard#site_visits',
+          icon: Icons.location_city_rounded,
         ),
       ],
-    );
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.properties',
+      title: 'Property Inventory',
+      description: 'Browse, filter, add, edit, and manage all property listings and unit inventory.',
+      route: '/properties',
+      icon: Icons.home_work_outlined,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.leads',
+      title: 'Leads & Pipeline',
+      description: 'Manage real estate leads, customer requirements, stage transitions, and pipeline status.',
+      route: '/requirements',
+      icon: Icons.assignment_outlined,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.employees',
+      title: 'Users',
+      description: 'Team member directory, staff invitations, assignment settings, and user role management.',
+      route: '/users',
+      icon: Icons.people_outline_rounded,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.reports',
+      title: 'Reports',
+      description: 'View analytical reports, conversion ratios, sales performance metrics, and activity logs.',
+      route: '/reports',
+      icon: Icons.bar_chart_rounded,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.campaign',
+      title: 'Campaign',
+      description: 'Run and track lead generation campaigns, marketing channels, and inbound ad sources.',
+      route: '/campaign',
+      icon: Icons.campaign_outlined,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.lead_allocation',
+      title: 'Lead Allocation',
+      description: 'Automated routing rules, round-robin assignments, and direct lead distribution engine.',
+      route: '/lead-allocation',
+      icon: Icons.alt_route_rounded,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.library',
+      title: 'Library',
+      description: 'Access shared templates, marketing collateral, brochures, agreements, and document repository.',
+      route: '/library',
+      icon: Icons.folder_shared_outlined,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.settings',
+      title: 'Setting',
+      description: 'Configure branch details, notification channels, branding, and core workspace preferences.',
+      route: '/settings',
+      icon: Icons.settings_outlined,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.support',
+      title: 'Support',
+      description: 'Contact technical support, submit helpdesk inquiries, and review ticket resolutions.',
+      route: '/support',
+      icon: Icons.support_agent_rounded,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.recycle_bin',
+      title: 'Recycle Bin',
+      description: 'View and restore soft-deleted properties, archived requirements, and removed assets.',
+      route: '/bin',
+      icon: Icons.delete_outline_rounded,
+    ),
+    _AdminDrilldownPageConfig(
+      key: 'page.audit_logs',
+      title: 'Security & Administration',
+      description: 'Security audit logs, chronological activity trail, and administrative system safeguards.',
+      route: '/settings/audit-logs',
+      icon: Icons.admin_panel_settings_outlined,
+    ),
+  ];
+
+  int _getAdminActiveCount(PermissionMatrixService service) {
+    int count = 0;
+    for (final p in _adminPages) {
+      if (service.hasPermission('Admin', p.key)) count++;
+      for (final s in p.subItems) {
+        if (service.hasPermission('Admin', s.key)) count++;
+      }
+    }
+    return count;
   }
 
-  // ── VIEW 2: Role Drill-down View ────────────────────────────
   Widget _buildRoleDrilldownView(
     BuildContext context,
     bool isDark,
@@ -985,6 +795,9 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
   ) {
     final perms = _filteredPermissions;
     final service = PermissionMatrixService.instance;
+    final isAdmin = _selectedRoleForDrilldown == 'Admin';
+
+    if (!isAdmin && perms.isEmpty) return _buildEmptyState(context);
 
     final Map<String, List<PermissionItem>> grouped = {};
     for (final p in perms) {
@@ -992,7 +805,9 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
     }
 
     final roleColor = _getRoleColor(_selectedRoleForDrilldown);
-    final activeCount = service.getActiveCount(_selectedRoleForDrilldown);
+    final adminActiveCount = _getAdminActiveCount(service);
+    final activeCount = isAdmin ? adminActiveCount : service.getActiveCount(_selectedRoleForDrilldown);
+    const totalAdminPerms = 14;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1008,7 +823,7 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
           child: Row(
             children: _targetRoles.map((role) {
               final selected = _selectedRoleForDrilldown == role;
-              final count = service.getActiveCount(role);
+              final count = role == 'Admin' ? adminActiveCount : service.getActiveCount(role);
               final col = _getRoleColor(role);
 
               return Expanded(
@@ -1094,7 +909,9 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
                   borderRadius: BorderRadius.circular(CRMBorderRadius.badge),
                 ),
                 child: Text(
-                  '$activeCount / ${PermissionMatrixService.allPermissions.length} Active',
+                  isAdmin
+                      ? '$adminActiveCount / $totalAdminPerms Active'
+                      : '$activeCount / ${PermissionMatrixService.allPermissions.length} Active',
                   style: CRMTypography.captionBold.copyWith(color: roleColor),
                 ),
               ),
@@ -1104,99 +921,476 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
 
         const SizedBox(height: CRMSpacing.m),
 
-        // Category Cards for this role
-        ...grouped.entries.map((entry) {
-          final category = entry.key;
-          final items = entry.value;
-          final allActive = items.every((p) => service.hasPermission(_selectedRoleForDrilldown, p.key));
+        // Admin dedicated view vs standard categories view
+        if (isAdmin)
+          _buildAdminDrilldownView(context, isDark, primary, roleColor, service, isMobile)
+        else
+          // Category Cards for Telecaller and Sales
+          ...grouped.entries.map((entry) {
+            final category = entry.key;
+            final items = entry.value;
+            final allActive = items.every((p) => service.hasPermission(_selectedRoleForDrilldown, p.key));
 
-          return Padding(
-            padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-            child: CRMCard(
-              title: category,
-              headerAction: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton.icon(
-                    onPressed: () async {
-                      await service.setCategoryPermissions(_selectedRoleForDrilldown, category, !allActive);
-                    },
-                    icon: Icon(
-                      allActive ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                      size: 16,
-                      color: roleColor,
+            return Padding(
+              padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+              child: CRMCard(
+                title: category,
+                headerAction: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          service.setCategoryPermissions(_selectedRoleForDrilldown, category, !allActive);
+                        });
+                      },
+                      icon: Icon(
+                        allActive ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                        size: 16,
+                        color: roleColor,
+                      ),
+                      label: Text(
+                        allActive ? 'Disable All' : 'Enable All',
+                        style: TextStyle(color: roleColor, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    label: Text(
-                      allActive ? 'Disable All' : 'Enable All',
-                      style: TextStyle(color: roleColor, fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: items.map((p) {
-                  final allowed = service.hasPermission(_selectedRoleForDrilldown, p.key);
-                  return Column(
-                    children: [
-                      SwitchListTile(
-                        value: allowed,
-                        activeThumbColor: roleColor,
-                        onChanged: (val) async {
-                          await service.setPermission(_selectedRoleForDrilldown, p.key, val);
-                        },
-                        title: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                p.title,
-                                style: CRMTypography.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: CRMColors.textOf(context),
-                                ),
-                              ),
-                            ),
-                            if (p.relatedRoute != null) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: primary.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
+                  ],
+                ),
+                child: Column(
+                  children: items.map((p) {
+                    final allowed = service.hasPermission(_selectedRoleForDrilldown, p.key);
+                    return Column(
+                      children: [
+                        SwitchListTile(
+                          value: allowed,
+                          activeThumbColor: roleColor,
+                          onChanged: (val) {
+                            setState(() {
+                              service.setPermission(_selectedRoleForDrilldown, p.key, val);
+                            });
+                          },
+                          title: Row(
+                            children: [
+                              Expanded(
                                 child: Text(
-                                  p.relatedRoute!,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontFamily: 'monospace',
-                                    color: primary,
+                                  p.title,
+                                  style: CRMTypography.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: CRMColors.textOf(context),
                                   ),
                                 ),
                               ),
+                              if (p.relatedRoute != null) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: primary.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    p.relatedRoute!,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontFamily: 'monospace',
+                                      color: primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 3),
-                          child: Text(
-                            p.description,
-                            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                           ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              p.description,
+                              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+                            ),
+                          ),
+                          contentPadding: EdgeInsets.zero,
                         ),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      if (p != items.last) const Divider(height: 1),
-                    ],
-                  );
-                }).toList(),
+                        if (p != items.last) const Divider(height: 1),
+                      ],
+                    );
+                  }).toList(),
+                ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
       ],
     );
   }
 
-  // ── VIEW 3: App Shell Navigation Simulator ───────────────────
+  Widget _buildAdminDrilldownView(
+    BuildContext context,
+    bool isDark,
+    Color primary,
+    Color roleColor,
+    PermissionMatrixService service,
+    bool isMobile,
+  ) {
+    final search = _searchQuery.trim().toLowerCase();
+    final filtered = _adminPages.where((p) {
+      if (search.isEmpty) return true;
+      final matchParent = p.title.toLowerCase().contains(search) ||
+          p.description.toLowerCase().contains(search) ||
+          p.route.toLowerCase().contains(search) ||
+          p.key.toLowerCase().contains(search);
+      final matchSub = p.subItems.any((s) =>
+          s.title.toLowerCase().contains(search) ||
+          s.description.toLowerCase().contains(search) ||
+          s.route.toLowerCase().contains(search) ||
+          s.key.toLowerCase().contains(search));
+      return matchParent || matchSub;
+    }).toList();
+
+    if (filtered.isEmpty) {
+      return _buildEmptyState(context);
+    }
+
+    final allAdminKeys = [
+      for (final p in _adminPages) ...[p.key, ...p.subItems.map((s) => s.key)]
+    ];
+    final allActive = allAdminKeys.every((k) => service.hasPermission('Admin', k));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+      child: CRMCard(
+        title: 'Admin Role Pages & Permissions',
+        headerAction: TextButton.icon(
+          onPressed: () {
+            setState(() {
+              for (final k in allAdminKeys) {
+                service.setPermission('Admin', k, !allActive);
+              }
+            });
+          },
+          icon: Icon(
+            allActive ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+            size: 16,
+            color: roleColor,
+          ),
+          label: Text(
+            allActive ? 'Disable All' : 'Enable All',
+            style: TextStyle(color: roleColor, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+        ),
+        child: Column(
+          children: filtered.map((p) {
+            final isLast = p == filtered.last;
+            if (p.key == 'page.dashboard') {
+              return Column(
+                children: [
+                  _buildAdminDashboardRow(context, p, isDark, primary, roleColor, service, search),
+                  if (!isLast) const Divider(height: 1),
+                ],
+              );
+            }
+
+            final allowed = service.hasPermission('Admin', p.key);
+            return Column(
+              children: [
+                SwitchListTile(
+                  value: allowed,
+                  activeThumbColor: roleColor,
+                  onChanged: (val) {
+                    setState(() {
+                      service.setPermission('Admin', p.key, val);
+                    });
+                  },
+                  secondary: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: roleColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(p.icon, color: roleColor, size: 19),
+                  ),
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          p.title,
+                          style: CRMTypography.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: CRMColors.textOf(context),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          p.route,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                            color: primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(
+                      p.description,
+                      style: CRMTypography.caption.copyWith(
+                        color: CRMColors.textSecondaryOf(context),
+                      ),
+                    ),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                ),
+                if (!isLast) const Divider(height: 1),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminDashboardRow(
+    BuildContext context,
+    _AdminDrilldownPageConfig config,
+    bool isDark,
+    Color primary,
+    Color roleColor,
+    PermissionMatrixService service,
+    String search,
+  ) {
+    final isAllowed = service.hasPermission('Admin', config.key);
+    final autoExpand = search.isNotEmpty &&
+        config.subItems.any((s) =>
+            s.title.toLowerCase().contains(search) ||
+            s.description.toLowerCase().contains(search) ||
+            s.route.toLowerCase().contains(search) ||
+            s.key.toLowerCase().contains(search));
+    final isExpanded = _isDashboardExpanded || autoExpand;
+
+    final activeSubCount = config.subItems
+        .where((s) => service.hasPermission('Admin', s.key))
+        .length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () {
+            setState(() {
+              _isDashboardExpanded = !_isDashboardExpanded;
+            });
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Row(
+              children: [
+                // Expand chevron
+                AnimatedRotation(
+                  turns: isExpanded ? 0.25 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: roleColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: roleColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(config.icon, color: roleColor, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            config.title,
+                            style: CRMTypography.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: CRMColors.textOf(context),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              config.route,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontFamily: 'monospace',
+                                color: primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: roleColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$activeSubCount/2 sub-options',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: roleColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        config.description,
+                        style: CRMTypography.caption.copyWith(
+                          color: CRMColors.textSecondaryOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: isAllowed,
+                  activeThumbColor: roleColor,
+                  onChanged: (val) {
+                    setState(() {
+                      service.setPermission('Admin', config.key, val);
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Expandable sub-options panel
+        AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          child: isExpanded
+              ? Container(
+                  margin: const EdgeInsets.only(left: 40, right: 8, top: 4, bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1B2434) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF2E3D52) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.subdirectory_arrow_right_rounded, size: 16, color: roleColor),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Dashboard Sub-Permissions & Component Controls',
+                            style: CRMTypography.captionBold.copyWith(
+                              color: CRMColors.textSecondaryOf(context),
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1),
+                      ...config.subItems.map((sub) {
+                        final isSubAllowed = service.hasPermission('Admin', sub.key);
+                        final isLastSub = sub == config.subItems.last;
+                        return Column(
+                          children: [
+                            SwitchListTile(
+                              value: isSubAllowed,
+                              activeThumbColor: roleColor,
+                              onChanged: (val) {
+                                setState(() {
+                                  service.setPermission('Admin', sub.key, val);
+                                });
+                              },
+                              secondary: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: roleColor.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Icon(sub.icon, color: roleColor, size: 17),
+                              ),
+                              title: Row(
+                                children: [
+                                  Text(
+                                    sub.title,
+                                    style: CRMTypography.bodyMedium.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: CRMColors.textOf(context),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: primary.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      sub.route,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontFamily: 'monospace',
+                                        color: primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  sub.description,
+                                  style: CRMTypography.caption.copyWith(
+                                    color: CRMColors.textSecondaryOf(context),
+                                  ),
+                                ),
+                              ),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            if (!isLastSub) const Divider(height: 1),
+                          ],
+                        );
+                      }),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  // ── VIEW 3: App Shell Navigation Simulator ──────────────────────────
   Widget _buildAppShellSimulatorView(
     BuildContext context,
     bool isDark,
@@ -1206,18 +1400,28 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
     final service = PermissionMatrixService.instance;
     final roleColor = _getRoleColor(_simulatorRole);
 
-    // List of standard App Shell navigation items
-    final navItems = [
-      (title: 'Dashboard', route: '/dashboard', icon: Icons.grid_view_rounded, perm: 'page.dashboard'),
-      (title: 'Properties', route: '/properties', icon: Icons.home_work_outlined, perm: 'page.properties'),
-      (title: 'Leads & Requirements', route: '/requirements', icon: Icons.assignment_outlined, perm: 'page.leads'),
-      (title: 'Employees & Users', route: '/users', icon: Icons.people_outline_rounded, perm: 'page.employees'),
-      (title: 'Reports & Insights', route: '/reports', icon: Icons.bar_chart_rounded, perm: 'page.reports'),
-      (title: 'Campaign & Webhooks', route: '/campaign', icon: Icons.campaign_outlined, perm: 'page.campaign'),
-      (title: 'Document Library', route: '/library', icon: Icons.folder_outlined, perm: 'page.library'),
-      (title: 'Settings & Config', route: '/settings', icon: Icons.settings_outlined, perm: 'page.settings'),
-      (title: 'Recycle Bin', route: '/bin', icon: Icons.delete_outline_rounded, perm: 'page.bin'),
-    ];
+    // Dynamic Navigation Tree directly sourced from centralized AppNavigationRegistry
+    var navTree = AppNavigationRegistry.getNavItemsForRole(_simulatorRole);
+
+    // Dynamic search filtering across routes, keys, and nested subpages
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      navTree = navTree.where((item) {
+        final matchesItem = item.title.toLowerCase().contains(q) ||
+            item.route.toLowerCase().contains(q) ||
+            item.key.toLowerCase().contains(q);
+        final matchesChild = item.children.any((c) =>
+            c.title.toLowerCase().contains(q) ||
+            c.route.toLowerCase().contains(q) ||
+            c.key.toLowerCase().contains(q));
+        return matchesItem || matchesChild;
+      }).toList();
+    }
+
+    final totalRoutesAndSubpages = navTree.fold<int>(
+      0,
+      (sum, item) => sum + 1 + item.children.length,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1267,20 +1471,20 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
 
         // Simulated Sidebar Preview & Route Access Matrix
         if (isMobile) ...[
-          _buildSimulatedSidebar(context, isDark, navItems, service, roleColor),
+          _buildSimulatedSidebar(context, isDark, navTree, service, roleColor),
           const SizedBox(height: CRMSpacing.m),
-          _buildRoutePermissionsTable(context, isDark, navItems, service, roleColor),
+          _buildRoutePermissionsTable(context, isDark, navTree, service, roleColor, totalRoutesAndSubpages),
         ] else ...[
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                width: 250,
-                child: _buildSimulatedSidebar(context, isDark, navItems, service, roleColor),
+                width: 260,
+                child: _buildSimulatedSidebar(context, isDark, navTree, service, roleColor),
               ),
               const SizedBox(width: CRMSpacing.m),
               Expanded(
-                child: _buildRoutePermissionsTable(context, isDark, navItems, service, roleColor),
+                child: _buildRoutePermissionsTable(context, isDark, navTree, service, roleColor, totalRoutesAndSubpages),
               ),
             ],
           ),
@@ -1292,10 +1496,12 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
   Widget _buildSimulatedSidebar(
     BuildContext context,
     bool isDark,
-    List<({IconData icon, String perm, String route, String title})> navItems,
+    List<AppNavItem> navTree,
     PermissionMatrixService service,
     Color roleColor,
   ) {
+    final isSuper = _simulatorRole == 'Super Admin';
+
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0F172A) : Colors.white,
@@ -1322,45 +1528,127 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
             ],
           ),
           const Divider(height: 16),
-          ...navItems.map((item) {
-            final visible = service.canViewRoute(_simulatorRole, item.route);
+          ...navTree.map((item) {
+            final visible = isSuper
+                ? true
+                : (service.hasPermission(_simulatorRole, item.key) &&
+                   service.canViewRoute(_simulatorRole, item.route));
 
-            return AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: visible ? 1.0 : 0.35,
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: visible ? roleColor.withValues(alpha: 0.08) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      item.icon,
-                      size: 16,
-                      color: visible ? roleColor : CRMColors.textSecondaryOf(context),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: visible ? 1.0 : 0.35,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: visible ? roleColor.withValues(alpha: 0.08) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        style: CRMTypography.caption.copyWith(
-                          color: visible ? CRMColors.textOf(context) : CRMColors.textSecondaryOf(context),
-                          fontWeight: visible ? FontWeight.w600 : FontWeight.normal,
-                          decoration: visible ? null : TextDecoration.lineThrough,
+                    child: Row(
+                      children: [
+                        Icon(
+                          item.icon,
+                          size: 16,
+                          color: visible ? roleColor : CRMColors.textSecondaryOf(context),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            item.title,
+                            style: CRMTypography.caption.copyWith(
+                              color: visible ? CRMColors.textOf(context) : CRMColors.textSecondaryOf(context),
+                              fontWeight: visible ? FontWeight.w600 : FontWeight.normal,
+                              decoration: visible ? null : TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ),
+                        if (item.hasChildren)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 14,
+                              color: visible ? roleColor : CRMColors.textSecondaryOf(context),
+                            ),
+                          ),
+                        Icon(
+                          visible ? Icons.check_circle_rounded : Icons.visibility_off_rounded,
+                          size: 14,
+                          color: visible ? CRMColors.success : CRMColors.textSecondaryOf(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Indented Subpages (if any)
+                if (item.hasChildren)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 18.0, top: 2.0, bottom: 6.0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            width: 1.5,
+                          ),
                         ),
                       ),
+                      padding: const EdgeInsets.only(left: 8.0),
+                      child: Column(
+                        children: item.children.map((child) {
+                          final childVisible = isSuper
+                              ? true
+                              : (visible &&
+                                 service.hasPermission(_simulatorRole, child.key) &&
+                                 service.canViewRoute(_simulatorRole, child.route));
+
+                          return AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: childVisible ? 1.0 : 0.35,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: childVisible ? roleColor.withValues(alpha: 0.05) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    child.icon,
+                                    size: 13,
+                                    color: childVisible ? roleColor : CRMColors.textSecondaryOf(context),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      child.title,
+                                      style: CRMTypography.caption.copyWith(
+                                        fontSize: 11.5,
+                                        color: childVisible ? CRMColors.textOf(context) : CRMColors.textSecondaryOf(context),
+                                        fontWeight: childVisible ? FontWeight.w500 : FontWeight.normal,
+                                        decoration: childVisible ? null : TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    childVisible ? Icons.check_circle_rounded : Icons.visibility_off_rounded,
+                                    size: 13,
+                                    color: childVisible ? CRMColors.success : CRMColors.textSecondaryOf(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
-                    Icon(
-                      visible ? Icons.check_circle_rounded : Icons.visibility_off_rounded,
-                      size: 14,
-                      color: visible ? CRMColors.success : CRMColors.textSecondaryOf(context),
-                    ),
-                  ],
-                ),
-              ),
+                  ),
+              ],
             );
           }),
         ],
@@ -1371,81 +1659,228 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
   Widget _buildRoutePermissionsTable(
     BuildContext context,
     bool isDark,
-    List<({IconData icon, String perm, String route, String title})> navItems,
+    List<AppNavItem> navTree,
     PermissionMatrixService service,
     Color roleColor,
+    int totalRoutesAndSubpages,
   ) {
+    final isSuper = _simulatorRole == 'Super Admin';
+    final primary = ThemeManager().primaryColor;
+
     return CRMCard(
       title: 'App Shell Routes Access Matrix ($_simulatorRole)',
-      subtitle: 'Dynamic routing status for current matrix configuration',
+      subtitle: 'Dynamic routing status for current matrix configuration ($totalRoutesAndSubpages routes & subpages)',
       child: Column(
-        children: navItems.map((item) {
-          final isAllowed = service.canViewRoute(_simulatorRole, item.route);
+        children: navTree.map((item) {
+          final isParentAllowed = isSuper
+              ? true
+              : (service.hasPermission(_simulatorRole, item.key) &&
+                 service.canViewRoute(_simulatorRole, item.route));
 
           return Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 8),
             decoration: BoxDecoration(
-              color: isAllowed ? CRMColors.success.withValues(alpha: 0.06) : CRMColors.danger.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              color: isParentAllowed ? CRMColors.success.withValues(alpha: 0.04) : CRMColors.danger.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(CRMBorderRadius.card),
               border: Border.all(
-                color: isAllowed ? CRMColors.success.withValues(alpha: 0.2) : CRMColors.danger.withValues(alpha: 0.2),
+                color: isParentAllowed ? CRMColors.success.withValues(alpha: 0.25) : CRMColors.danger.withValues(alpha: 0.25),
               ),
             ),
-            child: Row(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  isAllowed ? Icons.check_circle_outline_rounded : Icons.block_rounded,
-                  size: 18,
-                  color: isAllowed ? CRMColors.success : CRMColors.danger,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        style: CRMTypography.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: CRMColors.textOf(context),
+                // Top-Level Item Row
+                Row(
+                  children: [
+                    Icon(
+                      isParentAllowed ? Icons.check_circle_outline_rounded : Icons.block_rounded,
+                      size: 20,
+                      color: isParentAllowed ? CRMColors.success : CRMColors.danger,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                item.title,
+                                style: CRMTypography.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: CRMColors.textOf(context),
+                                ),
+                              ),
+                              if (item.hasChildren) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: primary.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: primary.withValues(alpha: 0.3), width: 0.8),
+                                  ),
+                                  child: Text(
+                                    '${item.children.length} SUBPAGES',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Route: ${item.route} • Metric: ${item.key}',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontFamily: 'monospace',
+                              color: CRMColors.textSecondaryOf(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!isSuper)
+                      Switch(
+                        value: service.hasPermission(_simulatorRole, item.key),
+                        activeThumbColor: roleColor,
+                        onChanged: (val) {
+                          setState(() {
+                            service.setPermission(_simulatorRole, item.key, val);
+                          });
+                        },
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'PERMANENT',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFD97706),
+                          ),
                         ),
                       ),
-                      Text(
-                        'Route: ${item.route} • Metric: ${item.perm}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontFamily: 'monospace',
-                          color: CRMColors.textSecondaryOf(context),
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                if (_simulatorRole != 'Super Admin')
-                  Switch(
-                    value: isAllowed,
-                    activeThumbColor: roleColor,
-                    onChanged: (val) async {
-                      await service.setPermission(_simulatorRole, item.perm, val);
-                    },
-                  )
-                else
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'PERMANENT',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFD97706),
-                      ),
+
+                // Children / Subpages list
+                if (item.hasChildren) ...[
+                  const Divider(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12.0),
+                    child: Column(
+                      children: item.children.map((child) {
+                        final isChildAllowed = isSuper
+                            ? true
+                            : (isParentAllowed && service.hasPermission(_simulatorRole, child.key));
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.6) : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                child.icon,
+                                size: 15,
+                                color: isChildAllowed ? roleColor : CRMColors.textSecondaryOf(context),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          child.title,
+                                          style: CRMTypography.captionBold.copyWith(
+                                            color: isChildAllowed ? CRMColors.textOf(context) : CRMColors.textSecondaryOf(context),
+                                            decoration: isChildAllowed ? null : TextDecoration.lineThrough,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blueGrey.withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(3),
+                                          ),
+                                          child: const Text(
+                                            'SUBPAGE',
+                                            style: TextStyle(
+                                              fontSize: 8.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blueGrey,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Text(
+                                      'Route: ${child.route} • Metric: ${child.key}',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontFamily: 'monospace',
+                                        color: CRMColors.textSecondaryOf(context),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!isSuper)
+                                Switch(
+                                  value: isParentAllowed && service.hasPermission(_simulatorRole, child.key),
+                                  activeThumbColor: roleColor,
+                                  onChanged: isParentAllowed
+                                      ? (val) {
+                                          setState(() {
+                                            service.setPermission(_simulatorRole, child.key, val);
+                                          });
+                                        }
+                                      : null,
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'PERMANENT',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFD97706),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
+                ],
               ],
             ),
           );
@@ -1602,26 +2037,6 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
     );
   }
 
-  IconData _getCategoryIcon(String category) {
-    switch (category) {
-      case PermissionCategory.pages:
-        return Icons.layers_rounded;
-      case PermissionCategory.properties:
-        return Icons.home_work_rounded;
-      case PermissionCategory.leads:
-        return Icons.assignment_rounded;
-      case PermissionCategory.campaign:
-        return Icons.campaign_rounded;
-      case PermissionCategory.employees:
-        return Icons.people_rounded;
-      case PermissionCategory.reports:
-        return Icons.bar_chart_rounded;
-      case PermissionCategory.system:
-        return Icons.security_rounded;
-      default:
-        return Icons.folder_rounded;
-    }
-  }
 
   Color _getRoleColor(String role) {
     final r = role.toLowerCase().trim();
@@ -1651,4 +2066,23 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
         return 'Standard organization member.';
     }
   }
+}
+
+
+class _AdminDrilldownPageConfig {
+  final String key;
+  final String title;
+  final String description;
+  final String route;
+  final IconData icon;
+  final List<_AdminDrilldownPageConfig> subItems;
+
+  const _AdminDrilldownPageConfig({
+    required this.key,
+    required this.title,
+    required this.description,
+    required this.route,
+    required this.icon,
+    this.subItems = const [],
+  });
 }

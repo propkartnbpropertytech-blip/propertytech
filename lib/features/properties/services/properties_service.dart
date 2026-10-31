@@ -52,9 +52,10 @@ class PropertiesService {
     bool? includeDeleted,
     int? page,
     int? limit,
+    Map<String, String> filters = const {},
   }) async {
     try {
-      final Map<String, dynamic> queryParameters = {};
+      final Map<String, dynamic> queryParameters = {...filters};
       if (search != null && search.isNotEmpty) {
         queryParameters['search'] = search;
       }
@@ -317,11 +318,17 @@ class PropertiesService {
     }
   }
 
-  Future<Map<String, dynamic>> getBinProperties() async {
+  Future<Map<String, dynamic>> getBinProperties({String? search}) async {
     try {
+      final query = search?.trim() ?? '';
       final response = await _apiClient.get(
         '/properties',
-        queryParameters: {'includeDeleted': 'true'},
+        queryParameters: {
+          'includeDeleted': 'true',
+          if (query.isNotEmpty) 'search': query,
+          if (query.isNotEmpty) 'page': 1,
+          if (query.isNotEmpty) 'limit': 500,
+        },
       );
       if (response.data is Map<String, dynamic>) {
         return response.data as Map<String, dynamic>;

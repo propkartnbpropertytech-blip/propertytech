@@ -35,6 +35,25 @@ class RoleGuard {
     return PermissionMatrixService.instance.canViewRoute(role, route);
   }
 
+  /// Returns the first allowed route for a role when their default or current route is disabled.
+  static String getFirstAllowedRoute(String? role) {
+    if (isSuperAdmin(role)) return '/dashboard';
+    const candidateRoutes = [
+      '/dashboard',
+      '/properties',
+      '/requirements',
+      '/telecaller/leads',
+      '/library',
+      '/settings',
+      '/support',
+      '/bin',
+    ];
+    for (final r in candidateRoutes) {
+      if (canViewPage(role, r)) return r;
+    }
+    return '/profile';
+  }
+
   static bool canManageEmployees(String? role) {
     if (isSuperAdmin(role)) return true;
     return PermissionMatrixService.instance.hasPermission(role, 'page.employees') ||
@@ -133,26 +152,27 @@ class RoleGuard {
     );
     if (!allowed) return null;
 
+    final fallback = getFirstAllowedRoute(role);
     if (pathOnly.startsWith('/users') && !canManageEmployees(role)) {
-      return '/dashboard';
+      return fallback;
     }
     if ((pathOnly.startsWith('/integration') || pathOnly.startsWith('/campaign')) && !canAccessCampaign(role)) {
-      return '/dashboard';
+      return fallback;
     }
     if (pathOnly.startsWith('/settings/audit-logs') && !canViewAuditLogs(role)) {
-      return '/dashboard';
+      return fallback;
     }
     if (pathOnly.startsWith('/reports') && !canViewReports(role)) {
-      return '/dashboard';
+      return fallback;
     }
     if ((pathOnly.startsWith('/admin/permissions') ||
          pathOnly.startsWith('/admin/plans') ||
          pathOnly.startsWith('/admin/brokers')) &&
         !isSuperAdmin(role)) {
-      return '/dashboard';
+      return fallback;
     }
     if (!canViewPage(role, pathOnly)) {
-      return '/dashboard';
+      return fallback;
     }
     return path;
   }

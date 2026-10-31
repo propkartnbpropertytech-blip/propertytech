@@ -12,9 +12,12 @@ import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/data_table.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
+import '../../../core/search/search_request_gate.dart';
 
 class ClientsScreen extends StatefulWidget {
-  const ClientsScreen({super.key});
+  final String? initialSearch;
+
+  const ClientsScreen({super.key, this.initialSearch});
 
   @override
   State<ClientsScreen> createState() => _ClientsScreenState();
@@ -22,6 +25,7 @@ class ClientsScreen extends StatefulWidget {
 
 class _ClientsScreenState extends State<ClientsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchRequestGate _searchGate = SearchRequestGate();
   String _selectedStage = "All";
   String _selectedSource = "All";
   bool _isPipelineView = true; // Board vs Table toggle
@@ -31,11 +35,14 @@ class _ClientsScreenState extends State<ClientsScreen> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialSearch?.trim();
+    if (initial != null && initial.isNotEmpty) _searchController.text = initial;
     _triggerFetch();
   }
 
   @override
   void dispose() {
+    _searchGate.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -238,7 +245,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
                   ),
                 ),
-                onChanged: (val) => _triggerFetch(),
+                onChanged: (val) => _searchGate.schedule((_) {
+                  if (mounted) _triggerFetch();
+                }),
               );
               final searchButton = CRMButton(label: "Search", onPressed: _triggerFetch);
               if (stacked) {

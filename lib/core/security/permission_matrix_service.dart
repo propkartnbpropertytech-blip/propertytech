@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,8 +53,41 @@ class PermissionMatrixService extends ChangeNotifier {
   static final PermissionMatrixService _instance = PermissionMatrixService._internal();
   static PermissionMatrixService get instance => _instance;
 
+  Timer? _pollingTimer;
+  bool _syncInFlight = false;
+
   PermissionMatrixService._internal() {
     _init();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    // Permissions rarely change. A short poll was rebuilding the router on every tick.
+    _pollingTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      if (_syncInFlight) return;
+      syncFromBackend();
+    });
+  }
+
+  bool _putOverride(String role, String key, bool enabled) {
+    final current = _overrides[role];
+    if (current != null && current[key] == enabled) return false;
+    _overrides.putIfAbsent(role, () => {})[key] = enabled;
+    return true;
+  }
+
+  bool _applyRoleAssignments(String role, Map<String, dynamic> roleMap) {
+    var changed = false;
+    roleMap.forEach((key, value) {
+      final enabled = value == true;
+      if (_putOverride(role, key, enabled)) changed = true;
+      if (key == 'page.recycle_bin' && _putOverride(role, 'page.bin', enabled)) changed = true;
+      if (key == 'page.bin' && _putOverride(role, 'page.recycle_bin', enabled)) changed = true;
+      if (key == 'page.employees' && _putOverride(role, 'page.users', enabled)) changed = true;
+      if (key == 'page.users' && _putOverride(role, 'page.employees', enabled)) changed = true;
+    });
+    return changed;
   }
 
   static const String _storageKey = 'propkart_role_permission_matrix_v2';
@@ -67,6 +101,26 @@ class PermissionMatrixService extends ChangeNotifier {
       description: 'Access main overview KPIs, recent leads, and inventory summary (/dashboard).',
       category: PermissionCategory.pages,
       relatedRoute: '/dashboard',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.dashboard.followups',
+      title: 'Follow-ups',
+      description: 'Scheduled client reminders and follow-up activities desk on Admin Dashboard.',
+      category: PermissionCategory.pages,
+      relatedRoute: '/dashboard#followups',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.dashboard.site_visits',
+      title: 'Site Visit Scheduled',
+      description: 'Scheduled property inspections and client site visits on Admin Dashboard.',
+      category: PermissionCategory.pages,
+      relatedRoute: '/dashboard#site_visits',
       defaultAdmin: true,
       defaultTelecaller: true,
       defaultSales: true,
@@ -605,6 +659,178 @@ class PermissionMatrixService extends ChangeNotifier {
       defaultTelecaller: false,
       defaultSales: false,
     ),
+
+    // ── App Shell Subpages & Nested Menus ─────────────────────────────────
+    PermissionItem(
+      key: 'page.campaign.connections',
+      title: 'Campaign Connections',
+      description: 'Webhook configurations, portal keys, and lead endpoints.',
+      category: PermissionCategory.campaign,
+      relatedRoute: '/campaign/connections',
+      defaultAdmin: true,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.campaign.meta',
+      title: 'Campaign Meta',
+      description: 'Meta Facebook/Instagram lead ads form integration.',
+      category: PermissionCategory.campaign,
+      relatedRoute: '/campaign/meta',
+      defaultAdmin: true,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.campaign.housing',
+      title: 'Campaign Housing',
+      description: 'Housing.com campaign webhooks and lead feed.',
+      category: PermissionCategory.campaign,
+      relatedRoute: '/campaign/housing',
+      defaultAdmin: true,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.settings.profile',
+      title: 'Settings Profile',
+      description: 'User profile details, credentials, and avatar.',
+      category: PermissionCategory.system,
+      relatedRoute: '/profile',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.settings.themes',
+      title: 'Settings Themes',
+      description: 'System color palettes and brand customization.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings?section=themes',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.settings.appearance',
+      title: 'Settings Appearance',
+      description: 'App dark mode, layout density, and UI styling.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings?section=appearance',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.settings.locations',
+      title: 'Settings Locations',
+      description: 'Operational cities, localities, and area management.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings/location-config',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.settings.match_criteria',
+      title: 'Settings Run Match Criteria',
+      description: 'Lead-to-property automated matching criteria configuration.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings?section=match_criteria',
+      defaultAdmin: true,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.settings.upload_limits',
+      title: 'Settings Upload Limits',
+      description: 'Property image quotas and document size limits.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings?section=upload_limits',
+      defaultAdmin: true,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.settings.kpi_config',
+      title: 'Settings KPI Configuration',
+      description: 'Performance KPI thresholds, targets, and scoring weights.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings/kpi-config',
+      defaultAdmin: true,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.settings.backups',
+      title: 'Settings Automated Backups',
+      description: 'Automated database snapshots and recovery archive.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings?section=backups',
+      defaultAdmin: false,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.settings.audit_logs',
+      title: 'Settings Audit Logs',
+      description: 'Security audit logs and chronological system events.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings/audit-logs',
+      defaultAdmin: false,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.settings.system',
+      title: 'Settings System',
+      description: 'System runtime info, cache status, and diagnostics.',
+      category: PermissionCategory.system,
+      relatedRoute: '/settings?section=system',
+      defaultAdmin: true,
+      defaultTelecaller: true,
+      defaultSales: true,
+    ),
+    PermissionItem(
+      key: 'page.admin.permissions',
+      title: 'Permission Matrix',
+      description: 'Access & Permission Matrix Studio (Super Admin exclusive).',
+      category: PermissionCategory.system,
+      relatedRoute: '/admin/permissions',
+      defaultAdmin: false,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.admin.plans',
+      title: 'Tier Plans Studio',
+      description: 'Subscription plans and feature entitlements (Super Admin exclusive).',
+      category: PermissionCategory.system,
+      relatedRoute: '/admin/plans',
+      defaultAdmin: false,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.admin.brokers',
+      title: 'Broker Workspaces',
+      description: 'Broker accounts and tenant organizations (Super Admin exclusive).',
+      category: PermissionCategory.system,
+      relatedRoute: '/admin/brokers',
+      defaultAdmin: false,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
+    PermissionItem(
+      key: 'page.admin.support',
+      title: 'Issue Management',
+      description: 'Super Admin centralized platform support desk.',
+      category: PermissionCategory.system,
+      relatedRoute: '/admin/support',
+      defaultAdmin: false,
+      defaultTelecaller: false,
+      defaultSales: false,
+    ),
   ];
 
   // Dynamic overrides: Map<Role, Map<PermissionKey, bool>>
@@ -642,39 +868,68 @@ class PermissionMatrixService extends ChangeNotifier {
     }
   }
 
-  /// Syncs dynamic feature permissions directly from backend/database
+  /// Syncs dynamic feature permissions directly from backend/database.
+  /// Listeners are told only when a role's permissions actually change, so a
+  /// repeated poll does not rebuild the router or the open screen.
   Future<void> syncFromBackend() async {
+    if (_syncInFlight) return;
+    _syncInFlight = true;
     try {
-      final res = await DioClient.dio.get('/super-admin/feature-permissions');
-      final data = res.data['data'];
-      if (data is Map) {
-        final roleDefaults = data['roleDefaults'];
-        if (roleDefaults is List) {
-          for (final row in roleDefaults) {
-            final role = _normalizeRole(row['role_name']?.toString());
-            final featureKey = row['feature_key']?.toString();
-            final enabled = row['enabled'] == true;
-            if (featureKey != null && _overrides.containsKey(role)) {
-              _applyBackendFeatureToggle(role, featureKey, enabled);
+      final res = await DioClient.dio.get('/permissions/matrix/roles');
+      if (res.statusCode == 200 && res.data != null) {
+        final data = res.data['data'];
+        if (data is Map && data['assignments'] is Map) {
+          final assignments = data['assignments'] as Map;
+          var changed = false;
+          for (final role in ['Admin', 'Telecaller', 'Sales']) {
+            if (assignments[role] is Map) {
+              final roleMap = Map<String, dynamic>.from(assignments[role] as Map);
+              if (_applyRoleAssignments(role, roleMap)) changed = true;
+            }
+          }
+          if (changed) {
+            notifyListeners();
+            unawaited(_saveToStorage());
+          }
+          return;
+        }
+      }
+    } catch (_) {
+      // Non-blocking; continue to my-controls fallback
+    } finally {
+      _syncInFlight = false;
+    }
+
+    if (_syncInFlight) return;
+    _syncInFlight = true;
+    try {
+      final resMy = await DioClient.dio.get('/permissions/my-controls');
+      if (resMy.statusCode == 200 && resMy.data != null) {
+        final data = resMy.data['data'];
+        if (data is Map) {
+          final role = _normalizeRole(data['role']?.toString());
+          final controls = data['controls'];
+          if (role != 'Super Admin' && controls is List) {
+            final activeSet = controls.map((e) => e.toString()).toSet();
+            var changed = false;
+            for (final p in allPermissions) {
+              final isAllowed = activeSet.contains(p.key) ||
+                  (p.key == 'page.recycle_bin' && activeSet.contains('page.bin')) ||
+                  (p.key == 'page.bin' && activeSet.contains('page.recycle_bin')) ||
+                  (p.key == 'page.employees' && activeSet.contains('page.users')) ||
+                  (p.key == 'page.users' && activeSet.contains('page.employees'));
+              if (_putOverride(role, p.key, isAllowed)) changed = true;
+            }
+            if (changed) {
+              notifyListeners();
+              unawaited(_saveToStorage());
             }
           }
         }
-        notifyListeners();
-        await _saveToStorage();
       }
     } catch (_) {
-      // Non-blocking; offline fallback remains valid
-    }
-  }
-
-  void _applyBackendFeatureToggle(String role, String featureKey, bool enabled) {
-    if (!_overrides.containsKey(role)) {
-      _overrides[role] = {};
-    }
-    for (final p in allPermissions) {
-      if (_featureKeyForPermission(p.key) == featureKey) {
-        _overrides[role]![p.key] = enabled;
-      }
+    } finally {
+      _syncInFlight = false;
     }
   }
 
@@ -686,8 +941,23 @@ class PermissionMatrixService extends ChangeNotifier {
 
     // Check if explicitly overridden in the dynamic matrix
     final roleOverrides = _overrides[normRole];
-    if (roleOverrides != null && roleOverrides.containsKey(permissionKey)) {
-      return roleOverrides[permissionKey] == true;
+    if (roleOverrides != null) {
+      if (roleOverrides.containsKey(permissionKey)) {
+        return roleOverrides[permissionKey] == true;
+      }
+      // Check aliases
+      if (permissionKey == 'page.recycle_bin' && roleOverrides.containsKey('page.bin')) {
+        return roleOverrides['page.bin'] == true;
+      }
+      if (permissionKey == 'page.bin' && roleOverrides.containsKey('page.recycle_bin')) {
+        return roleOverrides['page.recycle_bin'] == true;
+      }
+      if (permissionKey == 'page.employees' && roleOverrides.containsKey('page.users')) {
+        return roleOverrides['page.users'] == true;
+      }
+      if (permissionKey == 'page.users' && roleOverrides.containsKey('page.employees')) {
+        return roleOverrides['page.employees'] == true;
+      }
     }
 
     // Otherwise fallback to system default
@@ -714,10 +984,50 @@ class PermissionMatrixService extends ChangeNotifier {
     final normRole = _normalizeRole(role);
     if (normRole == 'Super Admin') return true;
 
-    // Map common routes to permission keys
-    String? permKey;
     final r = route.toLowerCase();
 
+    // Settings subpage checks
+    if (r.contains('section=themes')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.themes');
+    }
+    if (r.contains('section=appearance')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.appearance');
+    }
+    if (r.contains('section=match_criteria')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.match_criteria');
+    }
+    if (r.contains('section=upload_limits')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.upload_limits');
+    }
+    if (r.contains('section=kpi_config') || r.startsWith('/settings/kpi-config')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.kpi_config');
+    }
+    if (r.contains('section=backups')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.backups');
+    }
+    if (r.contains('section=system')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.system');
+    }
+    if (r.startsWith('/settings/location-config') || r.contains('section=locations')) {
+      return hasPermission(normRole, 'page.settings') && hasPermission(normRole, 'page.settings.locations');
+    }
+    if (r == '/settings/audit-logs') {
+      return hasPermission(normRole, 'page.settings') && (hasPermission(normRole, 'page.settings.audit_logs') || hasPermission(normRole, 'page.audit_logs'));
+    }
+
+    // Campaign subpage checks
+    if (r.startsWith('/campaign/connections')) {
+      return hasPermission(normRole, 'page.campaign') && hasPermission(normRole, 'page.campaign.connections');
+    }
+    if (r.startsWith('/campaign/meta')) {
+      return hasPermission(normRole, 'page.campaign') && hasPermission(normRole, 'page.campaign.meta');
+    }
+    if (r.startsWith('/campaign/housing')) {
+      return hasPermission(normRole, 'page.campaign') && hasPermission(normRole, 'page.campaign.housing');
+    }
+
+    // Top-level App Shell routes
+    String? permKey;
     if (r == '/dashboard' || r == '/') {
       permKey = 'page.dashboard';
     } else if (r.startsWith('/properties')) {
@@ -726,9 +1036,9 @@ class PermissionMatrixService extends ChangeNotifier {
       permKey = 'page.callbacks';
     } else if (r.startsWith('/telecaller/cnr')) {
       permKey = 'page.cnr';
-    } else if (r.startsWith('/telecaller')) {
+    } else if (r.startsWith('/telecaller') || r == '/campaign/leads') {
       permKey = 'page.telecaller_leads';
-    } else if (r.startsWith('/admin/lead-allocation')) {
+    } else if (r.startsWith('/admin/lead-allocation') || r.startsWith('/lead-allocation')) {
       permKey = 'page.lead_allocation';
     } else if (r.startsWith('/requirements')) {
       permKey = 'page.leads';
@@ -742,10 +1052,12 @@ class PermissionMatrixService extends ChangeNotifier {
       permKey = 'page.library';
     } else if (r.startsWith('/bin')) {
       permKey = 'page.recycle_bin';
-    } else if (r == '/settings/audit-logs') {
-      permKey = 'page.audit_logs';
     } else if (r.startsWith('/settings')) {
       permKey = 'page.settings';
+    } else if (r.startsWith('/support')) {
+      permKey = 'page.support';
+    } else if (r.startsWith('/profile')) {
+      permKey = 'page.settings.profile';
     } else if (r.startsWith('/clients')) {
       permKey = 'page.clients';
     } else if (r.startsWith('/owners')) {
@@ -756,14 +1068,15 @@ class PermissionMatrixService extends ChangeNotifier {
       permKey = 'page.builders';
     } else if (r.startsWith('/admin/permissions') ||
                r.startsWith('/admin/plans') ||
-               r.startsWith('/admin/brokers')) {
+               r.startsWith('/admin/brokers') ||
+               r.startsWith('/admin/support')) {
       return normRole == 'Super Admin';
     }
 
     if (permKey != null) {
       return hasPermission(normRole, permKey);
     }
-    return true; // Unrestricted default for general subpages
+    return true;
   }
 
   /// Sets or toggles a permission for a specific role.
@@ -775,9 +1088,26 @@ class PermissionMatrixService extends ChangeNotifier {
       _overrides[normRole] = {};
     }
     _overrides[normRole]![permissionKey] = allowed;
+    if (permissionKey == 'page.employees') _overrides[normRole]!['page.users'] = allowed;
+    if (permissionKey == 'page.users') _overrides[normRole]!['page.employees'] = allowed;
+    if (permissionKey == 'page.recycle_bin') _overrides[normRole]!['page.bin'] = allowed;
+    if (permissionKey == 'page.bin') _overrides[normRole]!['page.recycle_bin'] = allowed;
+    if (permissionKey == 'page.audit_logs') _overrides[normRole]!['page.settings.audit_logs'] = allowed;
+    if (permissionKey == 'page.settings.audit_logs') _overrides[normRole]!['page.audit_logs'] = allowed;
+
     notifyListeners();
-    await _saveToStorage();
-    await _syncRoleFeatureToBackend(normRole, permissionKey, allowed);
+    unawaited(_saveToStorage());
+
+    // Persist permanently to backend database immediately
+    try {
+      await DioClient.dio.post('/permissions/matrix/role-control', data: {
+        'roleName': normRole,
+        'controlKey': permissionKey,
+        'isEnabled': allowed,
+      });
+    } catch (e) {
+      debugPrint('[PermissionMatrixService] Backend update failed: $e');
+    }
   }
 
   /// Bulk updates all permissions for a category for a given role.
@@ -785,15 +1115,49 @@ class PermissionMatrixService extends ChangeNotifier {
     final normRole = _normalizeRole(role);
     if (normRole == 'Super Admin') return;
 
-    final permsInCategory = allPermissions.where((p) => p.category == category);
+    final permsInCategory = allPermissions.where((p) => p.category == category).toList();
+    if (!_overrides.containsKey(normRole)) {
+      _overrides[normRole] = {};
+    }
+    final bulkMap = <String, bool>{};
     for (final p in permsInCategory) {
-      if (!_overrides.containsKey(normRole)) {
-        _overrides[normRole] = {};
-      }
       _overrides[normRole]![p.key] = allowed;
+      bulkMap[p.key] = allowed;
+      if (p.key == 'page.employees') {
+        _overrides[normRole]!['page.users'] = allowed;
+        bulkMap['page.users'] = allowed;
+      }
+      if (p.key == 'page.users') {
+        _overrides[normRole]!['page.employees'] = allowed;
+        bulkMap['page.employees'] = allowed;
+      }
+      if (p.key == 'page.recycle_bin') {
+        _overrides[normRole]!['page.bin'] = allowed;
+        bulkMap['page.bin'] = allowed;
+      }
+      if (p.key == 'page.bin') {
+        _overrides[normRole]!['page.recycle_bin'] = allowed;
+        bulkMap['page.recycle_bin'] = allowed;
+      }
+      if (p.key == 'page.audit_logs') {
+        _overrides[normRole]!['page.settings.audit_logs'] = allowed;
+        bulkMap['page.settings.audit_logs'] = allowed;
+      }
+      if (p.key == 'page.settings.audit_logs') {
+        _overrides[normRole]!['page.audit_logs'] = allowed;
+        bulkMap['page.audit_logs'] = allowed;
+      }
     }
     notifyListeners();
-    await _saveToStorage();
+    unawaited(_saveToStorage());
+
+    try {
+      await DioClient.dio.put('/permissions/matrix/roles/$normRole', data: {
+        'permissionsMap': bulkMap,
+      });
+    } catch (e) {
+      debugPrint('[PermissionMatrixService] Bulk backend update failed: $e');
+    }
   }
 
   /// Resets dynamic matrix back to standard PropKart defaults.
@@ -849,39 +1213,6 @@ class PermissionMatrixService extends ChangeNotifier {
     }
   }
 
-  Future<void> _syncRoleFeatureToBackend(String role, String permissionKey, bool allowed) async {
-    final featureKey = _featureKeyForPermission(permissionKey);
-    if (featureKey == null) return;
-    try {
-      await DioClient.dio.patch(
-        '/super-admin/feature-permissions/role',
-        data: {
-          'roleName': role,
-          'featureKey': featureKey,
-          'enabled': allowed,
-        },
-      );
-    } catch (e) {
-      debugPrint('Permission backend sync skipped: $e');
-    }
-  }
-
-  String? _featureKeyForPermission(String permissionKey) {
-    if (permissionKey.startsWith('page.dashboard')) return 'dashboard';
-    if (permissionKey.startsWith('page.properties')) return 'properties';
-    if (permissionKey == 'leads.create') return 'leads_create';
-    if (permissionKey.startsWith('page.leads') || permissionKey.startsWith('page.telecaller_leads')) {
-      return 'leads';
-    }
-    if (permissionKey.startsWith('page.callbacks')) return 'callbacks';
-    if (permissionKey.startsWith('page.cnr')) return 'cnr';
-    if (permissionKey.startsWith('page.library')) return 'library';
-    if (permissionKey.startsWith('page.settings')) return 'settings';
-    if (permissionKey.startsWith('page.recycle_bin')) return 'recycle_bin';
-    if (permissionKey.startsWith('page.campaign')) return 'campaign';
-    if (permissionKey.startsWith('page.lead_allocation')) return 'lead_allocation';
-    return null;
-  }
 
   String _normalizeRole(String? raw) {
     final r = (raw ?? '').trim().toLowerCase();

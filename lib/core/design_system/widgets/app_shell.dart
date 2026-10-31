@@ -20,6 +20,9 @@ import '../tokens/app_shadows.dart';
 import 'crm_brand_lockup.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
+import '../../../features/search/ai_search_session.dart';
+import '../../../features/search/services/ai_search_service.dart';
+import '../../../features/search/widgets/ai_search_panel.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
@@ -66,6 +69,12 @@ class _CRMAppShellState extends State<CRMAppShell>
   @override
   void initState() {
     super.initState();
+    _searchRefreshSub = SyncManager().tableChanges.listen((tables) {
+      if (!mounted) return;
+      final query = _searchController.text.trim();
+      if (query.isEmpty) return;
+      if (tables.any(_liveSearchTables.contains)) _performSearch(query);
+    });
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
       if ((newNotif['action'] ?? '').toString() == 'refresh' ||
@@ -155,7 +164,8 @@ class _CRMAppShellState extends State<CRMAppShell>
     } catch (_) {}
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _searchDebounce?.cancel();
+    _aiSearch.dispose();
+    _searchRefreshSub?.cancel();
     _notificationsTimer?.cancel();
     _notifCenterSub?.cancel();
     TelecallerHeartbeatService.instance.stop();
@@ -167,11 +177,32 @@ class _CRMAppShellState extends State<CRMAppShell>
   List<dynamic> _propertySuggestions = [];
   List<dynamic> _requirementSuggestions = [];
   List<dynamic> _ownerSuggestions = [];
-  List<dynamic> _builderSuggestions = [];
   List<dynamic> _clientSuggestions = [];
   List<Map<String, dynamic>> _callingLeadSuggestions = [];
   bool _isSearching = false;
-  Timer? _searchDebounce;
+  final AiSearchSession _aiSearch = AiSearchSession();
+  final AiSearchMemory _aiMemory = AiSearchMemory();
+  final AiSearchService _aiSearchService = AiSearchService();
+  List<AiSearchChipData> _aiChips = [];
+  Map<String, dynamic> _aiFilters = {};
+  String _aiEntity = 'all';
+  bool _aiFiltersEdited = false;
+  bool _searchStale = false;
+  bool _searchFailed = false;
+  bool _searchOffline = false;
+  bool _searchUncertain = false;
+  String? _aiCategory;
+  int _aiPage = 1;
+  Map<String, int> _aiTotals = {};
+  StreamSubscription<Set<String>>? _searchRefreshSub;
+  static const _liveSearchTables = {
+    'properties',
+    'requirements',
+    'owners',
+    'clients',
+    'leads',
+    'integration_leads',
+  };
   List<dynamic> _notifications = [];
   final Set<String> _knownNotificationIds = {};
   bool _isFirstNotifFetch = true;
@@ -727,123 +758,265 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   void _onSearchChanged(String text) {
-    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
-      if (text.trim().isEmpty) {
-        _hideSearchOverlay();
+    _aiFiltersEdited = false;
+    _aiCategory = null;
+    _aiPage = 1;
+    _aiSearch.schedule(text, (generation, value) {
+      if (!mounted || !_aiSearch.isCurrent(generation)) return;
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        setState(() => _clearAiResults(keepMemory: true));
+        _showSearchOverlay();
         return;
       }
-      _performSearch(text.trim());
+      _runAiSearch(trimmed, generation);
     });
-  }
-
-  Set<int> _extractAllBhks(String? text) {
-    final Set<int> results = {};
-    if (text == null || text.trim().isEmpty) return results;
-    final matches = RegExp(r'(\d+)\s*(?:bhk|rk|bedroom|bed)', caseSensitive: false).allMatches(text);
-    for (final m in matches) {
-      final val = int.tryParse(m.group(1) ?? '');
-      if (val != null && val > 0 && val <= 10) {
-        results.add(val);
-      }
-    }
-    return results;
   }
 
   int _searchRequest = 0;
 
-  Future<void> _performSearch(String query) async {
-    final requestId = ++_searchRequest;
-    setState(() => _isSearching = true);
-    _showSearchOverlay();
-    try {
-      final response = await DioClient.dio.get(
-        '/search',
-        queryParameters: {'query': query, 'limit': 8},
-      );
-      if (!mounted || requestId != _searchRequest) return;
-      final body = response.data;
-      final data = body is Map ? body['data'] : null;
-      List<Map<String, dynamic>> readList(String key) {
-        final raw = data is Map ? data[key] : null;
-        if (raw is! List) return [];
-        return raw.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
+  double _searchPrice(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  void _clearAiResults({bool keepMemory = false}) {
+    _propertySuggestions = [];
+    _requirementSuggestions = [];
+    _ownerSuggestions = [];
+    _clientSuggestions = [];
+    _callingLeadSuggestions = [];
+    _aiChips = [];
+    _aiTotals = {};
+    _searchFailed = false;
+    _searchOffline = false;
+    _searchStale = false;
+    _searchUncertain = false;
+    _isSearching = false;
+    if (!keepMemory) _aiMemory.last = null;
+  }
+
+  List<Map<String, dynamic>> _readSearchList(Map<String, dynamic> data, String key) {
+    final raw = data[key];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
+  }
+
+  void _applySearchData(Map<String, dynamic> data, {String? onlyCategory}) {
+    final intent = data['intent'];
+    if (intent is Map) {
+      _aiEntity = intent['entity']?.toString() ?? 'all';
+      final filters = intent['filters'];
+      _aiFilters = filters is Map ? Map<String, dynamic>.from(filters) : {};
+      final chips = intent['chips'];
+      _aiChips = chips is List
+          ? chips.whereType<Map>().map((chip) => AiSearchChipData('${chip['key'] ?? ''}', '${chip['label'] ?? ''}')).toList()
+          : [];
+      _searchUncertain = intent['uncertain'] == true;
+    }
+    final totals = data['totals'];
+    if (totals is Map) {
+      _aiTotals = totals.map((key, value) => MapEntry('$key', int.tryParse('$value') ?? 0));
+    }
+    void assign(String category) {
+      final rows = _readSearchList(data, category);
+      if (category == 'properties') _propertySuggestions = rows;
+      if (category == 'requirements') _requirementSuggestions = rows;
+      if (category == 'owners') _ownerSuggestions = rows;
+      if (category == 'clients') _clientSuggestions = rows;
+      if (category == 'leads') _callingLeadSuggestions = rows;
+    }
+    if (onlyCategory == null) {
+      for (final category in ['properties', 'requirements', 'owners', 'clients', 'leads']) {
+        assign(category);
       }
-      setState(() {
-        _propertySuggestions = readList('properties');
-        _requirementSuggestions = readList('requirements');
-        _ownerSuggestions = readList('owners');
-        _builderSuggestions = [];
-        _clientSuggestions = readList('clients');
-        _callingLeadSuggestions = readList('leads');
-        _isSearching = false;
-      });
-      _searchOverlayEntry?.markNeedsBuild();
-    } catch (_) {
-      if (!mounted || requestId != _searchRequest) return;
-      setState(() {
-        _propertySuggestions = [];
-        _requirementSuggestions = [];
-        _ownerSuggestions = [];
-        _builderSuggestions = [];
-        _clientSuggestions = [];
-        _callingLeadSuggestions = [];
-        _isSearching = false;
-      });
-      _searchOverlayEntry?.markNeedsBuild();
+    } else {
+      assign(onlyCategory);
     }
   }
 
-  Widget _buildViewAllTile({
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: CRMSpacing.m,
-        vertical: CRMSpacing.xs,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: CRMSpacing.m,
-            vertical: 9,
-          ),
-          decoration: BoxDecoration(
-            color: CRMColors.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: CRMColors.primary.withValues(alpha: 0.25),
-              width: 0.8,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: CRMColors.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Icon(
-                Icons.arrow_forward_rounded,
-                color: CRMColors.primary,
-                size: 16,
-              ),
-            ],
-          ),
-        ),
-      ),
+  void _performSearch(String query) {
+    _aiSearch.submit(query, (generation, value) {
+      if (value.trim().isEmpty) return;
+      _runAiSearch(value.trim(), generation);
+    });
+  }
+
+  Future<void> _runAiSearch(String query, int generation, {String? onlyCategory}) async {
+    final requestId = ++_searchRequest;
+    setState(() {
+      _isSearching = true;
+      _searchFailed = false;
+      _searchOffline = false;
+    });
+    _showSearchOverlay();
+    final result = await _aiSearchService.search(
+      query: query,
+      filters: _aiFiltersEdited ? _aiFilters : null,
+      entity: _aiFiltersEdited ? _aiEntity : null,
+      category: onlyCategory ?? _aiCategory,
+      page: onlyCategory == null && _aiCategory == null ? 1 : _aiPage,
+      limit: (onlyCategory ?? _aiCategory) == null ? 8 : 20,
+      filtersEdited: _aiFiltersEdited,
     );
+    if (!mounted || requestId != _searchRequest || !_aiSearch.isCurrent(generation)) return;
+    if (result.failed) {
+      final cached = _aiMemory.fail();
+      setState(() {
+        _isSearching = false;
+        _searchFailed = cached == null;
+        _searchOffline = result.offline;
+        _searchStale = cached != null;
+        if (cached != null) _applySearchData(cached);
+      });
+      _searchOverlayEntry?.markNeedsBuild();
+      return;
+    }
+    setState(() {
+      _isSearching = false;
+      _searchStale = false;
+      _searchFailed = false;
+      _searchOffline = false;
+      _applySearchData(result.data, onlyCategory: onlyCategory ?? _aiCategory);
+      if (onlyCategory == null && _aiCategory == null) {
+        _aiMemory.remember(Map<String, dynamic>.from(result.data));
+      }
+    });
+    _searchOverlayEntry?.markNeedsBuild();
+  }
+
+  void _removeAiChip(String key) {
+    if (key == 'entity') {
+      _aiEntity = 'all';
+    } else {
+      _aiFilters.remove(key);
+    }
+    _aiFiltersEdited = true;
+    _aiCategory = null;
+    _aiPage = 1;
+    _performSearch(_searchController.text.trim());
+  }
+
+  void _loadMoreAi(String category) {
+    _aiCategory = category;
+    _aiPage = 1;
+    _aiSearch.submit(_searchController.text, (generation, value) {
+      _runAiSearch(value.trim(), generation, onlyCategory: category);
+    });
+  }
+
+  Widget _buildAiSearchPanel(BuildContext context) {
+    String textOf(dynamic value) => value?.toString() ?? '';
+    AiSearchGroupData group(String title, String category, List rows, AiSearchRowData Function(Map<String, dynamic> row) mapRow) {
+      final maps = rows.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
+      return AiSearchGroupData(
+        title: title,
+        category: category,
+        total: _aiTotals[category] ?? maps.length,
+        rows: maps.take(8).map(mapRow).toList(),
+      );
+    }
+    return AiSearchPanel(
+      query: _searchController.text,
+      loading: _isSearching,
+      failed: _searchFailed,
+      offline: _searchOffline,
+      stale: _searchStale,
+      uncertain: _searchUncertain,
+      chips: _aiChips,
+      onExample: (example) {
+        _searchController.text = example;
+        _searchController.selection = TextSelection.collapsed(offset: example.length);
+        _aiFiltersEdited = false;
+        _aiCategory = null;
+        _aiPage = 1;
+        _performSearch(example);
+      },
+      onRemoveChip: _removeAiChip,
+      onMore: _loadMoreAi,
+      onClose: _closeSearch,
+      groups: [
+        group('Properties', 'properties', _propertySuggestions, (p) {
+          return AiSearchRowData(
+            title: textOf(p['title']),
+            subtitle: p['is_recycle_bin'] == true
+                ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format(_searchPrice(p['price']))} • [In Recycle Bin]'
+                : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format(_searchPrice(p['price']))}',
+            onTap: () {
+              _hideSearchOverlay();
+              if (p['is_recycle_bin'] == true) {
+                context.go('/bin');
+              } else {
+                context.go('/properties?openId=${p['id']}&t=${DateTime.now().millisecondsSinceEpoch}');
+              }
+            },
+          );
+        }),
+        group('Leads', 'leads', _callingLeadSuggestions, (lead) {
+          return AiSearchRowData(
+            title: textOf(lead['name']),
+            subtitle: '${lead['queue']} · ${lead['status']}',
+            onTap: () {
+              _hideSearchOverlay();
+              final queue = lead['queue'];
+              final path = queue == 'CNR'
+                  ? '/telecaller/cnr'
+                  : queue == 'Callback'
+                      ? '/telecaller/callbacks'
+                      : (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ? '/telecaller/leads' : '/campaign/leads');
+              context.go(path);
+            },
+          );
+        }),
+        group('Requirements', 'requirements', _requirementSuggestions, (row) {
+          return AiSearchRowData(
+            title: textOf(row['customer_name']),
+            subtitle: 'Mobile: ${row['mobile']}',
+            onTap: () {
+              _hideSearchOverlay();
+              context.go('/requirements?openId=${row['id']}&t=${DateTime.now().millisecondsSinceEpoch}');
+            },
+          );
+        }),
+        group('Clients', 'clients', _clientSuggestions, (row) {
+          return AiSearchRowData(
+            title: textOf(row['name']),
+            subtitle: 'Mobile: ${row['mobile']}',
+            onTap: () {
+              _hideSearchOverlay();
+              context.go('/clients?search=${Uri.encodeQueryComponent(textOf(row['name']))}');
+            },
+          );
+        }),
+        group('Owners', 'owners', _ownerSuggestions, (row) {
+          return AiSearchRowData(
+            title: textOf(row['name']),
+            subtitle: 'Mobile: ${row['mobile']}',
+            onTap: () {
+              _hideSearchOverlay();
+              context.go('/owners?search=${Uri.encodeQueryComponent(textOf(row['name']))}');
+            },
+          );
+        }),
+      ],
+    );
+  }
+
+  void _closeSearch() {
+    _aiSearch.dismiss();
+    _hideSearchOverlay();
+    _searchFocusNode.unfocus();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _aiFiltersEdited = false;
+    _aiFilters = {};
+    _aiChips = [];
+    _aiCategory = null;
+    _aiPage = 1;
+    setState(() => _clearAiResults(keepMemory: true));
+    _closeSearch();
   }
 
   void _showSearchOverlay() {
@@ -860,188 +1033,12 @@ class _CRMAppShellState extends State<CRMAppShell>
         final double availableHeight =
             screenHeight - (70 + topPadding + 16) - keyboardHeight;
         final double calculatedMaxHeight = availableHeight > 100
-            ? (availableHeight < 400 ? availableHeight : 400)
+            ? (availableHeight < 520 ? availableHeight : 520)
             : 100;
 
-        final String activeSearchQuery = _searchController.text.trim();
-
-        final Widget cardContent = Material(
-          elevation: 8,
-          shadowColor: CRMColors.shadow,
-          borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-          color: CRMColors.cardBgOf(context),
-          child: Container(
-            constraints: BoxConstraints(maxHeight: calculatedMaxHeight),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-              border: Border.all(
-                color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-                width: 0.5,
-              ),
-            ),
-            child: _isSearching
-                ? const Padding(
-                    padding: EdgeInsets.all(CRMSpacing.m),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : (_propertySuggestions.isEmpty &&
-                      _requirementSuggestions.isEmpty &&
-                      _clientSuggestions.isEmpty &&
-                      _callingLeadSuggestions.isEmpty)
-                ? Padding(
-                    padding: const EdgeInsets.all(CRMSpacing.m),
-                    child: Text(
-                      'No suggestions found.',
-                      style: TextStyle(color: CRMColors.textSecondary),
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                : ListView(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: CRMSpacing.s),
-                    children: [
-                      if (_propertySuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Properties'),
-                        ..._propertySuggestions.take(5).map(
-                          (p) => _buildSuggestionTile(
-                            icon: Icons.business_rounded,
-                            title: p['title'] ?? '',
-                            subtitle: p['is_recycle_bin'] == true
-                                ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)} • [In Recycle Bin]'
-                                : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format((p['price'] as num?)?.toDouble() ?? 0.0)}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              if (p['is_recycle_bin'] == true) {
-                                context.go('/bin');
-                              } else {
-                                context.go(
-                                  '/properties?openId=${p['id']}&t=${DateTime.now().millisecondsSinceEpoch}',
-                                );
-                              }
-                            },
-                          ),
-                        ),
-                        _buildViewAllTile(
-                          label: activeSearchQuery.isNotEmpty
-                              ? 'View All Matching Properties ("$activeSearchQuery")'
-                              : 'View All Properties',
-                          onTap: () {
-                            _hideSearchOverlay();
-                            final bhks = _extractAllBhks(activeSearchQuery);
-                            String? bhkVal;
-                            if (bhks.isNotEmpty) {
-                              final b = bhks.first;
-                              bhkVal = b <= 4 ? b.toString() : '5';
-                            }
-                            final uri = Uri(
-                              path: '/properties',
-                              queryParameters: {
-                                if (activeSearchQuery.isNotEmpty) 'search': activeSearchQuery,
-                                if (bhkVal != null) 'bhk': bhkVal,
-                                't': DateTime.now().millisecondsSinceEpoch.toString(),
-                              },
-                            );
-                            context.go(uri.toString());
-                          },
-                        ),
-                      ],
-                      if (_callingLeadSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Calling leads'),
-                        ..._callingLeadSuggestions.take(5).map(
-                          (lead) => _buildSuggestionTile(
-                            icon: Icons.support_agent_rounded,
-                            title: lead['name'] ?? '',
-                            subtitle: '${lead['queue']} · ${lead['status']}${((lead['phone'] ?? '').isNotEmpty) ? ' · ${lead['phone']}' : ''}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              final queue = lead['queue'];
-                              final path = queue == 'CNR'
-                                  ? '/telecaller/cnr'
-                                  : queue == 'Callback'
-                                      ? '/telecaller/callbacks'
-                                      : (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ? '/telecaller/leads' : '/campaign/leads');
-                              final uri = Uri(
-                                path: path,
-                                queryParameters: {
-                                  if (activeSearchQuery.trim().isNotEmpty)
-                                    (path.contains('/leads') ? 'search' : 'q'): activeSearchQuery.trim(),
-                                },
-                              );
-                              context.go(uri.toString());
-                            },
-                          ),
-                        ),
-                      ],
-                      if (_requirementSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Leads'),
-                        ..._requirementSuggestions.take(5).map(
-                          (r) => _buildSuggestionTile(
-                            icon: Icons.person_search_rounded,
-                            title: r['customer_name'] ?? '',
-                            subtitle: 'Req Code: ${r['requirement_code']} • Mobile: ${r['mobile']}',
-                            onTap: () {
-                              _hideSearchOverlay();
-                              context.go(
-                                '/requirements?openId=${r['id']}&t=${DateTime.now().millisecondsSinceEpoch}',
-                              );
-                            },
-                          ),
-                        ),
-                        _buildViewAllTile(
-                          label: activeSearchQuery.isNotEmpty
-                              ? 'View All Matching Leads ("$activeSearchQuery")'
-                              : 'View All Leads',
-                          onTap: () {
-                            _hideSearchOverlay();
-                            final uri = Uri(
-                              path: '/requirements',
-                              queryParameters: {
-                                if (activeSearchQuery.isNotEmpty) 'search': activeSearchQuery,
-                                'tab': 'leads',
-                                't': DateTime.now().millisecondsSinceEpoch.toString(),
-                              },
-                            );
-                            context.go(uri.toString());
-                          },
-                        ),
-                      ],
-                      if (_clientSuggestions.isNotEmpty) ...[
-                        _buildSuggestionSectionHeader('Clients'),
-                        ..._clientSuggestions.take(5).map(
-                          (c) => _buildSuggestionTile(
-                            icon: Icons.people_alt_rounded,
-                            title: c['name'] ?? '',
-                            subtitle: 'Mobile: ${c['mobile']}',
-                            onTap: () async {
-                              _hideSearchOverlay();
-                              final clientMobile = (c['mobile'] ?? '').toString().trim();
-                              final clientName = (c['name'] ?? '').toString().trim().toLowerCase();
-                              String? matchedReqId;
-                              try {
-                                final reqs = await RepositoryCoordinator().requirementLocal.getRequirements();
-                                for (final req in reqs) {
-                                  if (clientMobile.isNotEmpty && req.clientMobile.trim() == clientMobile) {
-                                    matchedReqId = req.id;
-                                    break;
-                                  }
-                                  if (clientName.isNotEmpty && req.clientName.trim().toLowerCase() == clientName) {
-                                    matchedReqId = req.id;
-                                    break;
-                                  }
-                                }
-                              } catch (_) {}
-                              if (matchedReqId != null && context.mounted) {
-                                context.go(
-                                  '/requirements?openId=$matchedReqId&t=${DateTime.now().millisecondsSinceEpoch}',
-                                );
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-          ),
+        final Widget cardContent = ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: calculatedMaxHeight),
+          child: _buildAiSearchPanel(context),
         );
 
         if (isMobile) {
@@ -1054,7 +1051,7 @@ class _CRMAppShellState extends State<CRMAppShell>
         }
 
         return Positioned(
-          width: CRMBreakpoints.adaptiveWidth(context, 400),
+          width: CRMBreakpoints.adaptiveWidth(context, 520),
           child: CompositedTransformFollower(
             link: _searchLayerLink,
             showWhenUnlinked: false,
@@ -1072,49 +1069,6 @@ class _CRMAppShellState extends State<CRMAppShell>
   void _hideSearchOverlay() {
     _searchOverlayEntry?.remove();
     _searchOverlayEntry = null;
-  }
-
-  Widget _buildSuggestionSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: CRMSpacing.m,
-        vertical: CRMSpacing.xs,
-      ),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          color: CRMColors.primary,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSuggestionTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: CRMColors.textSecondary, size: 20),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: CRMColors.textOf(context),
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: CRMColors.textSecondary, fontSize: 11),
-      ),
-      onTap: onTap,
-      dense: true,
-    );
   }
 
   void _handleLogout() {
@@ -1268,6 +1222,8 @@ class _CRMAppShellState extends State<CRMAppShell>
                               searchFocusNode: _searchFocusNode,
                               searchLayerLink: _searchLayerLink,
                               onSearchChanged: _onSearchChanged,
+                              onSearchOpened: _showSearchOverlay,
+                              onSearchCleared: _clearSearch,
                               onSearchSubmitted: (val) {
                                 if (val.trim().isNotEmpty) {
                                   _performSearch(val.trim());
@@ -1355,10 +1311,15 @@ class _CRMAppShellState extends State<CRMAppShell>
                   context.go(fallback);
                 }
               },
-              onSearch: () => setState(() {
-                _isMobileSearchActive = true;
-                _mobileSearchLocation = location;
-              }),
+              onSearch: () {
+                setState(() {
+                  _isMobileSearchActive = true;
+                  _mobileSearchLocation = location;
+                });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _showSearchOverlay();
+                });
+              },
               onNotifications: () {
                 setState(() => _notificationsPanelOpen = true);
                 _fetchNotifications();

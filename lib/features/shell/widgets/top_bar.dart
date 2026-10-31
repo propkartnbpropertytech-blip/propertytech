@@ -7,6 +7,7 @@ import '../../../core/security/role_guard.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../telecaller/widgets/telecaller_availability_toggle.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
+import 'package:propkart/features/search/widgets/ai_search_field.dart';
 
 class ModernTopBar extends StatefulWidget {
   final VoidCallback onToggleSidebar;
@@ -23,6 +24,8 @@ class ModernTopBar extends StatefulWidget {
   final LayerLink? searchLayerLink;
   final ValueChanged<String>? onSearchChanged;
   final ValueChanged<String>? onSearchSubmitted;
+  final VoidCallback? onSearchOpened;
+  final VoidCallback? onSearchCleared;
 
   const ModernTopBar({
     super.key,
@@ -40,6 +43,8 @@ class ModernTopBar extends StatefulWidget {
     this.searchLayerLink,
     this.onSearchChanged,
     this.onSearchSubmitted,
+    this.onSearchOpened,
+    this.onSearchCleared,
   });
 
   @override
@@ -598,88 +603,33 @@ class _ModernTopBarState extends State<ModernTopBar> {
                 child: widget.searchLayerLink != null
                     ? CompositedTransformTarget(
                         link: widget.searchLayerLink!,
-                        child: Container(
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                            ),
-                          ),
-                          child: TextField(
-                            autofocus: true,
-                            focusNode: widget.searchFocusNode,
-                            controller: widget.searchController,
-                            onChanged: widget.onSearchChanged,
-                            onSubmitted: widget.onSearchSubmitted,
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'Search properties, leads, or locations...',
-                              hintStyle: TextStyle(
-                                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                                fontSize: 13,
-                              ),
-                              prefixIcon: Icon(
-                                Icons.search_rounded,
-                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                                size: 20,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      )
-                    : Container(
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                          ),
-                        ),
-                        child: TextField(
-                          autofocus: true,
-                          focusNode: widget.searchFocusNode,
+                        child: AiSearchField(
                           controller: widget.searchController,
+                          focusNode: widget.searchFocusNode,
                           onChanged: widget.onSearchChanged,
                           onSubmitted: widget.onSearchSubmitted,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Search properties, leads, or locations...',
-                            hintStyle: TextStyle(
-                              color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                              fontSize: 13,
-                            ),
-                            prefixIcon: Icon(
-                              Icons.search_rounded,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                              size: 20,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                            isDense: true,
-                          ),
+                          onOpened: widget.onSearchOpened,
+                          onClear: widget.onSearchCleared,
+                          dense: true,
+                          autofocus: true,
                         ),
+                      )
+                    : AiSearchField(
+                        controller: widget.searchController,
+                        focusNode: widget.searchFocusNode,
+                        onChanged: widget.onSearchChanged,
+                        onSubmitted: widget.onSearchSubmitted,
+                        onOpened: widget.onSearchOpened,
+                        onClear: widget.onSearchCleared,
+                        dense: true,
+                        autofocus: true,
                       ),
               ),
               if (widget.searchController != null && widget.searchController!.text.isNotEmpty)
                 _headerIconButton(
                   compact: true,
                   tooltip: 'Clear',
-                  onPressed: () {
-                    widget.searchController?.clear();
-                    widget.onSearchChanged?.call('');
-                  },
+                  onPressed: () => widget.onSearchCleared?.call(),
                   icon: Icon(
                     Icons.close_rounded,
                     color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
@@ -739,14 +689,15 @@ class _ModernTopBarState extends State<ModernTopBar> {
             _headerIconButton(
               compact: true,
               icon: Icon(
-                Icons.search_rounded,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
+                Icons.auto_awesome_rounded,
+                color: isDark ? const Color(0xFF5EEAD4) : const Color(0xFF0F766E),
                 size: 22,
               ),
               onPressed: () {
                 setState(() => _isSearchExpanded = true);
+                widget.onSearchOpened?.call();
               },
-              tooltip: 'Search',
+              tooltip: 'AI Search',
             ),
           ] else ...[
             // ── Search Bar on Tablet/Desktop ─────────────────────
@@ -754,77 +705,27 @@ class _ModernTopBarState extends State<ModernTopBar> {
               child: widget.searchLayerLink != null
                   ? CompositedTransformTarget(
                       link: widget.searchLayerLink!,
-                      child: Container(
-                        height: 42,
-                        constraints: const BoxConstraints(maxWidth: 420),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                          ),
-                        ),
-                        child: TextField(
-                          focusNode: widget.searchFocusNode,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: AiSearchField(
                           controller: widget.searchController,
+                          focusNode: widget.searchFocusNode,
                           onChanged: widget.onSearchChanged,
                           onSubmitted: widget.onSearchSubmitted,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                          ),
-                          decoration: InputDecoration(
-                            hintText: isMobile ? 'Search...' : 'Search properties, leads, or locations...',
-                            hintStyle: TextStyle(
-                              color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                              fontSize: 13,
-                            ),
-                            prefixIcon: Icon(
-                              Icons.search_rounded,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                              size: 20,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
-                            isDense: true,
-                          ),
+                          onOpened: widget.onSearchOpened,
+                          onClear: widget.onSearchCleared,
                         ),
                       ),
                     )
-                  : Container(
-                      height: 42,
-                      constraints: const BoxConstraints(maxWidth: 420),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F4F9),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: isDark ? const Color(0xFF334155) : Colors.transparent,
-                        ),
-                      ),
-                      child: TextField(
-                        focusNode: widget.searchFocusNode,
+                  : ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: AiSearchField(
                         controller: widget.searchController,
+                        focusNode: widget.searchFocusNode,
                         onChanged: widget.onSearchChanged,
                         onSubmitted: widget.onSearchSubmitted,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: isMobile ? 'Search...' : 'Search properties, leads, or locations...',
-                          hintStyle: TextStyle(
-                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                            fontSize: 13,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search_rounded,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                            size: 20,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
-                          isDense: true,
-                        ),
+                        onOpened: widget.onSearchOpened,
+                        onClear: widget.onSearchCleared,
                       ),
                     ),
             ),

@@ -242,6 +242,26 @@ void _placeOnSchedule({
   }
 }
 
+/// Same calendar-day and pending rules as [_placeOnSchedule].
+/// `today` is the local calendar day. `overdue` is a pending past day, including a pending row with no date.
+/// `next7` is a later day on or before the seventh local day. Completed past rows are not overdue.
+String? followupQuickWindow({
+  required String? dateRaw,
+  required String? status,
+  required DateTime now,
+}) {
+  final statusText = (status ?? '').toLowerCase();
+  final isPending = statusText != 'completed' && statusText != 'cancelled' && statusText != 'done';
+  final parsed = parseFollowupDateTime(dateRaw);
+  if (parsed == null) return isPending ? 'overdue' : null;
+  final day = DateTime(parsed.year, parsed.month, parsed.day);
+  final today = DateTime(now.year, now.month, now.day);
+  if (day == today) return 'today';
+  if (day.isBefore(today)) return isPending ? 'overdue' : null;
+  if (!day.isAfter(today.add(const Duration(days: 7)))) return 'next7';
+  return null;
+}
+
 class CategorizedFollowupsResult {
   final List<DashboardFollowup> today;
   final List<DashboardFollowup> due;

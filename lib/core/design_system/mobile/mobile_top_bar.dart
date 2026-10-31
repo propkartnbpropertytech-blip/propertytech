@@ -102,7 +102,7 @@ class MobileSearchBar extends StatelessWidget implements PreferredSizeWidget {
     this.focusNode,
     this.onSubmitted,
     this.layerLink,
-    this.hintText = 'Search properties, leads, or locations',
+    this.hintText = 'Search or ask anything in PropKart…',
   });
 
   @override

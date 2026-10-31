@@ -6,6 +6,93 @@
     html { display: none !important; }
   </style>
   <script type="text/javascript">
+    // Chrome allows only a small number of live WebGL contexts. CanvasKit
+    // allocates a new one whenever a context is lost and does not release the
+    // old OffscreenCanvas, so a single loss becomes a loop: the page stays
+    // white and the main thread never finishes loading. Keep GPU rendering,
+    // but drop the oldest non-Flutter context before that limit is reached,
+    // and do not let that cleanup start another CanvasKit recreation.
+    (function () {
+      var MAX_WEBGL_CONTEXTS = 8;
+      var live = [];
+      var suppress = typeof WeakSet === 'function' ? new WeakSet() : null;
+
+      function isWebGLType(type) {
+        return type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl';
+      }
+
+      function isOffscreen(canvas) {
+        return typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas;
+      }
+
+      function isFlutterDisplay(canvas) {
+        return !isOffscreen(canvas) && canvas.closest &&
+          canvas.closest('flutter-view, flt-glass-pane, flt-canvas-container');
+      }
+
+      function rank(entry) {
+        if (isFlutterDisplay(entry.canvas)) return 3;
+        if (isOffscreen(entry.canvas)) return 2;
+        return 0;
+      }
+
+      function remember(canvas, gl) {
+        var index;
+        for (index = live.length - 1; index >= 0; index -= 1) {
+          if (live[index].canvas === canvas) live.splice(index, 1);
+        }
+        live.push({ canvas: canvas, gl: gl });
+        while (live.length > MAX_WEBGL_CONTEXTS) {
+          var victimIndex = 0;
+          for (index = 1; index < live.length; index += 1) {
+            if (rank(live[index]) < rank(live[victimIndex])) victimIndex = index;
+          }
+          var victim = live.splice(victimIndex, 1)[0];
+          if (!victim || victim.canvas === canvas) {
+            if (victim) live.unshift(victim);
+            break;
+          }
+          try {
+            if (suppress) suppress.add(victim.canvas);
+            var ext = victim.gl.getExtension('WEBGL_lose_context');
+            if (ext) ext.loseContext();
+          } catch (error) {}
+        }
+      }
+
+      function arm(canvas) {
+        if (canvas.__propkartWebglArmed) return;
+        canvas.__propkartWebglArmed = true;
+        canvas.addEventListener('webglcontextlost', function (event) {
+          var index;
+          for (index = live.length - 1; index >= 0; index -= 1) {
+            if (live[index].canvas === canvas) live.splice(index, 1);
+          }
+          if (suppress && suppress.has(canvas)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      }
+
+      function wrap(prototype) {
+        if (!prototype || prototype.__propkartWebglWrapped) return;
+        var original = prototype.getContext;
+        if (typeof original !== 'function') return;
+        prototype.__propkartWebglWrapped = true;
+        prototype.getContext = function (type, attributes) {
+          if (isWebGLType(type)) arm(this);
+          var gl = original.call(this, type, attributes);
+          if (isWebGLType(type) && gl) remember(this, gl);
+          return gl;
+        };
+      }
+
+      wrap(HTMLCanvasElement.prototype);
+      if (typeof OffscreenCanvas !== 'undefined') wrap(OffscreenCanvas.prototype);
+    })();
+  </script>
+  <script type="text/javascript">
     if (self === top) {
       var style = document.getElementById('anti-clickjack-style');
       if (style && style.parentNode) {
@@ -191,11 +278,8 @@
       100% { transform: rotate(360deg); }
     }
   </style>
-  <!-- RoakBot Encrypted Widget (Tamper-Proof) -->
+  <!-- RoakBot. Loaded once. A second copy was creating another WebGL surface. -->
   <script src="https://roakbot.web.app/widget.js" data-roak-token="ROAK_SEC_C16lxWewmoPpmp66lmGp229g3lNPVCDLMzU_qTgiCYcFGnXt9H6fla7TbFs73MYNJE4N4p2plAOCl0jNZ9i0RNiCkvyOg88EFnayVkGptdGgGzphTGwPe7XCKHCfHM-b_9xu1HzuyRv6a4OJcBAdexB_nLU-7PFWe7Tfmg4AaqnFX5FuMUFu2q_og3VhrQLo6mzlL06oU2B7VVYIWQX_NL3hEHbAd6mCfzDOUMyCUg0lnZM5b5Hd3lbSsBuXZ2VTg78iFcJqaugao_-yW26TwDcu_R_7oqk7ex3R8GKPjis9uKM5FgoM82aXMI2wnCy6BYnpRjoB-urxh9OzFIIxwezSial_hnA_cIqbaUt33rt3gUDxp6FQ1M-0SeFJqZDo1NHI-y6tdB2fMCEMuAGxBMW_aQPy8pHJs0tOgLGX9zcMCMmVZsr6-jNw4dgmjDo1Gj7ZNI2wCQabbVFmvzqfj_FVuanDuTtAJzNVMt_qoxZHILGyCuynU2bOF7F7sjXTnA_s1QrJliybJA6_GcuQ3hC6VjScYbGow5wKbvJ6Mbjc1JylF0ecciVPuWbuhmDFZkJOy-oSw09sRl9Bo_vHva6CboaCzQ" async></script>
-
-  <!-- RoakBot Secure Dynamic Loader (Encrypted & Protected) -->
-  <script>(function(r,o,a,k,b,t){r[b]=r[b]||function(){(r[b].q=r[b].q||[]).push(arguments)};t=o.createElement(a);t.async=1;t.src=k;t.setAttribute("data-roak-token","ROAK_SEC_C16lxWewmoPpmp66lmGp229g3lNPVCDLMzU_qTgiCYcFGnXt9H6fla7TbFs73MYNJE4N4p2plAOCl0jNZ9i0RNiCkvyOg88EFnayVkGptdGgGzphTGwPe7XCKHCfHM-b_9xu1HzuyRv6a4OJcBAdexB_nLU-7PFWe7Tfmg4AaqnFX5FuMUFu2q_og3VhrQLo6mzlL06oU2B7VVYIWQX_NL3hEHbAd6mCfzDOUMyCUg0lnZM5b5Hd3lbSsBuXZ2VTg78iFcJqaugao_-yW26TwDcu_R_7oqk7ex3R8GKPjis9uKM5FgoM82aXMI2wnCy6BYnpRjoB-urxh9OzFIIxwezSial_hnA_cIqbaUt33rt3gUDxp6FQ1M-0SeFJqZDo1NHI-y6tdB2fMCEMuAGxBMW_aQPy8pHJs0tOgLGX9zcMCMmVZsr6-jNw4dgmjDo1Gj7ZNI2wCQabbVFmvzqfj_FVuanDuTtAJzNVMt_qoxZHILGyCuynU2bOF7F7sjXTnA_s1QrJliybJA6_GcuQ3hC6VjScYbGow5wKbvJ6Mbjc1JylF0ecciVPuWbuhmDFZkJOy-oSw09sRl9Bo_vHva6CboaCzQ");o.head.appendChild(t);})(window,document,"script","https://roakbot.web.app/widget.js","RoakBot");</script>
 </head>
 <body>
   <!-- Pre-rendering Loader Shell (Instant FCP/LCP Visual Response) -->
