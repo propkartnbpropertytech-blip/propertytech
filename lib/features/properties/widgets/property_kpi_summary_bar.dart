@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../dashboard/widgets/stat_card.dart';
 import '../models/property_model.dart';
+import '../services/property_sharing_controller.dart';
+import '../../../core/security/role_guard.dart';
 
 class PropertyKpiSummaryBar extends StatelessWidget {
   final List<PropertyModel> properties;
@@ -32,6 +34,10 @@ class PropertyKpiSummaryBar extends StatelessWidget {
     int newThisWeek = 0;
     int withPhotosCount = 0;
     int myAddedCount = 0;
+    int otherAdminRent = 0;
+    int otherAdminResale = 0;
+    final showOtherAdminProperties = RoleGuard.currentUser?.role == 'Admin';
+    final sharing = PropertySharingController.instance;
 
     for (final p in properties) {
       final statusLower = (p.propertyStatusName).trim().toLowerCase();
@@ -59,6 +65,14 @@ class PropertyKpiSummaryBar extends StatelessWidget {
           currentUserId!.trim().isNotEmpty &&
           p.createdBy.trim().toLowerCase() == currentUserId!.trim().toLowerCase()) {
         myAddedCount++;
+      }
+
+      if (showOtherAdminProperties && sharing.isSharedFromOtherAdmin(p)) {
+        if (isRental) {
+          otherAdminRent++;
+        } else {
+          otherAdminResale++;
+        }
       }
     }
 
@@ -111,6 +125,15 @@ class PropertyKpiSummaryBar extends StatelessWidget {
         icon: Icons.photo_library_rounded,
         accentColor: const Color(0xFF14B8A6),
       ),
+      // Other Admin Properties (shared by other Admins; Admin accounts only)
+      if (showOtherAdminProperties)
+        StatCard(
+          title: 'Other Admin Properties',
+          value: '${otherAdminRent + otherAdminResale}',
+          subtitle: 'Rent $otherAdminRent • Resale $otherAdminResale',
+          icon: Icons.handshake_rounded,
+          accentColor: const Color(0xFF8B5CF6),
+        ),
       // 6. My Listings (if logged-in user has added or if sales/telecaller)
       if (isSalesOrTelecaller || myAddedCount > 0)
         StatCard(

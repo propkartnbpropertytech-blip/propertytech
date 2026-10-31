@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/security/admin_action_gate.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/support_issue_model.dart';
 import '../services/support_service.dart';
@@ -67,6 +69,7 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   void _openCreateIssueModal({String? initialPageKey}) {
+    if (!RoleGuard.canAction('page.support.report_issue')) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -189,16 +192,21 @@ class _SupportScreenState extends State<SupportScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: () => _openCreateIssueModal(),
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text('Report an Issue'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    AdminActionGate(
+                      actionKey: 'page.support.report_issue',
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: ElevatedButton.icon(
+                          onPressed: () => _openCreateIssueModal(),
+                          icon: const Icon(Icons.add_rounded, size: 18),
+                          label: const Text('Report an Issue'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
                       ),
                     ),
                   ],

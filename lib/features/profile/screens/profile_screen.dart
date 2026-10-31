@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/security/admin_action_gate.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -779,6 +780,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _lockedFieldIcon(String message) => Tooltip(
+        message: message,
+        child: Icon(Icons.lock_rounded, size: 16, color: CRMColors.textMuted),
+      );
+
   Widget _buildPersonalDetailsCard(UserModel user) {
     return CRMCard(
       child: Form(
@@ -811,22 +817,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: CRMSpacing.l),
 
             // Full Name Input
-            CRMTextField(
-              controller: _fullNameController,
-              labelText: 'Full Name *',
-              hintText: 'Enter your full name',
-              prefixIcon: Icons.person_rounded,
-              validator: (val) => val == null || val.trim().isEmpty ? "Full name required" : null,
+            AdminActionBuilder(
+              actionKey: 'page.settings.profile.name',
+              builder: (context, canEdit) => CRMTextField(
+                controller: _fullNameController,
+                labelText: 'Full Name *',
+                hintText: 'Enter your full name',
+                prefixIcon: Icons.person_rounded,
+                readOnly: !canEdit,
+                suffixIcon: canEdit ? null : _lockedFieldIcon('Name editing is disabled by Super Admin'),
+                validator: (val) => val == null || val.trim().isEmpty ? "Full name required" : null,
+              ),
             ),
             const SizedBox(height: CRMSpacing.m),
 
             // Mobile Phone Input
-            CRMTextField(
-              controller: _mobileController,
-              labelText: 'Mobile Phone Number',
-              hintText: '+91 XXXXX XXXXX',
-              prefixIcon: Icons.phone_rounded,
-              keyboardType: TextInputType.phone,
+            AdminActionBuilder(
+              actionKey: 'page.settings.profile.mobile',
+              builder: (context, canEdit) => CRMTextField(
+                controller: _mobileController,
+                labelText: 'Mobile Phone Number',
+                hintText: '+91 XXXXX XXXXX',
+                prefixIcon: Icons.phone_rounded,
+                keyboardType: TextInputType.phone,
+                readOnly: !canEdit,
+                suffixIcon: canEdit ? null : _lockedFieldIcon('Mobile editing is disabled by Super Admin'),
+              ),
             ),
             const SizedBox(height: CRMSpacing.m),
 

@@ -425,6 +425,9 @@ class _ModernTopBarState extends State<ModernTopBar> {
 
         // 3. Quick Dark Mode Switch
         PopupMenuItem<void>(
+          enabled: RoleGuard.canAction(
+            isDark ? 'page.settings.appearance.light' : 'page.settings.appearance.dark',
+          ),
           onTap: () {
             ThemeManager().toggleTheme();
           },

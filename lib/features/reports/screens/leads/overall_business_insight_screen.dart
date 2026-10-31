@@ -12,6 +12,7 @@ import '../../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../../core/design_system/mobile/mobile.dart';
 import '../../../../core/theme/theme_manager.dart';
+import '../../../../core/security/admin_action_gate.dart';
 import '../../bloc/reports_bloc.dart';
 import '../../bloc/reports_event.dart';
 import '../../bloc/reports_state.dart';
@@ -477,17 +478,27 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         const SizedBox(height: CRMSpacing.m),
 
         // Filter Section: Date Filter Bar
-        ReportDateFilterBar(
-          activeRange: config.dateRange,
-          onRangeChanged: (newRange) {
-            context.read<ReportsBloc>().add(UpdateDateRangeEvent(newRange));
-          },
+        AdminActionGate(
+          actionKey: 'page.reports.filters',
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: CRMSpacing.l),
+            child: ReportDateFilterBar(
+              activeRange: config.dateRange,
+              onRangeChanged: (newRange) {
+                context.read<ReportsBloc>().add(UpdateDateRangeEvent(newRange));
+              },
+            ),
+          ),
         ),
-        const SizedBox(height: CRMSpacing.l),
 
         // ====================================================================
         // SECTION 1: CAMPAIGN KPIS (Top Row / Section)
         // ====================================================================
+        AdminActionGate(
+          actionKey: 'page.reports.campaign_kpis',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
         Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
           spacing: 8,
@@ -549,10 +560,18 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         const SizedBox(height: CRMSpacing.xl),
         const Divider(height: 1),
         const SizedBox(height: CRMSpacing.l),
+            ],
+          ),
+        ),
 
         // ====================================================================
         // SECTION 2: LEADS PAGE KPIS (Displayed below existing Campaign KPIs)
         // ====================================================================
+        AdminActionGate(
+          actionKey: 'page.reports.leads_kpis',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
         Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
           alignment: WrapAlignment.spaceBetween,
@@ -627,23 +646,29 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         const SizedBox(height: CRMSpacing.xl),
         const Divider(height: 1),
         const SizedBox(height: CRMSpacing.l),
+            ],
+          ),
+        ),
 
         // SECTION 3: OPERATIONAL KPIS & PIPELINE BREAKDOWN (Inventory Sourcing, Manual Leads, Sales Pipeline, Qualified Leads)
-        BlocBuilder<DashboardBloc, DashboardState>(
-          builder: (context, dState) {
-            final kpis = (dState is DashboardLoadedState)
-                ? dState.kpis
-                : (dState is DashboardRefreshing ? dState.kpis : null);
-            final kpiFilters = (dState is DashboardLoadedState)
-                ? dState.kpiFilters
-                : (dState is DashboardRefreshing ? dState.kpiFilters : const KpiFilterParams());
+        AdminActionGate(
+          actionKey: 'page.reports.executive',
+          child: BlocBuilder<DashboardBloc, DashboardState>(
+            builder: (context, dState) {
+              final kpis = (dState is DashboardLoadedState)
+                  ? dState.kpis
+                  : (dState is DashboardRefreshing ? dState.kpis : null);
+              final kpiFilters = (dState is DashboardLoadedState)
+                  ? dState.kpiFilters
+                  : (dState is DashboardRefreshing ? dState.kpiFilters : const KpiFilterParams());
 
-            return OperationalKpiBreakdownSection(
-              kpis: kpis,
-              kpiFilters: kpiFilters,
-              onRefresh: () => context.read<DashboardBloc>().add(RefreshDashboard()),
-            );
-          },
+              return OperationalKpiBreakdownSection(
+                kpis: kpis,
+                kpiFilters: kpiFilters,
+                onRefresh: () => context.read<DashboardBloc>().add(RefreshDashboard()),
+              );
+            },
+          ),
         ),
 
         const SizedBox(height: CRMSpacing.xl),

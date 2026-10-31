@@ -30,6 +30,11 @@ class RoleGuard {
     return PermissionMatrixService.instance.hasPermission(role, key);
   }
 
+  /// Role Drill-down action toggle for the signed-in user (Admin, Telecaller and Sales; always true
+  /// for Super Admin).
+  static bool canAction(String key) =>
+      PermissionMatrixService.instance.isActionAllowed(currentUser?.role, key);
+
   /// Evaluates whether a role can view/access a given App Shell page route
   static bool canViewPage(String? role, String route) {
     return PermissionMatrixService.instance.canViewRoute(role, route);
@@ -97,6 +102,7 @@ class RoleGuard {
     '/properties',
     '/search',
     '/requirements',
+    '/my-campaign-leads',
     '/clients',
     '/owners',
     '/builders',

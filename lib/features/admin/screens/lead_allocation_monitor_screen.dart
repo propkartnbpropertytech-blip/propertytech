@@ -8,6 +8,7 @@ import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../widgets/telecaller_detail_dialog.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
+import '../../../core/security/role_guard.dart';
 import '../bloc/lead_allocation_monitor_bloc.dart';
 
 class LeadAllocationMonitorScreen extends StatelessWidget {
@@ -41,6 +42,8 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
     with WidgetsBindingObserver {
   Timer? _tickerTimer;
   Timer? _pollTimer;
+
+  static bool get _canConfigure => RoleGuard.canAction('page.lead_allocation.configure');
 
   static String _formatDuration(int seconds) {
     if (seconds <= 0) return '0m';
@@ -158,7 +161,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                   Row(
                     children: [
                       OutlinedButton.icon(
-                        onPressed: () async {
+                        onPressed: !_canConfigure ? null : () async {
                           await context.push('/admin/lead-allocation/configure');
                           if (context.mounted) {
                             context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
@@ -1026,7 +1029,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () async {
+                    onPressed: !_canConfigure ? null : () async {
                       await context.push('/admin/lead-allocation/configure');
                       if (context.mounted) {
                         context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
@@ -1078,7 +1081,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                 ),
                 const SizedBox(width: 18),
                 ElevatedButton.icon(
-                  onPressed: () async {
+                  onPressed: !_canConfigure ? null : () async {
                     await context.push('/admin/lead-allocation/configure');
                     if (context.mounted) {
                       context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());
@@ -1146,7 +1149,7 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                         ),
                       ),
                       OutlinedButton.icon(
-                        onPressed: () async {
+                        onPressed: !_canConfigure ? null : () async {
                           await context.push('/admin/lead-allocation/configure');
                           if (context.mounted) {
                             context.read<LeadAllocationMonitorBloc>().add(LeadAllocationMonitorRequested());

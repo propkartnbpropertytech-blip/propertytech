@@ -74,6 +74,15 @@ class CampaignConnectionsService {
     }
   }
 
+  /// Remove a campaign connection from the organization (existing leads are kept)
+  Future<void> deleteConnection(String id) async {
+    try {
+      await _apiClient.delete('/campaign-connections/$id');
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['message'] ?? e.message ?? 'Failed to delete campaign.');
+    }
+  }
+
   /// Create or update connection
   Future<CampaignConnectionModel> saveConnection(Map<String, dynamic> data) async {
     try {

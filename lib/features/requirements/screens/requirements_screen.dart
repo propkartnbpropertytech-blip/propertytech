@@ -19,6 +19,7 @@ import '../domain/canonical_budget_score.dart';
 import '../services/match_criteria_manager.dart';
 import '../services/followup_sync_engine.dart';
 import '../services/requirements_service.dart';
+import '../services/listing_lead_followups_service.dart';
 import '../../../core/network/sync_manager.dart';
 import '../repository/requirements_repository.dart';
 import 'add_edit_requirement_screen.dart';
@@ -779,6 +780,10 @@ class RequirementsScreen extends StatefulWidget {
   final String? initialStatus;
   final String? initialSection;
 
+  /// Sales "Campaign Leads" page: only the salesperson's directly allocated campaign leads,
+  /// split into Property Listing / Requirement tabs plus Follow-ups, My Won and Rejected.
+  final bool campaignMode;
+
   const RequirementsScreen({
     super.key,
     this.initialTab,
@@ -786,6 +791,7 @@ class RequirementsScreen extends StatefulWidget {
     this.initialGroup,
     this.initialStatus,
     this.initialSection,
+    this.campaignMode = false,
   });
 
   @override
@@ -795,6 +801,20 @@ class RequirementsScreen extends StatefulWidget {
 class _RequirementsScreenState extends State<RequirementsScreen> {
   String _salesCampaignSubTab = 'Property Listing';
   String _salesRejectedSubTab = 'Requirement';
+  String _campaignFollowupSubTab = 'Property Listing';
+  List<ListingLeadFollowup> _listingFollowups = [];
+  ListingFollowupCounts _listingFollowupCounts = const ListingFollowupCounts();
+  bool _listingFollowupsLoading = false;
+  bool _listingFollowupsLoaded = false;
+  String? _listingFollowupsError;
+  final Set<String> _listingFollowupBusyIds = {};
+  final TextEditingController _listingFollowupSearchController = TextEditingController();
+  String? _listingFilterCategoryId;
+  final List<String> _listingFilterConfigIds = [];
+  String _listingFilterStatus = 'All';
+  LeadDateFilterPreset _listingDatePreset = LeadDateFilterPreset.allTime;
+  DateTime? _listingCustomStart;
+  DateTime? _listingCustomEnd;
   List<Map<String, dynamic>> _salesPropertyListingLeads = [];
   bool _isLoadingSalesPropertyListingLeads = false;
   bool _salesDirectLeadsLoaded = false;
@@ -957,6 +977,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (_activeMainTab == 'Rejected' && _campaignSalespersonFilter != 'All') {
       _filteredViewModels = _filteredViewModels
           .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
+          .toList();
+    }
+    if (widget.campaignMode && _activeMainTab != 'Leads') {
+      _filteredViewModels = _filteredViewModels
+          .where((vm) => _isCampaignPageRequirement(vm.requirement))
           .toList();
     }
 
@@ -1125,7 +1150,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
 
       for (final id in idsToDelete) {
         try {
-          await RequirementsRepository().deleteRequirement(id);
+          await RequirementsRepository().deleteRequirement(id, deletedFrom: _leadBinSource);
         } catch (_) {}
       }
 
@@ -1151,6 +1176,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   @override
   void initState() {
     super.initState();
+    _leadActionSignature = _currentLeadActionSignature();
+    PermissionMatrixService.instance.addListener(_onLeadActionPermissionsChanged);
     _tabSearchRefreshSub = SyncManager().tableChanges.listen((tables) {
       if (!mounted) return;
       final query = _getTabSearchQuery(_selectedFollowupSubTab);
@@ -1199,6 +1226,18 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _selectedMainFollowupSection = (secLower == 'site visit scheduled' || secLower == 'site-visits' || secLower == 'site_visits')
           ? 'Site Visit Scheduled'
           : 'Follow ups';
+    }
+    if (widget.campaignMode) {
+      if (!const {'Leads', 'Follow-ups', 'My Won', 'Won', 'Rejected'}.contains(_activeMainTab)) {
+        _activeMainTab = 'Leads';
+      }
+      _salesLeadGroupFilter = 'campaign';
+      if (_selectedMainFollowupSection == 'Site Visit Scheduled') {
+        _campaignFollowupSubTab = 'Requirement';
+      }
+      unawaited(_fetchListingFollowups());
+    } else if (RoleGuard.isSales(RoleGuard.currentUser?.role) && _salesLeadGroupFilter == 'campaign') {
+      _salesLeadGroupFilter = 'assigned';
     }
     _refreshFollowupsFuture(force: true);
     _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
@@ -1281,7 +1320,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           }
         }
         final groupParam = uri.queryParameters['group'];
-        if (groupParam != null && groupParam.isNotEmpty) {
+        if (!widget.campaignMode && groupParam != null && groupParam.isNotEmpty) {
           final g = groupParam.toLowerCase();
           final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads')
               ? 'all'
@@ -1496,7 +1535,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       }
       final groupParam = uri.queryParameters['group'];
-      if (groupParam != null && groupParam.isNotEmpty) {
+      if (!widget.campaignMode && groupParam != null && groupParam.isNotEmpty) {
         final g = groupParam.toLowerCase();
         final targetGroup = (g == 'all' || g == 'active' || g == 'my_active_leads')
             ? 'all'
@@ -1551,8 +1590,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     } catch (_) {}
   }
 
+  String _leadActionSignature = '';
+
+  bool _can(String actionKey) =>
+      PermissionMatrixService.instance.isActionAllowed(RoleGuard.currentUser?.role, actionKey);
+
+  bool _canViewLeadDetails(RequirementModel req) =>
+      _can(_isLeadRejected(req) ? 'page.leads.rejected.view_details' : 'page.leads.view_details');
+
+  bool _canDeleteLead(RequirementModel req) =>
+      _can(_isLeadRejected(req) ? 'page.leads.rejected.delete' : 'page.leads.delete');
+
+  String get _leadBinSource =>
+      widget.campaignMode ? RecycleBinSource.campaignRequirement : RecycleBinSource.leads;
+
+  String _followupSectionActionKey(String action) =>
+      _selectedMainFollowupSection == 'Site Visit Scheduled'
+          ? 'page.leads.site_visits.$action'
+          : 'page.leads.followups.$action';
+
+  String _currentLeadActionSignature() =>
+      PermissionMatrixService.adminActionKeys
+          .where((k) => k.startsWith('page.leads'))
+          .map((k) => _can(k) ? '1' : '0')
+          .join();
+
+  void _onLeadActionPermissionsChanged() {
+    final signature = _currentLeadActionSignature();
+    if (!mounted || signature == _leadActionSignature) return;
+    _leadActionSignature = signature;
+    setState(() {
+      if (!_can('page.leads.followups.select') || !_can('page.leads.site_visits.select')) {
+        _selectedFollowupClientKeys.clear();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    PermissionMatrixService.instance.removeListener(_onLeadActionPermissionsChanged);
     _searchDebounceTimer?.cancel();
     _searchController.removeListener(_onSearchChangedDebounced);
     _wonSearchController.removeListener(_onSearchChangedDebounced);
@@ -1567,6 +1643,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _wonSearchController.dispose();
     _allClientsFollowupSearchDebounce?.cancel();
     _allClientsFollowupSearchController.dispose();
+    _listingFollowupSearchController.dispose();
     _tabSearchRefreshSub?.cancel();
     _tabSearchDebounce?.cancel();
     for (final c in _tabSearchControllers.values) {
@@ -1772,7 +1849,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   await _revertWonPropertiesToAvailable(req);
                 }
                 if (dialogContext.mounted) {
-                  context.read<RequirementsBloc>().add(DeleteRequirementEvent(req.id));
+                  context.read<RequirementsBloc>().add(DeleteRequirementEvent(req.id, deletedFrom: _leadBinSource));
                   Navigator.pop(dialogContext);
                 }
               },
@@ -2302,7 +2379,17 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 ),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: Row(
+                  child: widget.campaignMode
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final tab in _campaignPageTabs) ...[
+                              if (tab != _campaignPageTabs.first) const SizedBox(width: 4),
+                              _buildCampaignPageTabButton(tab, currentUser),
+                            ],
+                          ],
+                        )
+                      : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildMainViewTabButton('Leads'),
@@ -2330,13 +2417,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               const SizedBox(height: CRMSpacing.l),
 
               if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected') ...[
-                if (_activeMainTab == 'Rejected' &&
+                if (widget.campaignMode) ...[
+                  _buildCampaignPageLeadTypeSelector(currentUser),
+                  const SizedBox(height: CRMSpacing.m),
+                ] else if (_activeMainTab == 'Rejected' &&
                     currentUser != null &&
                     currentUser.role != 'Telecaller') ...[
                   _buildRejectedLeadTypeSelector(currentUser),
                   const SizedBox(height: CRMSpacing.m),
                 ],
-                if (_activeMainTab == 'Leads') ...[
+                if (_activeMainTab == 'Leads' && !widget.campaignMode) ...[
                   if (currentUser != null && currentUser.role == 'Sales') ...[
                     _buildSalesLeadGroupSelector(currentUser, _cachedRequirements),
                     const SizedBox(height: CRMSpacing.m),
@@ -2360,7 +2450,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 ],
 
                 // Filters & Search Card
-                if (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing')
+                if (_isCampaignListingLeadsView)
+                  _buildCampaignListingFiltersSection(topGap: CRMSpacing.m)
+                else if (_isCampaignListingView)
+                  _buildCampaignListingSearchField()
+                else if (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing')
                   const SizedBox.shrink()
                 else
                 LayoutBuilder(
@@ -2536,6 +2630,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 ),
               ),
               const SizedBox(width: 8),
+              if (!widget.campaignMode && _can('page.leads.add'))
               Flexible(
                 child: CrmControlGuard(
                   controlKey: 'action.leads.create',
@@ -2553,7 +2648,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Row(
+          child: widget.campaignMode
+              ? Row(
+                  children: [
+                    for (final tab in _campaignPageTabs) ...[
+                      if (tab != _campaignPageTabs.first) const SizedBox(width: 8),
+                      _buildMobileCampaignPageTabChip(tab, currentUser),
+                    ],
+                  ],
+                )
+              : Row(
             children: [
               _buildMobileMainTabChip('Leads', _activeMainTab == 'Leads'),
               if (currentUser?.role != 'Telecaller') ...[
@@ -2576,7 +2680,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ],
           ),
         ),
-        if (_activeMainTab == 'Leads') ...[
+        if (widget.campaignMode && (_activeMainTab == 'Leads' || _activeMainTab == 'Rejected'))
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: _buildCampaignPageLeadTypeSelector(currentUser),
+          ),
+        if (_activeMainTab == 'Leads' && !widget.campaignMode) ...[
           if (isSales && currentUser != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -2610,7 +2719,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     return MobileScreenScaffold(
-      title: 'Leads',
+      title: widget.campaignMode ? 'Campaign Leads' : 'Leads',
       scrollable: false,
       body: _activeMainTab == 'Follow-ups'
           ? RefreshIndicator(
@@ -2640,7 +2749,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                      child: Column(
+                      child: _isCampaignListingLeadsView
+                          ? _buildCampaignListingFiltersSection(topGap: CRMSpacing.s)
+                          : _isCampaignListingView
+                          ? _buildCampaignListingSearchField()
+                          : Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _buildMobileFilterButton(),
@@ -2658,7 +2771,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ),
                   ),
-                  if (_activeMainTab == 'Rejected' && currentUser?.role != 'Telecaller')
+                  if (!widget.campaignMode && _activeMainTab == 'Rejected' && currentUser?.role != 'Telecaller')
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -2923,6 +3036,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
       },
       itemBuilder: (context) => [
+        if (_canViewLeadDetails(req))
         const PopupMenuItem(
           value: 'view_details',
           child: Row(
@@ -2933,7 +3047,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ],
           ),
         ),
-        if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
+        if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role) && _can('page.leads.add_requirement'))
           const PopupMenuItem(
             value: 'add_another',
             child: Row(
@@ -2944,7 +3058,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ],
             ),
           ),
-        if (!isClosed)
+        if (!isClosed && _can('page.leads.share'))
           const PopupMenuItem(
             value: 'share',
             child: Row(
@@ -2966,7 +3080,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ],
             ),
           ),
-        if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
+        if (!isClosed && _can('page.leads.edit') && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
           const PopupMenuItem(
             value: 'edit',
             child: Row(
@@ -2978,7 +3092,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ),
           ),
         ],
-        if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+        if (_canDeleteLead(req) && (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin')) ...[
           const PopupMenuItem(
             value: 'delete',
             child: Row(
@@ -3508,6 +3622,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     color: kWhatsAppGreen,
                     onPressed: (req.clientMobile.isNotEmpty && !isClosed) ? () => _sendWhatsAppMessage(req.clientMobile) : null,
                   ),
+                  if (_can('page.leads.run_matches'))
                   MobileIconAction(
                     icon: Icons.handshake_outlined,
                     label: 'Matches',
@@ -3520,6 +3635,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     color: const Color(0xFF6366F1),
                     onPressed: () => _showViewAllNotesDialog(context, req),
                   ),
+                  if (_can('page.leads.edit'))
                   MobileIconAction(
                     icon: Icons.edit_outlined,
                     label: 'Edit',
@@ -3564,8 +3680,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CRMPageHeader(
-          title: isTelecaller ? 'All Leads (Track)' : 'Leads',
-          trailing: CrmControlGuard(
+          title: widget.campaignMode
+              ? 'Campaign Leads'
+              : (isTelecaller ? 'All Leads (Track)' : 'Leads'),
+          trailing: widget.campaignMode || !_can('page.leads.add') ? null : CrmControlGuard(
             controlKey: 'action.leads.create',
             child: CRMButton(
               label: 'Add Lead',
@@ -3581,8 +3699,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
   }
 
-  Widget _buildMobileFilterButton() {
-    final activeCount = _countActiveLeadFilters();
+  Widget _buildMobileFilterButton({int? activeCountOverride}) {
+    final activeCount = activeCountOverride ?? _countActiveLeadFilters();
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -4034,7 +4152,8 @@ _recomputeFilteredRequirements();
         ? _wonConfigurationIds.toSet()
         : _selectedConfigIds.toSet();
 
-    return RequirementFilterEngine.filterAndSort(
+    final campaignLeadsTab = widget.campaignMode && _activeMainTab == 'Leads';
+    final counted = RequirementFilterEngine.filterAndSort(
       items: viewModels,
       currentUser: currentUser,
       activeMainTab: _activeMainTab,
@@ -4042,7 +4161,7 @@ _recomputeFilteredRequirements();
       selectedCategoryId: _selectedCategoryId,
       selectedConfigIds: effectiveConfigIds,
       selectedStatus: _selectedStatus,
-      salesLeadGroupFilter: _salesLeadGroupFilter,
+      salesLeadGroupFilter: campaignLeadsTab ? 'all' : _salesLeadGroupFilter,
       selectedSalesFilterId: _selectedSalesFilterId,
       selectedTelecallerFilterIds: _selectedTelecallerFilterIds.toSet(),
       selectedReadiness: _selectedReadiness,
@@ -4054,7 +4173,13 @@ _recomputeFilteredRequirements();
       customEndDate: _customEndDate,
       knownUsers: allKnownUsers,
       metadata: _metadata,
-    ).length;
+    );
+    if (!widget.campaignMode) return counted.length;
+    return counted
+        .where((vm) => campaignLeadsTab
+            ? _isShownCampaignRequirement(vm.requirement)
+            : _isCampaignPageRequirement(vm.requirement))
+        .length;
   }
 
   Future<void> _pickCustomDateRange(BuildContext context) async {
@@ -5921,18 +6046,21 @@ _recomputeFilteredRequirements();
                   value: 'added',
                   count: addedCount,
                 ),
-                const SizedBox(width: 6),
-                _buildSalesGroupFilterButton(
-                  label: isForOtherUser ? 'Campaign Leads ($firstName)' : 'Campaign Leads',
-                  icon: Icons.campaign_rounded,
-                  value: 'campaign',
-                  count: totalCampaignCount,
-                ),
+                // Salespersons open their campaign leads from the separate Campaign Leads page.
+                if (isForOtherUser) ...[
+                  const SizedBox(width: 6),
+                  _buildSalesGroupFilterButton(
+                    label: 'Campaign Leads ($firstName)',
+                    icon: Icons.campaign_rounded,
+                    value: 'campaign',
+                    count: totalCampaignCount,
+                  ),
+                ],
               ],
             ),
           ),
         ),
-        if (_salesLeadGroupFilter == 'campaign') ...[
+        if (isForOtherUser && _salesLeadGroupFilter == 'campaign') ...[
           const SizedBox(height: 10),
           Row(
             children: [
@@ -7820,7 +7948,7 @@ _recomputeFilteredRequirements();
               ),
             ),
           ),
-        ] else if (!isClosed) ...[
+        ] else if (!isClosed && _can('page.leads.add_notes')) ...[
           const SizedBox(height: 4),
           Builder(
             builder: (btnContext) {
@@ -8245,6 +8373,7 @@ _recomputeFilteredRequirements();
                           }
                         },
                         itemBuilder: (context) => [
+                          if (_canViewLeadDetails(req))
                           const PopupMenuItem(
                             value: 'view_details',
                             child: Row(
@@ -8255,7 +8384,7 @@ _recomputeFilteredRequirements();
                               ],
                             ),
                           ),
-                          if (!isClosed && !_isLeadTransferredAway(req, currentUser))
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser) && _can('page.leads.add_requirement'))
                             const PopupMenuItem(
                               value: 'add_another',
                               child: Row(
@@ -8266,7 +8395,7 @@ _recomputeFilteredRequirements();
                                 ],
                               ),
                             ),
-                          if (!isClosed)
+                          if (!isClosed && _can('page.leads.share'))
                             const PopupMenuItem(
                               value: 'share',
                               child: Row(
@@ -8288,7 +8417,7 @@ _recomputeFilteredRequirements();
                                 ],
                               ),
                             ),
-                          if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
+                          if (!isClosed && _can('page.leads.edit') && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
                             const PopupMenuItem(
                               value: 'edit',
                               child: Row(
@@ -8300,7 +8429,7 @@ _recomputeFilteredRequirements();
                               ),
                             ),
                           ],
-                          if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                          if (_canDeleteLead(req) && (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin')) ...[
                             const PopupMenuItem(
                               value: 'delete',
                               child: Row(
@@ -8719,6 +8848,7 @@ _recomputeFilteredRequirements();
                               }
                             },
                             itemBuilder: (context) => [
+                              if (_canViewLeadDetails(req))
                               const PopupMenuItem(
                                 value: 'view_details',
                                 child: Row(
@@ -8729,7 +8859,7 @@ _recomputeFilteredRequirements();
                                   ],
                                 ),
                               ),
-                              if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
+                              if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role) && _can('page.leads.add_requirement'))
                                 const PopupMenuItem(
                                   value: 'add_another',
                                   child: Row(
@@ -8740,7 +8870,7 @@ _recomputeFilteredRequirements();
                                     ],
                                   ),
                                 ),
-                              if (!isClosed)
+                              if (!isClosed && _can('page.leads.share'))
                                 const PopupMenuItem(
                                   value: 'share',
                                   child: Row(
@@ -8762,7 +8892,7 @@ _recomputeFilteredRequirements();
                                     ],
                                   ),
                                 ),
-                              if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
+                              if (!isClosed && _can('page.leads.edit') && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
                                 const PopupMenuItem(
                                   value: 'edit',
                                   child: Row(
@@ -8774,7 +8904,7 @@ _recomputeFilteredRequirements();
                                   ),
                                 ),
                               ],
-                              if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                              if (_canDeleteLead(req) && (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin')) ...[
                                 const PopupMenuItem(
                                   value: 'delete',
                                   child: Row(
@@ -9220,6 +9350,7 @@ _recomputeFilteredRequirements();
                           }
                         },
                         itemBuilder: (context) => [
+                          if (_canViewLeadDetails(req))
                           const PopupMenuItem(
                             value: 'view_details',
                             child: Row(
@@ -9230,7 +9361,7 @@ _recomputeFilteredRequirements();
                               ],
                             ),
                           ),
-                          if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role))
+                          if (!isClosed && !_isLeadTransferredAway(req, currentUser) && !RoleGuard.isTelecaller(currentUser?.role) && _can('page.leads.add_requirement'))
                             const PopupMenuItem(
                               value: 'add_another',
                               child: Row(
@@ -9241,7 +9372,7 @@ _recomputeFilteredRequirements();
                                 ],
                               ),
                             ),
-                          if (!isClosed)
+                          if (!isClosed && _can('page.leads.share'))
                             const PopupMenuItem(
                               value: 'share',
                               child: Row(
@@ -9263,7 +9394,7 @@ _recomputeFilteredRequirements();
                                 ],
                               ),
                             ),
-                          if (!isClosed && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
+                          if (!isClosed && _can('page.leads.edit') && (_hasEditAccess(req, currentUser) || RoleGuard.isTelecaller(currentUser?.role) || currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin')) ...[
                             const PopupMenuItem(
                               value: 'edit',
                               child: Row(
@@ -9275,7 +9406,7 @@ _recomputeFilteredRequirements();
                               ),
                             ),
                           ],
-                          if (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin') ...[
+                          if (_canDeleteLead(req) && (_hasEditAccess(req, currentUser) || currentUser?.role == 'Super Admin' || currentUser?.role == 'Admin')) ...[
                             const PopupMenuItem(
                               value: 'delete',
                               child: Row(
@@ -9842,7 +9973,8 @@ _recomputeFilteredRequirements();
 
   Widget _buildActionBar(List<RequirementModel> requirements, UserModel? currentUser) {
     final role = currentUser?.role.toLowerCase() ?? '';
-    final bool canExport = role == 'admin' || role == 'super admin' || role == 'telecaller';
+    final bool canExport = (role == 'admin' || role == 'super admin' || role == 'telecaller') &&
+        _can('page.leads.export');
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -10002,33 +10134,1226 @@ _recomputeFilteredRequirements();
     }
   }
 
+  void _onMainViewTabSelected(String label) {
+    setState(() {
+      _activeMainTab = label;
+      _currentPage = 1;
+      if (label == 'Rejected' || label == 'Won' || label == 'My Won') {
+        _selectedStatus = 'All';
+      }
+    });
+    _lastComputedFilterKey = null;
+    _recomputeFilteredRequirements(notify: false);
+    // Won / My Won needs an unfiltered status fetch so Won rows are present.
+    if (label == 'My Won' ||
+        label == 'Won' ||
+        label == 'Rejected' ||
+        label == 'Leads' ||
+        label == 'Requirements' ||
+        label == 'Leads Added by Me') {
+      _triggerFetch();
+    } else if (label == 'Follow-ups') {
+      _refreshFollowupsFuture(force: true);
+    }
+  }
+
+  /// Campaign Leads page tabs. Leads, Follow-ups and Rejected each split into
+  /// Property Listing Leads / Requirement Leads; every tab shows campaign leads only.
+  static const _campaignPageTabs = ['Leads', 'Follow-ups', 'My Won', 'Rejected'];
+
+  bool _isCampaignPageTabSelected(String tab) {
+    if (tab == 'My Won') return _activeMainTab == 'My Won' || _activeMainTab == 'Won';
+    return _activeMainTab == tab;
+  }
+
+  void _onCampaignPageTabSelected(String tab) {
+    setState(() => _selectedCampaignLeadIds.clear());
+    _onMainViewTabSelected(tab);
+    if (tab == 'Leads' || tab == 'Rejected' || tab == 'Follow-ups') {
+      unawaited(_fetchSalesPropertyListingLeads());
+    }
+    if (tab == 'Leads' || tab == 'Follow-ups') {
+      unawaited(_fetchListingFollowups());
+    }
+  }
+
+  bool get _isCampaignListingView =>
+      widget.campaignMode &&
+      ((_activeMainTab == 'Leads' && _salesCampaignSubTab == 'Property Listing') ||
+          (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing'));
+
+  /// Follow-ups card showing Property Listing lead follow-ups (no site visits for this lead type).
+  bool get _isCampaignListingFollowupsView =>
+      widget.campaignMode && _campaignFollowupSubTab == 'Property Listing';
+
+  int _listingFollowupsSeq = 0;
+
+  Future<void> _fetchListingFollowups() async {
+    if (!widget.campaignMode || !mounted) return;
+    final seq = ++_listingFollowupsSeq;
+    setState(() {
+      _listingFollowupsLoading = true;
+      _listingFollowupsError = null;
+    });
+    try {
+      final result = await ListingLeadFollowupsService.fetch();
+      if (!mounted || seq != _listingFollowupsSeq) return;
+      setState(() {
+        _listingFollowups = result.items;
+        _listingFollowupCounts = result.counts;
+        _listingFollowupsLoaded = true;
+      });
+    } on ListingFollowupsException catch (e) {
+      if (mounted && seq == _listingFollowupsSeq) setState(() => _listingFollowupsError = e.message);
+    } finally {
+      if (mounted && seq == _listingFollowupsSeq) setState(() => _listingFollowupsLoading = false);
+    }
+  }
+
+  Map<String, ListingLeadFollowup> get _pendingListingFollowupsByLead => {
+        for (final f in _listingFollowups)
+          if (f.isPending) f.leadId: f,
+      };
+
+  String _formatListingFollowupDate(DateTime d) => DateFormat('dd MMM yyyy, hh:mm a').format(d);
+
+  Future<void> _runListingFollowupAction(
+    String busyKey,
+    Future<void> Function() action,
+    String successMessage,
+  ) async {
+    setState(() => _listingFollowupBusyIds.add(busyKey));
+    try {
+      await action();
+      if (!mounted) return;
+      AppStatusSnackBar.show(context, message: successMessage, isSuccess: true);
+    } on ListingFollowupsException catch (e) {
+      if (mounted) AppStatusSnackBar.show(context, message: e.message, isSuccess: false);
+    } finally {
+      if (mounted) setState(() => _listingFollowupBusyIds.remove(busyKey));
+      await _fetchListingFollowups();
+    }
+  }
+
+  Future<void> _scheduleListingFollowup(Map<String, dynamic> lead) async {
+    final leadId = lead['id']?.toString() ?? '';
+    if (leadId.isEmpty) return;
+    final result = await _ListingFollowupDialog.show(
+      context,
+      mode: _ListingFollowupDialogMode.schedule,
+      clientName: _listingValue(lead, 'clientName'),
+    );
+    if (result == null || result.when == null) return;
+    await _runListingFollowupAction(
+      'lead:$leadId',
+      () => ListingLeadFollowupsService.create(leadId: leadId, when: result.when!, remarks: result.remarks),
+      'Follow-up scheduled',
+    );
+  }
+
+  Future<void> _rescheduleListingFollowup(ListingLeadFollowup f, String clientName) async {
+    final result = await _ListingFollowupDialog.show(
+      context,
+      mode: _ListingFollowupDialogMode.reschedule,
+      clientName: clientName,
+      initialWhen: f.followupDate,
+      initialRemarks: f.remarks,
+    );
+    if (result == null || result.when == null) return;
+    await _runListingFollowupAction(
+      f.id,
+      () => ListingLeadFollowupsService.reschedule(f.id, when: result.when!, remarks: result.remarks),
+      'Follow-up rescheduled',
+    );
+  }
+
+  Future<void> _completeListingFollowup(ListingLeadFollowup f, String clientName) async {
+    final result = await _ListingFollowupDialog.show(
+      context,
+      mode: _ListingFollowupDialogMode.complete,
+      clientName: clientName,
+    );
+    if (result == null) return;
+    await _runListingFollowupAction(
+      f.id,
+      () => ListingLeadFollowupsService.complete(
+        f.id,
+        outcomeRemarks: result.remarks,
+        nextWhen: result.when,
+        nextRemarks: result.nextRemarks,
+      ),
+      result.when != null ? 'Follow-up completed and next follow-up scheduled' : 'Follow-up completed',
+    );
+  }
+
+  Future<void> _cancelListingFollowup(ListingLeadFollowup f, String clientName) async {
+    final result = await _ListingFollowupDialog.show(
+      context,
+      mode: _ListingFollowupDialogMode.cancel,
+      clientName: clientName,
+    );
+    if (result == null) return;
+    await _runListingFollowupAction(
+      f.id,
+      () => ListingLeadFollowupsService.cancel(f.id, reason: result.remarks),
+      'Follow-up cancelled',
+    );
+  }
+
+  Widget _buildListingFollowupActionsMenu(ListingLeadFollowup f, String clientName, {Widget? child}) {
+    return PopupMenuButton<String>(
+      tooltip: 'Follow-up actions',
+      enabled: !_listingFollowupBusyIds.contains(f.id),
+      onSelected: (action) {
+        switch (action) {
+          case 'complete':
+            _completeListingFollowup(f, clientName);
+          case 'reschedule':
+            _rescheduleListingFollowup(f, clientName);
+          case 'cancel':
+            _cancelListingFollowup(f, clientName);
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: 'complete',
+          child: ListTile(dense: true, leading: Icon(Icons.task_alt_rounded, size: 18), title: Text('Mark Completed')),
+        ),
+        PopupMenuItem(
+          value: 'reschedule',
+          child: ListTile(dense: true, leading: Icon(Icons.update_rounded, size: 18), title: Text('Reschedule')),
+        ),
+        PopupMenuItem(
+          value: 'cancel',
+          child: ListTile(dense: true, leading: Icon(Icons.event_busy_rounded, size: 18), title: Text('Cancel Follow-up')),
+        ),
+      ],
+      child: child,
+    );
+  }
+
+  Color _listingFollowupColor(ListingLeadFollowup f) {
+    if (f.status == 'Completed') return CRMColors.success;
+    if (f.status == 'Cancelled') return const Color(0xFF94A3B8);
+    if (f.isDue) return CRMColors.danger;
+    if (f.isToday) return CRMColors.primaryOf(context);
+    return CRMColors.info;
+  }
+
+  /// Follow-up cell for a Property Listing lead row: next pending follow-up, or a Schedule action.
+  Widget _buildListingFollowupCell(Map<String, dynamic> lead) {
+    final leadId = lead['id']?.toString() ?? '';
+    if (leadId.isEmpty) return _listingTextCell('—');
+    if (_listingFollowupBusyIds.contains('lead:$leadId')) {
+      return const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    final pending = _pendingListingFollowupsByLead[leadId];
+    if (pending == null) {
+      return TextButton.icon(
+        onPressed: () => _scheduleListingFollowup(lead),
+        icon: const Icon(Icons.add_alarm_rounded, size: 15),
+        label: const Text('Schedule', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      );
+    }
+    final color = _listingFollowupColor(pending);
+    final label = pending.isDue ? 'Due' : (pending.isToday ? 'Today' : 'Upcoming');
+    return _buildListingFollowupActionsMenu(
+      pending,
+      _listingValue(lead, 'clientName'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_rounded, size: 13, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '$label · ${_formatListingFollowupDate(pending.followupDate)}',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+            ),
+            Icon(Icons.arrow_drop_down_rounded, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Today / Due / Future / All follow-ups for campaign Property Listing leads.
+  Widget _buildCampaignListingFollowupsPanel(
+    Widget Function(String label, String tabKey, int count, IconData icon) buildPill,
+  ) {
+    final counts = _listingFollowupCounts;
+    final dateFilter = _reqFollowupDateFilter;
+    final query = _listingFollowupSearchController.text.trim().toLowerCase();
+    final leadsById = {
+      for (final l in _salesPropertyListingLeads) l['id']?.toString() ?? '': l,
+    };
+
+    final items = _listingFollowups.where((f) {
+      final inTab = switch (_selectedFollowupSubTab) {
+        'Due' => f.isDue,
+        'Future' => f.isFuture,
+        'AllClients' => true,
+        _ => f.isToday,
+      };
+      if (!inTab) return false;
+      if (dateFilter != null && (_selectedFollowupSubTab == 'Future' || _selectedFollowupSubTab == 'AllClients')) {
+        final d = f.followupDate;
+        if (d.year != dateFilter.year || d.month != dateFilter.month || d.day != dateFilter.day) return false;
+      }
+      if (query.isEmpty) return true;
+      final lead = leadsById[f.leadId];
+      final blob = [
+        f.customerName,
+        f.phone,
+        f.remarks,
+        f.outcomeRemarks,
+        f.status,
+        lead?['clientName'],
+        lead?['phone'],
+        lead?['propertyType'],
+        lead?['propertyLocation'],
+        lead?['city'],
+        lead?['campaignName'],
+      ].whereType<Object>().map((v) => v.toString().toLowerCase()).join(' ');
+      return blob.contains(query);
+    }).toList();
+
+    final emptyText = switch (_selectedFollowupSubTab) {
+      'Due' => 'No due follow-ups on your property listing leads.',
+      'Future' => 'No upcoming follow-ups on your property listing leads.',
+      'AllClients' => 'No follow-ups on your property listing leads yet.',
+      _ => 'No follow-ups today on your property listing leads.',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              buildPill("Today's Follow-ups", 'Today', counts.today, Icons.today_rounded),
+              const SizedBox(width: CRMSpacing.s),
+              buildPill('Due Follow-ups', 'Due', counts.due, Icons.warning_amber_rounded),
+              const SizedBox(width: CRMSpacing.s),
+              buildPill('Future Follow-ups', 'Future', counts.future, Icons.next_plan_rounded),
+              const SizedBox(width: CRMSpacing.s),
+              buildPill('All clients follow ups', 'AllClients', counts.all, Icons.people_alt_rounded),
+            ],
+          ),
+        ),
+        const SizedBox(height: CRMSpacing.m),
+        SizedBox(
+          height: 38,
+          child: TextField(
+            controller: _listingFollowupSearchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search follow-ups by client name, phone, location, remarks...',
+              hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+              prefixIcon: const Icon(Icons.search_rounded, size: 18),
+              suffixIcon: _listingFollowupSearchController.text.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      onPressed: () => setState(_listingFollowupSearchController.clear),
+                    )
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: CRMColors.borderOf(context)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: CRMColors.borderOf(context)),
+              ),
+              filled: true,
+              fillColor: CRMColors.cardBgOf(context),
+            ),
+          ),
+        ),
+        const SizedBox(height: CRMSpacing.m),
+        if (_listingFollowupsLoading && !_listingFollowupsLoaded)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_listingFollowupsError != null && !_listingFollowupsLoaded)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Text(_listingFollowupsError!, textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _fetchListingFollowups,
+                  icon: const Icon(Icons.refresh, size: 14),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
+          )
+        else if (items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text(
+                query.isNotEmpty ? 'No follow-ups match your search.' : emptyText,
+                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textSecondaryOf(context)),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          for (final f in items) _buildListingFollowupCard(f, leadsById[f.leadId]),
+      ],
+    );
+  }
+
+  Widget _buildListingFollowupCard(ListingLeadFollowup f, Map<String, dynamic>? lead) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = _listingFollowupColor(f);
+    final clientName = lead != null ? _listingValue(lead, 'clientName') : (f.customerName ?? '—');
+    final phone = (lead?['phone']?.toString().trim().isNotEmpty ?? false) ? lead!['phone'].toString().trim() : (f.phone ?? '');
+    final details = [
+      if (lead != null) _listingValue(lead, 'propertyType'),
+      if (lead != null) _listingValue(lead, 'propertyLocation'),
+      if (lead != null) _listingValue(lead, 'campaignName'),
+    ].where((v) => v != '—' && v.trim().isNotEmpty).join(' • ');
+    final statusLabel = f.isPending ? (f.isDue ? 'Due' : (f.isToday ? 'Today' : 'Upcoming')) : f.status;
+    final busy = _listingFollowupBusyIds.contains(f.id);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border(
+          left: BorderSide(color: color, width: 3),
+          top: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          right: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          bottom: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  clientName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(statusLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+              ),
+              if (f.isPending) ...[
+                const SizedBox(width: 4),
+                busy
+                    ? const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : _buildListingFollowupActionsMenu(
+                        f,
+                        clientName,
+                        child: const Padding(
+                          padding: EdgeInsets.all(6),
+                          child: Icon(Icons.more_vert_rounded, size: 18),
+                        ),
+                      ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.event_rounded, size: 14, color: color),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatListingFollowupDate(f.followupDate),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+                  ),
+                ],
+              ),
+              if (phone.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => _makePhoneCall(phone),
+                      child: Icon(Icons.phone_outlined, size: 14, color: CRMColors.primaryOf(context)),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      onTap: () => _sendWhatsAppMessage(phone),
+                      child: const Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF25D366)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(details, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+          ],
+          if (f.remarks != null) ...[
+            const SizedBox(height: 4),
+            Text('Remarks: ${f.remarks}', style: const TextStyle(fontSize: 12)),
+          ],
+          if (f.outcomeRemarks != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              '${f.status == 'Cancelled' ? 'Cancel reason' : 'Outcome'}: ${f.outcomeRemarks}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  int _campaignRequirementLeadCount(UserModel user) {
+    return _cachedRequirements
+        .where((r) =>
+            getListingTypeLabel(r) == _activeListingTab &&
+            _isShownCampaignRequirement(r, user) &&
+            r.status != 'Won' &&
+            r.status != 'Closed' &&
+            !_isLeadRejected(r))
+        .length;
+  }
+
+  bool _isCampaignFollowupOfType(String? requirementId, String type) {
+    if (requirementId == null || requirementId.isEmpty || !_salesDirectLeadsLoaded) return false;
+    return type == 'Property Listing'
+        ? _directPropertyListingIds.contains(requirementId)
+        : _isCampaignPageRequirementId(requirementId);
+  }
+
+  List<DashboardFollowup> _campaignFollowupsOfType(
+    List<DashboardFollowup> items,
+    Map<String, RequirementModel> followupToReqMap,
+    String type,
+  ) {
+    return items
+        .where((f) => _isCampaignFollowupOfType(followupToReqMap[f.id]?.id ?? f.requirementId, type))
+        .toList();
+  }
+
+  /// Property Listing Leads / Requirement Leads selector (same design as the Campaign Leads source page).
+  Widget _buildCampaignLeadTypeTabs({
+    required String selected,
+    required int listingCount,
+    required int requirementCount,
+    required String listingSubtitle,
+    required String requirementSubtitle,
+    required ValueChanged<String> onSelect,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 700;
+    final listingTab = _buildCampaignLeadTypeTabItem(
+      title: 'Property Listing Leads',
+      subtitle: listingSubtitle,
+      icon: Icons.home_work_rounded,
+      count: listingCount,
+      badgeColor: const Color(0xFF0284C7),
+      isSelected: selected == 'Property Listing',
+      onTap: () => onSelect('Property Listing'),
+    );
+    final requirementTab = _buildCampaignLeadTypeTabItem(
+      title: 'Requirement Leads',
+      subtitle: requirementSubtitle,
+      icon: Icons.people_alt_rounded,
+      count: requirementCount,
+      badgeColor: const Color(0xFF10B981),
+      isSelected: selected == 'Requirement',
+      onTap: () => onSelect('Requirement'),
+    );
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CRMColors.borderOf(context)),
+      ),
+      child: isMobile
+          ? Column(children: [listingTab, const SizedBox(height: 6), requirementTab])
+          : Row(children: [
+              Expanded(child: listingTab),
+              const SizedBox(width: 8),
+              Expanded(child: requirementTab),
+            ]),
+    );
+  }
+
+  Widget _buildCampaignLeadTypeTabItem({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required int count,
+    required Color badgeColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 700;
+    final primary = CRMColors.primaryOf(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? (isDark ? const Color(0xFF262E3D) : Colors.white) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+          border: isSelected ? Border.all(color: primary.withValues(alpha: 0.4), width: 1.5) : null,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? primary.withValues(alpha: 0.15)
+                    : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: isSelected ? primary : CRMColors.textSecondaryOf(context), size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected ? CRMColors.textOf(context) : CRMColors.textSecondaryOf(context),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isSelected ? badgeColor : badgeColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.white : badgeColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: CRMColors.textSecondaryOf(context).withValues(alpha: 0.85),
+                    ),
+                    maxLines: isMobile ? 2 : 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Lead-type selector shown under the Leads and Rejected tabs of the Campaign Leads page.
+  Widget _buildCampaignPageLeadTypeSelector(UserModel? user) {
+    if (user == null) return const SizedBox.shrink();
+    final isRent = _activeListingTab == 'Rent';
+    if (_activeMainTab == 'Rejected') {
+      return _buildCampaignLeadTypeTabs(
+        selected: _salesRejectedSubTab,
+        listingCount: _propertyListingLeadsFor(ownerId: user.id, rejected: true).length,
+        requirementCount: _rejectedRequirementCount(user),
+        listingSubtitle: 'Owner leads you marked Rejected',
+        requirementSubtitle: isRent ? 'Tenant leads you rejected' : 'Buyer leads you rejected',
+        onSelect: (type) {
+          setState(() {
+            _salesRejectedSubTab = type;
+            _selectedCampaignLeadIds.clear();
+            _currentPage = 1;
+          });
+          _lastComputedFilterKey = null;
+          _recomputeFilteredRequirements(notify: false);
+        },
+      );
+    }
+    return _buildCampaignLeadTypeTabs(
+      selected: _salesCampaignSubTab,
+      listingCount: _propertyListingLeadsFor(ownerId: user.id, rejected: false).length,
+      requirementCount: _campaignRequirementLeadCount(user),
+      listingSubtitle: 'Owners listing properties for ${isRent ? 'rent' : 'sale'} -> destination: Properties page',
+      requirementSubtitle: isRent
+          ? 'Tenants searching for rental homes -> destination: Leads page'
+          : 'Buyers searching for homes -> destination: Leads page',
+      onSelect: (type) {
+        setState(() {
+          _salesCampaignSubTab = type;
+          _selectedCampaignLeadIds.clear();
+          _currentPage = 1;
+        });
+        _lastComputedFilterKey = null;
+        _recomputeFilteredRequirements(notify: false);
+        if (type == 'Property Listing') unawaited(_fetchSalesPropertyListingLeads());
+      },
+    );
+  }
+
+  /// Search for the Property Listing spreadsheet views, which filter on the shared search text.
+  Widget _buildCampaignListingSearchField() {
+    return TextField(
+      controller: _searchController,
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        isDense: true,
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        hintText: 'Search by client name, mobile, location, campaign...',
+        filled: true,
+        fillColor: CRMColors.cardBgOf(context),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+        ),
+      ),
+    );
+  }
+
+  bool get _isCampaignListingLeadsView =>
+      widget.campaignMode && _activeMainTab == 'Leads' && _salesCampaignSubTab == 'Property Listing';
+
+  int get _campaignListingActiveFilterCount =>
+      (_listingFilterCategoryId != null ? 1 : 0) +
+      _listingFilterConfigIds.length +
+      (_listingFilterStatus != 'All' ? 1 : 0) +
+      (_listingDatePreset != LeadDateFilterPreset.allTime ? 1 : 0);
+
+  /// BHK / Property Type options for the selected category, mirroring the Requirement Leads filter.
+  (String, List<LookupItem>) _campaignListingSpecLookup() {
+    final meta = _metadata;
+    if (meta == null) return ('BHK', const <LookupItem>[]);
+    final catName = (meta.categories.firstWhereOrNull((c) => c.id == _listingFilterCategoryId)?.name ?? '').toLowerCase();
+    List<LookupItem> typesFor(bool Function(String name) fallback) {
+      var filtered = meta.types.where((t) => t.categoryId == _listingFilterCategoryId).toList();
+      if (filtered.isEmpty) filtered = meta.types.where((t) => fallback(t.name.toLowerCase())).toList();
+      if (filtered.isEmpty) filtered = meta.types;
+      return filtered;
+    }
+
+    if (catName.contains('commercial')) {
+      return ('Property Type', typesFor((n) =>
+          n.contains('office') || n.contains('shop') || n.contains('showroom') || n.contains('commercial')));
+    }
+    if (catName.contains('land') || catName.contains('plot')) {
+      return ('Property Type', typesFor((n) => n.contains('plot') || n.contains('land')));
+    }
+    if (catName.contains('industrial')) {
+      return ('Property Type', typesFor((n) => n.contains('warehouse') || n.contains('shed') || n.contains('industrial')));
+    }
+    var configs = meta.configurations
+        .where((c) => _listingFilterCategoryId == null || c.categoryId == _listingFilterCategoryId)
+        .toList();
+    if (configs.isEmpty) configs = meta.configurations;
+    return ('BHK', configs);
+  }
+
+  /// "3+ BHK" leads match 3 BHK and above; other values match by normalised name.
+  static bool _listingSpecMatches(String leadValue, String filterName) {
+    String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
+    final lead = norm(leadValue);
+    final filter = norm(filterName);
+    if (lead.isEmpty || filter.isEmpty) return false;
+    if (lead == filter) return true;
+    final plus = RegExp(r'^(\d+(?:\.\d+)?)\+bhk$').firstMatch(lead);
+    final bhk = RegExp(r'^(\d+(?:\.\d+)?)bhk$').firstMatch(filter);
+    if (plus != null && bhk != null) {
+      return double.parse(bhk.group(1)!) >= double.parse(plus.group(1)!);
+    }
+    if (RegExp(r'\d').hasMatch(lead) || RegExp(r'\d').hasMatch(filter)) return false;
+    return lead.contains(filter) || filter.contains(lead);
+  }
+
+  bool _campaignListingMatchesDate(Map<String, dynamic> lead, LeadDateFilterPreset preset) {
+    if (preset == LeadDateFilterPreset.allTime) return true;
+    final date = DateTime.tryParse((lead['allocatedAt'] ?? lead['receivedOn'] ?? '').toString())?.toLocal();
+    if (date == null) return false;
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    bool within(DateTime start, DateTime end) => !date.isBefore(start) && !date.isAfter(end);
+    switch (preset) {
+      case LeadDateFilterPreset.today:
+        return within(todayStart, todayEnd);
+      case LeadDateFilterPreset.yesterday:
+        final start = todayStart.subtract(const Duration(days: 1));
+        return within(start, DateTime(start.year, start.month, start.day, 23, 59, 59));
+      case LeadDateFilterPreset.last7Days:
+        return within(todayStart.subtract(const Duration(days: 6)), todayEnd);
+      case LeadDateFilterPreset.thisMonth:
+        return within(DateTime(now.year, now.month, 1), todayEnd);
+      case LeadDateFilterPreset.customRange:
+        final s = _listingCustomStart;
+        final e = _listingCustomEnd;
+        if (s == null || e == null) return true;
+        return within(DateTime(s.year, s.month, s.day), DateTime(e.year, e.month, e.day, 23, 59, 59));
+      case LeadDateFilterPreset.allTime:
+        return true;
+    }
+  }
+
+  bool _campaignListingMatchesFilters(Map<String, dynamic> lead, {LeadDateFilterPreset? datePreset}) {
+    final meta = _metadata;
+    if (_listingFilterCategoryId != null) {
+      final catName = meta?.categories.firstWhereOrNull((c) => c.id == _listingFilterCategoryId)?.name ?? '';
+      if ((lead['category'] ?? '').toString().trim().toLowerCase() != catName.trim().toLowerCase()) return false;
+    }
+    if (_listingFilterConfigIds.isNotEmpty) {
+      final leadSpec = (lead['propertyType'] ?? '').toString();
+      final names = [
+        ...?meta?.configurations.where((c) => _listingFilterConfigIds.contains(c.id)).map((c) => c.name),
+        ...?meta?.types.where((t) => _listingFilterConfigIds.contains(t.id)).map((t) => t.name),
+      ];
+      if (!names.any((name) => _listingSpecMatches(leadSpec, name))) return false;
+    }
+    if (_listingFilterStatus != 'All' && (lead['status'] ?? 'None').toString() != _listingFilterStatus) {
+      return false;
+    }
+    return _campaignListingMatchesDate(lead, datePreset ?? _listingDatePreset);
+  }
+
+  int _campaignListingDateCount(LeadDateFilterPreset preset) {
+    return _searchedCampaignLeads(rejectedOnly: false)
+        .where((lead) => _campaignListingMatchesFilters(lead, datePreset: preset))
+        .length;
+  }
+
+  void _clearCampaignListingFilters() {
+    setState(() {
+      _searchController.clear();
+      _listingFilterCategoryId = null;
+      _listingFilterConfigIds.clear();
+      _listingFilterStatus = 'All';
+      _listingDatePreset = LeadDateFilterPreset.allTime;
+      _listingCustomStart = null;
+      _listingCustomEnd = null;
+      _selectedCampaignLeadIds.clear();
+    });
+  }
+
+  Future<void> _pickCampaignListingDateRange(BuildContext context) async {
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: DateTimeRange(
+        start: _listingCustomStart ?? DateTime.now().subtract(const Duration(days: 7)),
+        end: _listingCustomEnd ?? DateTime.now(),
+      ),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) {
+        final isDark = ThemeManager().isDarkMode;
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: isDark
+                ? ColorScheme.dark(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: const Color(0xFF1E293B),
+                    onSurface: Colors.white,
+                  )
+                : ColorScheme.light(
+                    primary: CRMColors.primaryOf(ctx),
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: Colors.black87,
+                  ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _listingCustomStart = picked.start;
+        _listingCustomEnd = picked.end;
+        _listingDatePreset = LeadDateFilterPreset.customRange;
+        _selectedCampaignLeadIds.clear();
+      });
+    }
+  }
+
+  Widget _buildCampaignListingDateFilterBar(BuildContext context) {
+    final isDark = ThemeManager().isDarkMode;
+    final primaryColor = CRMColors.primaryOf(context);
+    final items = [
+      (LeadDateFilterPreset.today, 'Today', _campaignListingDateCount(LeadDateFilterPreset.today), Icons.calendar_today_rounded),
+      (LeadDateFilterPreset.yesterday, 'Yesterday', _campaignListingDateCount(LeadDateFilterPreset.yesterday), Icons.history_rounded),
+      (LeadDateFilterPreset.last7Days, 'Last 7 Days', _campaignListingDateCount(LeadDateFilterPreset.last7Days), Icons.date_range_rounded),
+      (LeadDateFilterPreset.thisMonth, 'This Month', _campaignListingDateCount(LeadDateFilterPreset.thisMonth), Icons.calendar_month_rounded),
+      (LeadDateFilterPreset.customRange, 'Custom Range', null, Icons.event_repeat_rounded),
+      (LeadDateFilterPreset.allTime, 'All Time', _campaignListingDateCount(LeadDateFilterPreset.allTime), Icons.all_inclusive_rounded),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.calendar_month_rounded, size: 16, color: primaryColor),
+            const SizedBox(width: 8),
+            Text(
+              'DATE FILTER:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: items.map((item) {
+              final (filter, label, count, icon) = item;
+              final isSelected = _listingDatePreset == filter;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (filter == LeadDateFilterPreset.customRange) {
+                      _pickCampaignListingDateRange(context);
+                    } else {
+                      setState(() {
+                        _listingDatePreset = filter;
+                        _selectedCampaignLeadIds.clear();
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isSelected ? primaryColor : (isDark ? const Color(0xFF1E2430) : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? primaryColor : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          icon,
+                          size: 14,
+                          color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: isSelected ? Colors.white : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+                          ),
+                        ),
+                        if (count != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCampaignListingFiltersSection({required double topGap}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 600) return _buildCampaignListingFiltersCard();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildMobileFilterButton(activeCountOverride: _campaignListingActiveFilterCount),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: _isMobileFiltersExpanded
+                  ? Padding(
+                      padding: EdgeInsets.only(top: topGap),
+                      child: _buildCampaignListingFiltersCard(),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Same filters as the Requirement Leads card, applied to the Property Listing spreadsheet.
+  Widget _buildCampaignListingFiltersCard() {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    final (specLabel, specItems) = _campaignListingSpecLookup();
+
+    final categoryFilter = _buildDropdownFilter<String?>(
+      label: 'Category',
+      value: _listingFilterCategoryId,
+      items: [
+        const DropdownMenuItem(value: null, child: Text('All Categories')),
+        ...?_metadata?.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
+      ],
+      isMobile: isMobile,
+      onChanged: (val) {
+        setState(() {
+          _listingFilterCategoryId = val;
+          _listingFilterConfigIds.clear();
+          _selectedCampaignLeadIds.clear();
+        });
+      },
+    );
+    final specFilter = CRMMultiSelectDropdown(
+      label: specLabel,
+      selectedIds: _listingFilterConfigIds,
+      items: specItems,
+      onChanged: (vals) {
+        setState(() {
+          _listingFilterConfigIds
+            ..clear()
+            ..addAll(vals);
+          _selectedCampaignLeadIds.clear();
+        });
+      },
+    );
+    final statusFilter = _buildDropdownFilter<String>(
+      label: 'Status',
+      value: _listingFilterStatus,
+      items: const [
+        DropdownMenuItem(value: 'All', child: Text('All')),
+        DropdownMenuItem(value: 'None', child: Text('None')),
+        DropdownMenuItem(value: 'Interested', child: Text('Interested')),
+      ],
+      isMobile: isMobile,
+      onChanged: (val) {
+        setState(() {
+          _listingFilterStatus = val ?? 'All';
+          _selectedCampaignLeadIds.clear();
+        });
+      },
+    );
+    final clearButton = CRMButton(
+      label: 'Clear Filters',
+      variant: CRMButtonVariant.outline,
+      onPressed: _clearCampaignListingFilters,
+    );
+
+    return CRMCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  style: CRMTypography.body.copyWith(color: CRMColors.text),
+                  decoration: InputDecoration(
+                    hintText: 'Search by client name, mobile, location, campaign...',
+                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMuted),
+                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMuted),
+                    filled: true,
+                    fillColor: CRMColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                      borderSide: BorderSide(color: CRMColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+                      borderSide: BorderSide(color: CRMColors.border),
+                    ),
+                  ),
+                  onChanged: (_) => setState(() => _selectedCampaignLeadIds.clear()),
+                ),
+              ),
+              const SizedBox(width: CRMSpacing.s),
+              CRMButton(
+                label: 'Search',
+                onPressed: () {
+                  setState(() => _selectedCampaignLeadIds.clear());
+                  unawaited(_fetchSalesPropertyListingLeads());
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          isMobile
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: categoryFilter),
+                        const SizedBox(width: CRMSpacing.s),
+                        Expanded(child: specFilter),
+                      ],
+                    ),
+                    const SizedBox(height: CRMSpacing.s),
+                    statusFilter,
+                    const SizedBox(height: CRMSpacing.s),
+                    clearButton,
+                  ],
+                )
+              : Wrap(
+                  spacing: CRMSpacing.m,
+                  runSpacing: CRMSpacing.s,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    categoryFilter,
+                    SizedBox(width: 200, child: specFilter),
+                    statusFilter,
+                    clearButton,
+                  ],
+                ),
+          const SizedBox(height: CRMSpacing.m),
+          const Divider(height: 1),
+          const SizedBox(height: CRMSpacing.m),
+          _buildCampaignListingDateFilterBar(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCampaignPageTabButton(String tab, UserModel? user) {
+    final isSelected = _isCampaignPageTabSelected(tab);
+    return GestureDetector(
+      onTap: () => _onCampaignPageTabSelected(tab),
+      child: AnimatedContainer(
+        duration: CRMMotion.fast,
+        curve: CRMMotion.easeInOut,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+        decoration: BoxDecoration(
+          color: isSelected ? CRMColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+        ),
+        child: Text(
+          tab,
+          style: CRMTypography.bodyMedium.copyWith(
+            color: isSelected ? Colors.white : CRMColors.textSecondary,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileCampaignPageTabChip(String tab, UserModel? user) {
+    final primary = CRMColors.primaryOf(context);
+    final isSelected = _isCampaignPageTabSelected(tab);
+    return ChoiceChip(
+      label: Text(tab),
+      selected: isSelected,
+      selectedColor: primary.withValues(alpha: 0.15),
+      labelStyle: TextStyle(
+        fontSize: 12.5,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+        color: isSelected ? primary : CRMColors.textOf(context),
+      ),
+      onSelected: (val) {
+        if (val) _onCampaignPageTabSelected(tab);
+      },
+    );
+  }
+
   Widget _buildMainViewTabButton(String label) {
     final bool isWonTab = label == 'Won' || label == 'My Won';
     final bool currentIsWon = _activeMainTab == 'Won' || _activeMainTab == 'My Won';
     final isSelected = isWonTab ? currentIsWon : _activeMainTab == label;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _activeMainTab = label;
-          _currentPage = 1;
-          if (label == 'Rejected' || label == 'Won' || label == 'My Won') {
-            _selectedStatus = 'All';
-          }
-        });
-        _lastComputedFilterKey = null;
-        _recomputeFilteredRequirements(notify: false);
-        // Won / My Won needs an unfiltered status fetch so Won rows are present.
-        if (label == 'My Won' ||
-            label == 'Won' ||
-            label == 'Rejected' ||
-            label == 'Leads' ||
-            label == 'Requirements' ||
-            label == 'Leads Added by Me') {
-          _triggerFetch();
-        } else if (label == 'Follow-ups') {
-          _refreshFollowupsFuture(force: true);
-        }
-      },
+      onTap: () => _onMainViewTabSelected(label),
       child: AnimatedContainer(
         duration: CRMMotion.fast,
         curve: CRMMotion.easeInOut,
@@ -10515,7 +11840,7 @@ _recomputeFilteredRequirements();
       final isAdminOrSuperAdmin = currentUser != null &&
           (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
 
-      if (!isAdminOrSuperAdmin) {
+      if (!isAdminOrSuperAdmin || !_can(_followupSectionActionKey('delete'))) {
         return historyBtn;
       }
 
@@ -11044,7 +12369,7 @@ _recomputeFilteredRequirements();
     );
 
     return CRMCard(
-      title: _selectedMainFollowupSection == 'Site Visit Scheduled'
+      title: _selectedMainFollowupSection == 'Site Visit Scheduled' && !_isCampaignListingFollowupsView
           ? 'Site Visit Management'
           : 'Follow-ups Management',
       subtitle: 'Scheduled client communications and appointments',
@@ -11072,6 +12397,7 @@ _recomputeFilteredRequirements();
             const SizedBox(height: CRMSpacing.m),
           ],
           // Mode Toggle Buttons: "Follow ups" & "Site Visit Scheduled"
+          if (!_isCampaignListingFollowupsView)
           Container(
             margin: const EdgeInsets.only(bottom: CRMSpacing.m),
             padding: const EdgeInsets.all(4),
@@ -11216,11 +12542,11 @@ _recomputeFilteredRequirements();
                 selectedSalesperson: _selectedSalespersonFilter,
               );
 
-              final todayFollowups = syncResult.today;
-              final dueFollowups = syncResult.due;
-              final futureFollowups = syncResult.future;
-              final allClientsFollowups = syncResult.allClients;
               final followupToReqMap = syncResult.followupToReqMap;
+              final todayFollowups = _scopeCampaignFollowups(syncResult.today, followupToReqMap);
+              final dueFollowups = _scopeCampaignFollowups(syncResult.due, followupToReqMap);
+              final futureFollowups = _scopeCampaignFollowups(syncResult.future, followupToReqMap);
+              final allClientsFollowups = _scopeCampaignFollowups(syncResult.allClients, followupToReqMap);
               final distinctSalespersons = syncResult.distinctSalespersons;
 
               List<DashboardFollowup> selectedList;
@@ -11261,7 +12587,9 @@ _recomputeFilteredRequirements();
                   (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
               final isAdminOrSuperAdmin = currentUser != null &&
                   (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
-              final bool showSelectColumn = _selectedFollowupSubTab == 'AllClients' && isAdminOrSuperAdmin;
+              final bool showSelectColumn = _selectedFollowupSubTab == 'AllClients' &&
+                  isAdminOrSuperAdmin &&
+                  _can(_followupSectionActionKey('select'));
 
               final pageItems = (startIndex < totalCount)
                   ? filtered.sublist(startIndex, endIndex)
@@ -11348,9 +12676,54 @@ _recomputeFilteredRequirements();
               final futureLabel = isSiteVisitTab ? "Future Site Visit Scheduled" : "Future Follow-ups";
               final allLabel = isSiteVisitTab ? "All Site Visit Scheduled" : "All clients follow ups";
 
+              final List<DashboardFollowup> rawSelectedFollowups;
+              if (_selectedFollowupSubTab == 'Due') {
+                rawSelectedFollowups = syncResult.due;
+              } else if (_selectedFollowupSubTab == 'Future') {
+                rawSelectedFollowups = syncResult.future;
+              } else if (_selectedFollowupSubTab == 'AllClients') {
+                rawSelectedFollowups = syncResult.allClients;
+              } else {
+                rawSelectedFollowups = syncResult.today;
+              }
+
+              Widget campaignLeadTypeTabs() => _buildCampaignLeadTypeTabs(
+                    selected: _campaignFollowupSubTab,
+                    listingCount: _listingFollowupCounts.forTab(_selectedFollowupSubTab),
+                    requirementCount: _campaignFollowupsOfType(rawSelectedFollowups, followupToReqMap, 'Requirement').length,
+                    listingSubtitle: 'Follow-ups on your property listing leads',
+                    requirementSubtitle: isSiteVisitTab
+                        ? 'Site visits on your requirement leads'
+                        : 'Follow-ups on your requirement leads',
+                    onSelect: (type) {
+                      setState(() {
+                        _campaignFollowupSubTab = type;
+                        if (type == 'Property Listing') _selectedMainFollowupSection = 'Follow ups';
+                        _currentFollowupPage = 1;
+                        _selectedFollowupClientKeys.clear();
+                      });
+                      if (type == 'Property Listing') unawaited(_fetchListingFollowups());
+                    },
+                  );
+
+              if (_isCampaignListingFollowupsView) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    campaignLeadTypeTabs(),
+                    const SizedBox(height: CRMSpacing.m),
+                    _buildCampaignListingFollowupsPanel(buildSubTabPill),
+                  ],
+                );
+              }
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.campaignMode) ...[
+                    campaignLeadTypeTabs(),
+                    const SizedBox(height: CRMSpacing.m),
+                  ],
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -11549,6 +12922,7 @@ _recomputeFilteredRequirements();
                             '${_selectedFollowupClientKeys.length} client(s) selected',
                             style: const TextStyle(fontWeight: FontWeight.bold, color: CRMColors.danger),
                           ),
+                          if (_can(_followupSectionActionKey('delete')))
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: CRMColors.danger,
@@ -11969,6 +13343,11 @@ _recomputeFilteredRequirements();
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final canShareMultiple = _can('page.leads.share.multiple');
+            final canSharePdf = _can('page.leads.share.pdf');
+            final canShareLink = _can('page.leads.share.link');
+            final canShareWhatsApp = _can('page.leads.share.whatsapp');
+
             Future<void> loadMatches() async {
               try {
                 final List<PropertyMatchResult> results = [];
@@ -12422,6 +13801,7 @@ _recomputeFilteredRequirements();
                                             runSpacing: 4,
                                             crossAxisAlignment: WrapCrossAlignment.center,
                                             children: [
+                                              if (canShareMultiple) ...[
                                               // Top 3 quick button
                                               InkWell(
                                                 onTap: filteredMatches.isEmpty ? null : () {
@@ -12478,6 +13858,7 @@ _recomputeFilteredRequirements();
                                                   ),
                                                 ),
                                               ),
+                                              ],
                                             ],
                                           ),
                                         ],
@@ -12574,6 +13955,7 @@ _recomputeFilteredRequirements();
                                                                 if (isSelected) {
                                                                   selectedPropIds.remove(p.id);
                                                                 } else {
+                                                                  if (!canShareMultiple) selectedPropIds.clear();
                                                                   selectedPropIds.add(p.id);
                                                                 }
                                                               });
@@ -12597,6 +13979,7 @@ _recomputeFilteredRequirements();
                                                                       : (val) {
                                                                           setDialogState(() {
                                                                             if (val == true) {
+                                                                              if (!canShareMultiple) selectedPropIds.clear();
                                                                               selectedPropIds.add(p.id);
                                                                             } else {
                                                                               selectedPropIds.remove(p.id);
@@ -12740,6 +14123,7 @@ _recomputeFilteredRequirements();
                         runSpacing: 6,
                         alignment: WrapAlignment.end,
                         children: [
+                          if (canSharePdf)
                           OutlinedButton.icon(
                             icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
                             label: const Text("Share PDF", style: TextStyle(fontSize: 12)),
@@ -12761,6 +14145,7 @@ _recomputeFilteredRequirements();
                                     );
                                   },
                           ),
+                          if (canShareLink)
                           OutlinedButton.icon(
                             icon: const Icon(Icons.link_rounded, size: 15),
                             label: const Text("Generate Link", style: TextStyle(fontSize: 12)),
@@ -12817,6 +14202,7 @@ _recomputeFilteredRequirements();
                                     }
                                   },
                           ),
+                          if (canShareWhatsApp)
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: kWhatsAppGreen,
@@ -12885,6 +14271,23 @@ _recomputeFilteredRequirements();
     return true;
   }
 
+  bool _isCampaignPageRequirementId(String? id) =>
+      id != null &&
+      id.isNotEmpty &&
+      _salesDirectLeadsLoaded &&
+      _directRequirementIds.contains(id) &&
+      !_directPropertyListingIds.contains(id);
+
+  bool _isCampaignPageRequirement(RequirementModel r) => _isCampaignPageRequirementId(r.id);
+
+  List<DashboardFollowup> _scopeCampaignFollowups(
+    List<DashboardFollowup> items,
+    Map<String, RequirementModel> followupToReqMap,
+  ) {
+    if (!widget.campaignMode) return items;
+    return _campaignFollowupsOfType(items, followupToReqMap, _campaignFollowupSubTab);
+  }
+
   bool get _isCampaignLeadAdmin {
     final role = RoleGuard.currentUser?.role ?? '';
     return role == 'Admin' || role == 'Super Admin';
@@ -12934,6 +14337,12 @@ _recomputeFilteredRequirements();
   }
 
   List<Map<String, dynamic>> _displayedCampaignLeads({required bool rejectedOnly}) {
+    final rows = _searchedCampaignLeads(rejectedOnly: rejectedOnly);
+    if (!widget.campaignMode || rejectedOnly) return rows;
+    return rows.where((lead) => _campaignListingMatchesFilters(lead)).toList();
+  }
+
+  List<Map<String, dynamic>> _searchedCampaignLeads({required bool rejectedOnly}) {
     final rows = _visiblePropertyListingLeads(rejectedOnly: rejectedOnly);
     final query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) return rows;
@@ -12957,6 +14366,10 @@ _recomputeFilteredRequirements();
     return _cachedRequirements.where((r) {
       if (!_isLeadRejected(r)) return false;
       if (_directPropertyListingIds.contains(r.id)) return false;
+      if (widget.campaignMode &&
+          (!_isCampaignPageRequirement(r) || getListingTypeLabel(r) != _activeListingTab)) {
+        return false;
+      }
       if (user?.role == 'Sales') {
         return _isUserAssignee(r, user) || _isUserCreator(r, user);
       }
@@ -13195,6 +14608,100 @@ _recomputeFilteredRequirements();
         AppStatusSnackBar.show(context, message: e.toString().replaceFirst("Exception: ", ""), isSuccess: false);
       }
     }
+  }
+
+  bool _canDeletePropertyListingLead(Map<String, dynamic> lead) {
+    if (RoleGuard.isTelecaller(RoleGuard.currentUser?.role)) return false;
+    final rejected = (lead['status']?.toString() ?? '').trim().toLowerCase() == 'rejected';
+    return _can(rejected ? 'page.leads.rejected.delete' : 'page.leads.delete');
+  }
+
+  /// Property Listing leads go to the Recycle Bin through their requirements row (the same soft delete
+  /// the Leads page uses); restoring it from the bin brings the lead back to this tab.
+  Future<void> _movePropertyListingLeadsToBin(List<Map<String, dynamic>> leads) async {
+    final targets = leads.where(_canDeletePropertyListingLead).toList();
+    if (targets.isEmpty || _campaignBulkUpdating) return;
+    final count = targets.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.auto_delete_outlined, color: CRMColors.danger, size: 22),
+            const SizedBox(width: 8),
+            Flexible(child: Text('Move $count Lead(s) to Recycle Bin?')),
+          ],
+        ),
+        content: Text(
+          'Selected property listing lead(s) will be moved to the Recycle Bin and can be restored anytime from the Recycle Bin tab.',
+          style: TextStyle(fontSize: 13.5, color: CRMColors.textOf(context)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: CRMColors.danger, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Move to Bin'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _campaignBulkUpdating = true);
+    final movedLeadIds = <String>{};
+    String? failure;
+    for (final lead in targets) {
+      final leadId = lead['id']?.toString() ?? '';
+      final legacyId = lead['legacyRequirementId']?.toString() ?? '';
+      final requirementId = legacyId.isNotEmpty ? legacyId : leadId;
+      if (requirementId.isEmpty) continue;
+      try {
+        await RequirementsService().deleteRequirement(
+          requirementId,
+          deletedFrom: RecycleBinSource.campaignPropertyListing,
+        );
+        movedLeadIds.add(leadId);
+        try {
+          await RepositoryCoordinator().requirementLocal.deleteRequirement(requirementId);
+        } catch (_) {}
+      } catch (e) {
+        failure = e is ApiException && e.message.trim().isNotEmpty
+            ? e.message.trim()
+            : e.toString().replaceFirst('Exception: ', '');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _salesPropertyListingLeads.removeWhere((l) => movedLeadIds.contains(l['id']?.toString() ?? ''));
+      _selectedCampaignLeadIds.removeAll(movedLeadIds);
+      _campaignBulkUpdating = false;
+      _lastComputedFilterKey = null;
+    });
+    if (movedLeadIds.isNotEmpty) {
+      RepositoryCoordinator().refreshRequirements();
+      RepositoryCoordinator().refreshDashboard();
+      unawaited(_fetchListingFollowups());
+      _requestSalesLeadRefresh();
+    }
+    AppStatusSnackBar.show(
+      context,
+      message: failure == null
+          ? '${movedLeadIds.length} lead(s) moved to Recycle Bin successfully.'
+          : movedLeadIds.isEmpty
+              ? failure
+              : '${movedLeadIds.length} of $count lead(s) moved to Recycle Bin. $failure',
+      isSuccess: failure == null,
+    );
+  }
+
+  Widget _buildPropertyListingDeleteButton(Map<String, dynamic> lead) {
+    return IconButton(
+      tooltip: 'Move to Bin',
+      visualDensity: VisualDensity.compact,
+      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: CRMColors.danger),
+      onPressed: _campaignBulkUpdating ? null : () => _movePropertyListingLeadsToBin([lead]),
+    );
   }
 
   Future<void> _updateSalesPropertyListingStatus(String leadId, String newStatus) async {
@@ -13484,9 +14991,11 @@ _recomputeFilteredRequirements();
   Widget _buildSalesPropertyListingSpreadsheetView({required bool isMobile, bool rejectedOnly = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final rows = _displayedCampaignLeads(rejectedOnly: rejectedOnly);
+    final showFollowup = widget.campaignMode && !rejectedOnly;
     final rowIds = rows.map((lead) => lead['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
     final selectedCount = rowIds.where(_selectedCampaignLeadIds.contains).length;
     final allSelected = rowIds.isNotEmpty && selectedCount == rowIds.length;
+    final canDeleteAny = rows.any(_canDeletePropertyListingLead);
     final emptyTitle = _salesLeadsLoadFailed && !rejectedOnly
         ? 'Campaign leads could not be loaded.'
         : rejectedOnly
@@ -13546,6 +15055,17 @@ _recomputeFilteredRequirements();
                     : () => _confirmCampaignBulkStatus(rowIds, 'Rejected'),
                 child: const Text('Mark Rejected', style: TextStyle(fontSize: 12)),
               ),
+              if (canDeleteAny)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(foregroundColor: CRMColors.danger),
+                  onPressed: selectedCount == 0 || _campaignBulkUpdating
+                      ? null
+                      : () => _movePropertyListingLeadsToBin(
+                            rows.where((l) => _selectedCampaignLeadIds.contains(l['id']?.toString() ?? '')).toList(),
+                          ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                  label: const Text('Move to Bin', style: TextStyle(fontSize: 12)),
+                ),
             ],
           ),
         ],
@@ -13610,7 +15130,7 @@ _recomputeFilteredRequirements();
         children: [
           toolbar,
           for (int i = 0; i < rows.length; i++)
-            _buildSalesPropertyListingMobileCard(rows[i], i + 1, isDark),
+            _buildSalesPropertyListingMobileCard(rows[i], i + 1, isDark, showFollowup: showFollowup),
         ],
       );
     }
@@ -13643,6 +15163,8 @@ _recomputeFilteredRequirements();
               const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               const DataColumn(label: Text('Source', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               const DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              if (showFollowup)
+                const DataColumn(label: Text('Follow-up', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               if (_isCampaignLeadAdmin)
                 const DataColumn(label: Text('Salesperson', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               const DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
@@ -13654,6 +15176,8 @@ _recomputeFilteredRequirements();
               DataColumn(label: Text('City', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               DataColumn(label: Text('Email ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               DataColumn(label: Text('Campaign Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              if (canDeleteAny)
+                const DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
             ],
             rows: rows.asMap().entries.map((entry) {
               final idx = entry.key;
@@ -13706,6 +15230,7 @@ _recomputeFilteredRequirements();
                       ? _listingTextCell('—')
                       : _buildSalesSourceBadge(source)),
                   DataCell(_buildSalesPropertyListingStatusDropdown(lead)),
+                  if (showFollowup) DataCell(_buildListingFollowupCell(lead)),
                   if (_isCampaignLeadAdmin) DataCell(_listingTextCell(salespersonName, weight: FontWeight.w600)),
                   DataCell(
                     ConstrainedBox(
@@ -13795,6 +15320,10 @@ _recomputeFilteredRequirements();
                       child: _listingTextCell(campaignName, weight: FontWeight.w600),
                     ),
                   ),
+                  if (canDeleteAny)
+                    DataCell(_canDeletePropertyListingLead(lead)
+                        ? _buildPropertyListingDeleteButton(lead)
+                        : const SizedBox.shrink()),
                 ],
               );
             }).toList(),
@@ -13806,7 +15335,12 @@ _recomputeFilteredRequirements();
     );
   }
 
-  Widget _buildSalesPropertyListingMobileCard(Map<String, dynamic> lead, int index, bool isDark) {
+  Widget _buildSalesPropertyListingMobileCard(
+    Map<String, dynamic> lead,
+    int index,
+    bool isDark, {
+    bool showFollowup = false,
+  }) {
     final source = lead['source']?.toString() ?? lead['rawSource']?.toString() ?? '';
     final clientName = _listingValue(lead, 'clientName');
     final phone = lead['phone']?.toString().trim() ?? '';
@@ -13860,6 +15394,7 @@ _recomputeFilteredRequirements();
                     ),
                   ),
                 _buildSalesPropertyListingStatusDropdown(lead),
+                if (_canDeletePropertyListingLead(lead)) _buildPropertyListingDeleteButton(lead),
               ],
             ),
             const SizedBox(height: 8),
@@ -13896,6 +15431,15 @@ _recomputeFilteredRequirements();
               'Received: ${_formatLeadReceivedDate(receivedOn)} (${_formatLeadTimeAgo(receivedOn)})',
               style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
             ),
+            if (showFollowup) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Text('Follow-up: ', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  Flexible(child: _buildListingFollowupCell(lead)),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -14827,6 +16371,9 @@ class _RunMatchesButtonWithBadgeState extends State<_RunMatchesButtonWithBadge> 
 
   @override
   Widget build(BuildContext context) {
+    if (!PermissionMatrixService.instance.isActionAllowed(RoleGuard.currentUser?.role, 'page.leads.run_matches')) {
+      return const SizedBox.shrink();
+    }
     Widget button;
     if (widget.isMobileIconOnly) {
       button = Tooltip(
@@ -17973,6 +19520,212 @@ class _ViewAllNotesDialogWidgetState extends State<_ViewAllNotesDialogWidget> {
         ),
         ),
       ),
+    );
+  }
+}
+
+enum _ListingFollowupDialogMode { schedule, reschedule, complete, cancel }
+
+typedef _ListingFollowupDialogResult = ({DateTime? when, String? remarks, String? nextRemarks});
+
+/// Schedule / reschedule / complete / cancel form for a Property Listing lead follow-up.
+class _ListingFollowupDialog extends StatefulWidget {
+  final _ListingFollowupDialogMode mode;
+  final String clientName;
+  final DateTime? initialWhen;
+  final String? initialRemarks;
+
+  const _ListingFollowupDialog({
+    required this.mode,
+    required this.clientName,
+    this.initialWhen,
+    this.initialRemarks,
+  });
+
+  static Future<_ListingFollowupDialogResult?> show(
+    BuildContext context, {
+    required _ListingFollowupDialogMode mode,
+    required String clientName,
+    DateTime? initialWhen,
+    String? initialRemarks,
+  }) {
+    return showDialog<_ListingFollowupDialogResult>(
+      context: context,
+      builder: (_) => _ListingFollowupDialog(
+        mode: mode,
+        clientName: clientName,
+        initialWhen: initialWhen,
+        initialRemarks: initialRemarks,
+      ),
+    );
+  }
+
+  @override
+  State<_ListingFollowupDialog> createState() => _ListingFollowupDialogState();
+}
+
+class _ListingFollowupDialogState extends State<_ListingFollowupDialog> {
+  late final TextEditingController _remarks = TextEditingController(text: widget.initialRemarks ?? '');
+  final TextEditingController _nextRemarks = TextEditingController();
+  DateTime? _when;
+  bool _scheduleNext = false;
+  String? _error;
+
+  bool get _needsDate =>
+      widget.mode == _ListingFollowupDialogMode.schedule ||
+      widget.mode == _ListingFollowupDialogMode.reschedule ||
+      (widget.mode == _ListingFollowupDialogMode.complete && _scheduleNext);
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    final initial = widget.initialWhen;
+    _when = initial != null && !initial.isBefore(DateTime(now.year, now.month, now.day)) ? initial : null;
+  }
+
+  @override
+  void dispose() {
+    _remarks.dispose();
+    _nextRemarks.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickWhen() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = _when != null && !_when!.isBefore(today) ? _when! : now;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 730)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_when ?? now.add(const Duration(hours: 1))),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _when = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _error = null;
+    });
+  }
+
+  void _submit() {
+    if (_needsDate && _when == null) {
+      setState(() => _error = 'Please choose the follow-up date and time.');
+      return;
+    }
+    String? text(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
+    Navigator.of(context).pop<_ListingFollowupDialogResult>((
+      when: _needsDate ? _when : null,
+      remarks: text(_remarks),
+      nextRemarks: _scheduleNext ? text(_nextRemarks) : null,
+    ));
+  }
+
+  Widget _dateField(String label) {
+    final w = _when;
+    return InkWell(
+      onTap: _pickWhen,
+      borderRadius: BorderRadius.circular(8),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          suffixIcon: const Icon(Icons.event_rounded),
+          errorText: _error,
+        ),
+        child: Text(w == null ? 'Select date & time' : DateFormat('dd MMM yyyy, hh:mm a').format(w)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (title, action) = switch (widget.mode) {
+      _ListingFollowupDialogMode.schedule => ('Schedule Follow-up', 'Schedule'),
+      _ListingFollowupDialogMode.reschedule => ('Reschedule Follow-up', 'Reschedule'),
+      _ListingFollowupDialogMode.complete => ('Complete Follow-up', 'Mark Completed'),
+      _ListingFollowupDialogMode.cancel => ('Cancel Follow-up', 'Cancel Follow-up'),
+    };
+    final remarksLabel = switch (widget.mode) {
+      _ListingFollowupDialogMode.complete => 'Outcome / conversation notes',
+      _ListingFollowupDialogMode.cancel => 'Reason (optional)',
+      _ => 'Remarks (optional)',
+    };
+
+    return AlertDialog(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title),
+          const SizedBox(height: 2),
+          Text(
+            widget.clientName,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.mode == _ListingFollowupDialogMode.schedule ||
+                  widget.mode == _ListingFollowupDialogMode.reschedule) ...[
+                _dateField('Follow-up date & time'),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: _remarks,
+                maxLines: 3,
+                maxLength: 2000,
+                decoration: InputDecoration(labelText: remarksLabel, border: const OutlineInputBorder()),
+              ),
+              if (widget.mode == _ListingFollowupDialogMode.complete) ...[
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _scheduleNext,
+                  onChanged: (v) => setState(() {
+                    _scheduleNext = v ?? false;
+                    _error = null;
+                  }),
+                  title: const Text('Schedule next follow-up'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                if (_scheduleNext) ...[
+                  _dateField('Next follow-up date & time'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _nextRemarks,
+                    maxLines: 2,
+                    maxLength: 2000,
+                    decoration: const InputDecoration(
+                      labelText: 'Next follow-up remarks (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+        FilledButton(
+          onPressed: _submit,
+          style: widget.mode == _ListingFollowupDialogMode.cancel
+              ? FilledButton.styleFrom(backgroundColor: CRMColors.danger)
+              : null,
+          child: Text(action),
+        ),
+      ],
     );
   }
 }

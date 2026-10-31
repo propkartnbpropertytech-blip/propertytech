@@ -2654,9 +2654,12 @@ class _CRMAppShellState extends State<CRMAppShell>
         color: isDark ? CRMColors.warning : CRMColors.textSecondary,
       ),
       tooltip: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-      onPressed: () {
-        ThemeManager().toggleTheme();
-      },
+      onPressed: !RoleGuard.canAction(
+              isDark ? 'page.settings.appearance.light' : 'page.settings.appearance.dark')
+          ? null
+          : () {
+              ThemeManager().toggleTheme();
+            },
     );
   }
 

@@ -810,6 +810,193 @@ class PermissionMatrixService extends ChangeNotifier {
     ),
   ];
 
+  /// Action-level toggles configured only in the Admin Role Drill-down. Kept out of [allPermissions]
+  /// so the Telecaller / Sales matrices and their counts stay unchanged. All default to ON.
+  static const List<String> adminActionKeys = [
+    'page.properties.add',
+    'page.properties.export',
+    'page.properties.edit',
+    'page.properties.delete',
+    'page.properties.message',
+    'page.properties.share',
+    'page.properties.archive',
+    'page.leads.add',
+    'page.leads.add_notes',
+    'page.leads.export',
+    'page.leads.view_details',
+    'page.leads.add_requirement',
+    'page.leads.share',
+    'page.leads.share.multiple',
+    'page.leads.share.pdf',
+    'page.leads.share.link',
+    'page.leads.share.whatsapp',
+    'page.leads.run_matches',
+    'page.leads.edit',
+    'page.leads.delete',
+    'page.leads.followups.select',
+    'page.leads.followups.delete',
+    'page.leads.site_visits.select',
+    'page.leads.site_visits.delete',
+    'page.leads.rejected.view_details',
+    'page.leads.rejected.delete',
+    'page.employees.add',
+    'page.employees.tree',
+    'page.employees.delete',
+    'page.employees.edit',
+    'page.employees.details',
+    'page.employees.active_toggle',
+    'page.reports.export',
+    'page.reports.filters',
+    'page.reports.campaign_kpis',
+    'page.reports.leads_kpis',
+    'page.reports.executive',
+    'page.reports.executive.all',
+    'page.reports.executive.sourcing',
+    'page.reports.executive.manual',
+    'page.reports.executive.pipeline',
+    'page.reports.executive.qualified',
+    'page.reports.telecaller',
+    'page.reports.sales',
+    'page.reports.lead_metrics',
+    'page.reports.properties',
+    'page.campaign.add_integration',
+    'page.lead_allocation.configure',
+    'page.settings.profile.name',
+    'page.settings.profile.mobile',
+    'page.settings.profile.email',
+    'page.settings.themes.change',
+    'page.settings.appearance.dark',
+    'page.settings.appearance.light',
+    'page.settings.appearance.match_criteria',
+    'page.settings.appearance.sync_diagnostics',
+    'page.settings.location.add_city',
+    'page.settings.location.add_area',
+    'page.settings.location.add_zone',
+    'page.settings.upload_limits.save',
+    'page.settings.kpi.add',
+    'page.settings.kpi.active',
+    'page.settings.kpi.actions',
+    'page.support.report_issue',
+    'page.recycle_bin.auto_delete',
+    'page.recycle_bin.empty_bin',
+    'page.recycle_bin.properties_restore',
+    'page.recycle_bin.properties_delete',
+    'page.recycle_bin.requirements_restore',
+    'page.recycle_bin.requirements_delete',
+    'page.properties.cross_admin.rent',
+    'page.properties.cross_admin.resale',
+    'page.properties.visibility_controls',
+    'page.properties.notes',
+  ];
+
+  /// Role Drill-down action toggles for the Telecaller and Sales roles: only the actions their
+  /// screens actually show. Each role keeps its own values; all default to ON for that role.
+  static const Map<String, List<String>> roleActionKeys = {
+    'Telecaller': [
+      'page.properties.add',
+      'page.properties.export',
+      'page.properties.edit',
+      'page.properties.delete',
+      'page.properties.message',
+      'page.properties.share',
+      'page.properties.archive',
+      'page.leads.add',
+      'page.leads.add_notes',
+      'page.leads.export',
+      'page.leads.view_details',
+      'page.leads.share',
+      'page.leads.share.multiple',
+      'page.leads.share.pdf',
+      'page.leads.share.link',
+      'page.leads.share.whatsapp',
+      'page.leads.run_matches',
+      'page.leads.edit',
+      'page.leads.rejected.view_details',
+      'page.settings.profile.name',
+      'page.settings.profile.mobile',
+      'page.settings.themes.change',
+      'page.settings.appearance.dark',
+      'page.settings.appearance.light',
+      'page.settings.location.add_city',
+      'page.settings.location.add_area',
+      'page.support.report_issue',
+      'page.recycle_bin.auto_delete',
+      'page.recycle_bin.empty_bin',
+      'page.recycle_bin.properties_restore',
+      'page.recycle_bin.requirements_restore',
+      'page.recycle_bin.requirements_delete',
+    ],
+    'Sales': [
+      'page.properties.add',
+      'page.properties.edit',
+      'page.properties.delete',
+      'page.properties.message',
+      'page.properties.share',
+      'page.properties.archive',
+      'page.leads.add',
+      'page.leads.add_notes',
+      'page.leads.view_details',
+      'page.leads.add_requirement',
+      'page.leads.share',
+      'page.leads.share.multiple',
+      'page.leads.share.pdf',
+      'page.leads.share.link',
+      'page.leads.share.whatsapp',
+      'page.leads.run_matches',
+      'page.leads.edit',
+      'page.leads.delete',
+      'page.leads.rejected.view_details',
+      'page.leads.rejected.delete',
+      'page.my_campaign_leads',
+      'page.settings.profile.name',
+      'page.settings.profile.mobile',
+      'page.settings.themes.change',
+      'page.settings.appearance.dark',
+      'page.settings.appearance.light',
+      'page.settings.location.add_city',
+      'page.settings.location.add_area',
+      'page.support.report_issue',
+      'page.recycle_bin.auto_delete',
+      'page.recycle_bin.properties_restore',
+      'page.recycle_bin.requirements_restore',
+      'page.recycle_bin.requirements_delete',
+    ],
+  };
+
+  static const Map<String, String> _adminActionParents = {
+    'page.leads.share.multiple': 'page.leads.share',
+    'page.leads.share.pdf': 'page.leads.share',
+    'page.leads.share.link': 'page.leads.share',
+    'page.leads.share.whatsapp': 'page.leads.share',
+    'page.reports.executive.all': 'page.reports.executive',
+    'page.reports.executive.sourcing': 'page.reports.executive',
+    'page.reports.executive.manual': 'page.reports.executive',
+    'page.reports.executive.pipeline': 'page.reports.executive',
+    'page.reports.executive.qualified': 'page.reports.executive',
+  };
+
+  /// Whether the signed-in [role] may use a Role Drill-down action. Admin is restricted by the
+  /// Admin toggles; Telecaller and Sales only by their own toggles in [roleActionKeys]. Any other
+  /// role, or an action that is not configurable for the role, keeps its existing behaviour.
+  bool isActionAllowed(String? role, String actionKey) {
+    final r = (role ?? '').trim().toLowerCase();
+    final String targetRole;
+    if (r == 'admin') {
+      targetRole = 'Admin';
+    } else if (r == 'telecaller') {
+      targetRole = 'Telecaller';
+    } else if (r == 'sales') {
+      targetRole = 'Sales';
+    } else {
+      return true;
+    }
+    if (targetRole != 'Admin' && !roleActionKeys[targetRole]!.contains(actionKey)) return true;
+    for (String? k = actionKey; k != null; k = _adminActionParents[k]) {
+      if (!hasPermission(targetRole, k)) return false;
+    }
+    return true;
+  }
+
   // Dynamic overrides: Map<Role, Map<PermissionKey, bool>>
   // Standardized role names: 'Admin', 'Telecaller', 'Sales'
   final Map<String, Map<String, bool>> _overrides = {
@@ -933,6 +1120,9 @@ class PermissionMatrixService extends ChangeNotifier {
         return roleOverrides['page.employees'] == true;
       }
     }
+
+    if (roleActionKeys[normRole]?.contains(permissionKey) ?? false) return true;
+    if (adminActionKeys.contains(permissionKey)) return normRole == 'Admin';
 
     // Otherwise fallback to system default
     final item = allPermissions.cast<PermissionItem?>().firstWhere(

@@ -6,8 +6,13 @@ class AppNavItem {
   final String key;
   final String title;
   final String route;
-  final IconData icon;
+
+  /// Name of the icon in [AppNavigationRegistry.icons]; persisted with the page.
+  final String iconName;
   final String? parentKey;
+
+  /// Permission Matrix key that gates this page. Defaults to [key].
+  final String? permissionKey;
   final List<String> supportedRoles;
   final List<AppNavItem> children;
   final int sortOrder;
@@ -16,22 +21,30 @@ class AppNavItem {
     required this.key,
     required this.title,
     required this.route,
-    required this.icon,
+    required this.iconName,
     this.parentKey,
+    this.permissionKey,
     required this.supportedRoles,
     this.children = const [],
     this.sortOrder = 0,
   });
 
+  IconData get icon => AppNavigationRegistry.iconFor(iconName);
+  String get effectivePermissionKey => permissionKey ?? key;
   bool get isNested => parentKey != null;
   bool get hasChildren => children.isNotEmpty;
+
+  /// Number of nested pages at every depth below this item.
+  int get descendantCount =>
+      children.fold<int>(0, (sum, c) => sum + 1 + c.descendantCount);
 
   AppNavItem copyWith({
     String? key,
     String? title,
     String? route,
-    IconData? icon,
+    String? iconName,
     String? parentKey,
+    String? permissionKey,
     List<String>? supportedRoles,
     List<AppNavItem>? children,
     int? sortOrder,
@@ -40,313 +53,431 @@ class AppNavItem {
       key: key ?? this.key,
       title: title ?? this.title,
       route: route ?? this.route,
-      icon: icon ?? this.icon,
+      iconName: iconName ?? this.iconName,
       parentKey: parentKey ?? this.parentKey,
+      permissionKey: permissionKey ?? this.permissionKey,
       supportedRoles: supportedRoles ?? this.supportedRoles,
       children: children ?? this.children,
       sortOrder: sortOrder ?? this.sortOrder,
     );
   }
+
+  /// Payload for `PUT /permissions/navigation/sync`.
+  Map<String, dynamic> toSyncJson() => {
+        'key': key,
+        'title': title,
+        'route': route,
+        'icon': iconName,
+        'parentKey': parentKey,
+        'permissionKey': effectivePermissionKey,
+        'sortOrder': sortOrder,
+        'roles': supportedRoles,
+      };
+
+  /// A flat page row from `app_navigation_pages` (children are attached by the tree builder).
+  factory AppNavItem.fromDbRow(Map<String, dynamic> row) {
+    final roles = row['roles'];
+    return AppNavItem(
+      key: row['page_key']?.toString() ?? '',
+      title: row['title']?.toString() ?? '',
+      route: row['route']?.toString() ?? '/',
+      iconName: row['icon']?.toString() ?? '',
+      parentKey: (row['parent_key']?.toString().isNotEmpty ?? false) ? row['parent_key'].toString() : null,
+      permissionKey: row['permission_key']?.toString(),
+      supportedRoles: roles is List ? roles.map((r) => r.toString()).toList() : const [],
+      sortOrder: row['sort_order'] is int ? row['sort_order'] as int : int.tryParse('${row['sort_order']}') ?? 0,
+    );
+  }
 }
 
 /// Centralized authoritative navigation registry for PropKart.
-/// Automatically detects and structures all menu items and nested subpages for each role.
+///
+/// Every sidebar page and nested page must be declared here. The registry is
+/// synced into the `app_navigation_pages` table, which the Permission Matrix
+/// Live Nav Simulator reads, so a page added here appears there automatically.
 class AppNavigationRegistry {
+  static const Map<String, IconData> icons = {
+    'grid_view_rounded': Icons.grid_view_rounded,
+    'home_work_outlined': Icons.home_work_outlined,
+    'phone_in_talk_outlined': Icons.phone_in_talk_outlined,
+    'event_repeat': Icons.event_repeat,
+    'phone_missed_outlined': Icons.phone_missed_outlined,
+    'assignment_outlined': Icons.assignment_outlined,
+    'campaign_outlined': Icons.campaign_outlined,
+    'people_outline_rounded': Icons.people_outline_rounded,
+    'bar_chart_rounded': Icons.bar_chart_rounded,
+    'insights_rounded': Icons.insights_rounded,
+    'headset_mic_outlined': Icons.headset_mic_outlined,
+    'person_outline_rounded': Icons.person_outline_rounded,
+    'tune_rounded': Icons.tune_rounded,
+    'hub_outlined': Icons.hub_outlined,
+    'source_outlined': Icons.source_outlined,
+    'apartment_outlined': Icons.apartment_outlined,
+    'folder_outlined': Icons.folder_outlined,
+    'settings_outlined': Icons.settings_outlined,
+    'palette_outlined': Icons.palette_outlined,
+    'location_city_outlined': Icons.location_city_outlined,
+    'bolt_rounded': Icons.bolt_rounded,
+    'photo_library_outlined': Icons.photo_library_outlined,
+    'dashboard_customize_outlined': Icons.dashboard_customize_outlined,
+    'cloud_download_rounded': Icons.cloud_download_rounded,
+    'history_rounded': Icons.history_rounded,
+    'info_outline_rounded': Icons.info_outline_rounded,
+    'security_rounded': Icons.security_rounded,
+    'workspace_premium_rounded': Icons.workspace_premium_rounded,
+    'domain_rounded': Icons.domain_rounded,
+    'insights_outlined': Icons.insights_outlined,
+    'support_agent_rounded': Icons.support_agent_rounded,
+    'admin_panel_settings_outlined': Icons.admin_panel_settings_outlined,
+    'delete_outline_rounded': Icons.delete_outline_rounded,
+  };
+
+  static IconData iconFor(String? name) => icons[name] ?? Icons.article_outlined;
+
+  static const List<String> _allRoles = ['Super Admin', 'Admin', 'Telecaller', 'Sales'];
+  static const List<String> _adminRoles = ['Super Admin', 'Admin'];
+  static const List<String> _superAdminOnly = ['Super Admin'];
+
   static const List<AppNavItem> masterNavigationTree = [
-    // 1. Dashboard
     AppNavItem(
       key: 'page.dashboard',
       title: 'Dashboard',
       route: '/dashboard',
-      icon: Icons.grid_view_rounded,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'grid_view_rounded',
+      supportedRoles: _allRoles,
       sortOrder: 10,
     ),
-
-    // 2. Properties Inventory
     AppNavItem(
       key: 'page.properties',
       title: 'Properties',
       route: '/properties',
-      icon: Icons.home_work_outlined,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'home_work_outlined',
+      supportedRoles: _allRoles,
       sortOrder: 20,
     ),
-
-    // 3. Telecaller Exclusive: My Calling Leads
     AppNavItem(
       key: 'page.telecaller_leads',
       title: 'My Calling Leads',
       route: '/campaign/leads',
-      icon: Icons.phone_in_talk_outlined,
+      iconName: 'phone_in_talk_outlined',
       supportedRoles: ['Telecaller'],
       sortOrder: 25,
     ),
-
-    // 4. Telecaller Exclusive: Callbacks
     AppNavItem(
       key: 'page.callbacks',
       title: 'Callbacks',
       route: '/telecaller/callbacks',
-      icon: Icons.event_repeat,
+      iconName: 'event_repeat',
       supportedRoles: ['Telecaller'],
       sortOrder: 26,
     ),
-
-    // 5. Telecaller Exclusive: CNR / Retry Desk
     AppNavItem(
       key: 'page.cnr',
       title: 'CNR / Retry Desk',
       route: '/telecaller/cnr',
-      icon: Icons.phone_missed_outlined,
+      iconName: 'phone_missed_outlined',
       supportedRoles: ['Telecaller'],
       sortOrder: 27,
     ),
-
-    // 6. Leads & Requirements Pipeline
     AppNavItem(
       key: 'page.leads',
       title: 'Leads & Requirements',
       route: '/requirements',
-      icon: Icons.assignment_outlined,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'assignment_outlined',
+      supportedRoles: _allRoles,
       sortOrder: 30,
     ),
-
-    // 7. Employees & Users Roster
+    AppNavItem(
+      key: 'page.my_campaign_leads',
+      title: 'Campaign Leads',
+      route: '/my-campaign-leads',
+      iconName: 'campaign_outlined',
+      supportedRoles: ['Sales'],
+      sortOrder: 31,
+    ),
     AppNavItem(
       key: 'page.employees',
       title: 'Employees & Users',
       route: '/users',
-      icon: Icons.people_outline_rounded,
-      supportedRoles: ['Super Admin', 'Admin'],
+      iconName: 'people_outline_rounded',
+      supportedRoles: _adminRoles,
       sortOrder: 40,
     ),
-
-    // 8. Reports & Insights
     AppNavItem(
       key: 'page.reports',
       title: 'Reports & Insights',
       route: '/reports',
-      icon: Icons.bar_chart_rounded,
-      supportedRoles: ['Super Admin', 'Admin'],
+      iconName: 'bar_chart_rounded',
+      supportedRoles: _adminRoles,
       sortOrder: 50,
+      children: [
+        AppNavItem(
+          key: 'page.reports.overall_insight',
+          title: 'Overall Business Insight',
+          route: '/reports/leads/overall-business-insight',
+          iconName: 'insights_rounded',
+          parentKey: 'page.reports',
+          permissionKey: 'page.reports',
+          supportedRoles: _adminRoles,
+          sortOrder: 51,
+        ),
+        AppNavItem(
+          key: 'page.reports.telecaller',
+          title: 'Telecaller Report',
+          route: '/reports/leads/telecaller',
+          iconName: 'headset_mic_outlined',
+          parentKey: 'page.reports',
+          supportedRoles: _adminRoles,
+          sortOrder: 52,
+        ),
+        AppNavItem(
+          key: 'page.reports.sales',
+          title: 'Sales Report',
+          route: '/reports/leads/sales',
+          iconName: 'person_outline_rounded',
+          parentKey: 'page.reports',
+          supportedRoles: _adminRoles,
+          sortOrder: 53,
+        ),
+        AppNavItem(
+          key: 'page.reports.lead_metrics',
+          title: 'Lead Metrics',
+          route: '/reports/leads/metrics',
+          iconName: 'tune_rounded',
+          parentKey: 'page.reports',
+          supportedRoles: _adminRoles,
+          sortOrder: 54,
+        ),
+        AppNavItem(
+          key: 'page.reports.properties',
+          title: 'Property Reports',
+          route: '/reports/properties',
+          iconName: 'home_work_outlined',
+          parentKey: 'page.reports',
+          supportedRoles: _adminRoles,
+          sortOrder: 55,
+        ),
+      ],
     ),
-
-    // 9. Campaign & Webhook Ingestion (Parent + Nested Subpages)
     AppNavItem(
       key: 'page.campaign',
       title: 'Campaign & Webhooks',
       route: '/campaign',
-      icon: Icons.campaign_outlined,
-      supportedRoles: ['Super Admin', 'Admin'],
+      iconName: 'campaign_outlined',
+      supportedRoles: _adminRoles,
       sortOrder: 60,
       children: [
         AppNavItem(
           key: 'page.campaign.connections',
           title: 'Connections',
           route: '/campaign/connections',
-          icon: Icons.hub_outlined,
+          iconName: 'hub_outlined',
           parentKey: 'page.campaign',
-          supportedRoles: ['Super Admin', 'Admin'],
+          supportedRoles: _adminRoles,
           sortOrder: 61,
         ),
         AppNavItem(
-          key: 'page.campaign.meta',
-          title: 'Meta',
-          route: '/campaign/meta',
-          icon: Icons.campaign_outlined,
+          key: 'page.campaign.sources',
+          title: 'Sources',
+          route: '/campaign/sources',
+          iconName: 'source_outlined',
           parentKey: 'page.campaign',
-          supportedRoles: ['Super Admin', 'Admin'],
+          permissionKey: 'page.campaign',
+          supportedRoles: _adminRoles,
           sortOrder: 62,
-        ),
-        AppNavItem(
-          key: 'page.campaign.housing',
-          title: 'Housing',
-          route: '/campaign/housing',
-          icon: Icons.apartment_outlined,
-          parentKey: 'page.campaign',
-          supportedRoles: ['Super Admin', 'Admin'],
-          sortOrder: 63,
+          children: [
+            AppNavItem(
+              key: 'page.campaign.meta',
+              title: 'Meta',
+              route: '/campaign/meta',
+              iconName: 'campaign_outlined',
+              parentKey: 'page.campaign.sources',
+              supportedRoles: _adminRoles,
+              sortOrder: 63,
+            ),
+            AppNavItem(
+              key: 'page.campaign.housing',
+              title: 'Housing',
+              route: '/campaign/housing',
+              iconName: 'apartment_outlined',
+              parentKey: 'page.campaign.sources',
+              supportedRoles: _adminRoles,
+              sortOrder: 64,
+            ),
+          ],
         ),
       ],
     ),
-
-    // 10. Lead Allocation Monitor
     AppNavItem(
       key: 'page.lead_allocation',
       title: 'Lead Allocation',
       route: '/admin/lead-allocation',
-      icon: Icons.hub_outlined,
-      supportedRoles: ['Super Admin', 'Admin'],
+      iconName: 'hub_outlined',
+      supportedRoles: _adminRoles,
       sortOrder: 70,
     ),
-
-    // 11. Document Library
     AppNavItem(
       key: 'page.library',
       title: 'Document Library',
       route: '/library',
-      icon: Icons.folder_outlined,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'folder_outlined',
+      supportedRoles: _allRoles,
       sortOrder: 80,
     ),
-
-    // 12. Settings & Config (Parent + All Nested Subpages)
     AppNavItem(
       key: 'page.settings',
       title: 'Settings & Config',
       route: '/settings',
-      icon: Icons.settings_outlined,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'settings_outlined',
+      supportedRoles: _allRoles,
       sortOrder: 90,
       children: [
         AppNavItem(
           key: 'page.settings.profile',
           title: 'Profile',
           route: '/profile',
-          icon: Icons.person_outline_rounded,
+          iconName: 'person_outline_rounded',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+          supportedRoles: _allRoles,
           sortOrder: 91,
         ),
         AppNavItem(
           key: 'page.settings.themes',
           title: 'Themes',
           route: '/settings?section=themes',
-          icon: Icons.palette_outlined,
+          iconName: 'palette_outlined',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+          supportedRoles: _allRoles,
           sortOrder: 92,
         ),
         AppNavItem(
           key: 'page.settings.appearance',
           title: 'Appearance',
           route: '/settings?section=appearance',
-          icon: Icons.tune_rounded,
+          iconName: 'tune_rounded',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+          supportedRoles: _allRoles,
           sortOrder: 93,
         ),
         AppNavItem(
           key: 'page.settings.locations',
           title: 'Locations',
           route: '/settings/location-config',
-          icon: Icons.location_city_outlined,
+          iconName: 'location_city_outlined',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+          supportedRoles: _allRoles,
           sortOrder: 94,
         ),
         AppNavItem(
           key: 'page.settings.match_criteria',
           title: 'Run Match Criteria',
           route: '/settings?section=match_criteria',
-          icon: Icons.bolt_rounded,
+          iconName: 'bolt_rounded',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin'],
+          supportedRoles: _adminRoles,
           sortOrder: 95,
         ),
         AppNavItem(
           key: 'page.settings.upload_limits',
           title: 'Upload Limits',
           route: '/settings?section=upload_limits',
-          icon: Icons.photo_library_outlined,
+          iconName: 'photo_library_outlined',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin'],
+          supportedRoles: _adminRoles,
           sortOrder: 96,
         ),
         AppNavItem(
           key: 'page.settings.kpi_config',
           title: 'KPI Configuration',
           route: '/settings/kpi-config',
-          icon: Icons.dashboard_customize_outlined,
+          iconName: 'dashboard_customize_outlined',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin'],
+          supportedRoles: _adminRoles,
           sortOrder: 97,
         ),
         AppNavItem(
           key: 'page.settings.backups',
           title: 'Automated Backups',
           route: '/settings?section=backups',
-          icon: Icons.cloud_download_rounded,
+          iconName: 'cloud_download_rounded',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin'],
+          supportedRoles: _superAdminOnly,
           sortOrder: 98,
         ),
         AppNavItem(
           key: 'page.settings.audit_logs',
           title: 'Audit Logs',
           route: '/settings/audit-logs',
-          icon: Icons.history_rounded,
+          iconName: 'history_rounded',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin'],
+          supportedRoles: _superAdminOnly,
           sortOrder: 99,
         ),
         AppNavItem(
           key: 'page.settings.system',
           title: 'System',
           route: '/settings?section=system',
-          icon: Icons.info_outline_rounded,
+          iconName: 'info_outline_rounded',
           parentKey: 'page.settings',
-          supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+          supportedRoles: _allRoles,
           sortOrder: 100,
         ),
       ],
     ),
-
-    // 13. Super Admin Platform Management
     AppNavItem(
       key: 'page.admin.permissions',
       title: 'Permission Matrix',
       route: '/admin/permissions',
-      icon: Icons.security_rounded,
-      supportedRoles: ['Super Admin'],
+      iconName: 'security_rounded',
+      supportedRoles: _superAdminOnly,
       sortOrder: 110,
     ),
     AppNavItem(
       key: 'page.admin.plans',
       title: 'Tier Plans Studio',
       route: '/admin/plans',
-      icon: Icons.workspace_premium_rounded,
-      supportedRoles: ['Super Admin'],
+      iconName: 'workspace_premium_rounded',
+      supportedRoles: _superAdminOnly,
       sortOrder: 120,
     ),
     AppNavItem(
       key: 'page.admin.brokers',
       title: 'Broker Workspaces',
       route: '/admin/brokers',
-      icon: Icons.domain_rounded,
-      supportedRoles: ['Super Admin'],
+      iconName: 'domain_rounded',
+      supportedRoles: _superAdminOnly,
       sortOrder: 130,
     ),
-
-    // 14. Support & Help Desk
+    AppNavItem(
+      key: 'page.admin.metrics',
+      title: 'Super Admin Metrics',
+      route: '/reports/leads/super-admin-metrics',
+      iconName: 'insights_outlined',
+      supportedRoles: _superAdminOnly,
+      sortOrder: 135,
+    ),
     AppNavItem(
       key: 'page.support',
       title: 'Support',
       route: '/support',
-      icon: Icons.support_agent_rounded,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'support_agent_rounded',
+      supportedRoles: _allRoles,
       sortOrder: 140,
     ),
-
-    // 15. Super Admin Centralized Support
     AppNavItem(
       key: 'page.admin.support',
       title: 'Issue Management',
       route: '/admin/support',
-      icon: Icons.admin_panel_settings_outlined,
-      supportedRoles: ['Super Admin'],
+      iconName: 'admin_panel_settings_outlined',
+      supportedRoles: _superAdminOnly,
       sortOrder: 150,
     ),
-
-    // 16. Recycle Bin
     AppNavItem(
       key: 'page.bin',
       title: 'Recycle Bin',
       route: '/bin',
-      icon: Icons.delete_outline_rounded,
-      supportedRoles: ['Super Admin', 'Admin', 'Telecaller', 'Sales'],
+      iconName: 'delete_outline_rounded',
+      supportedRoles: _allRoles,
       sortOrder: 160,
     ),
   ];
@@ -359,30 +490,47 @@ class AppNavigationRegistry {
     return 'Sales';
   }
 
-  /// Returns the complete navigation tree tailored for a specific role
-  static List<AppNavItem> getNavItemsForRole(String role) {
-    final norm = normalizeRole(role);
-    final List<AppNavItem> result = [];
-    for (final item in masterNavigationTree) {
-      if (item.supportedRoles.contains(norm)) {
-        final childrenForRole =
-            item.children.where((c) => c.supportedRoles.contains(norm)).toList();
-        result.add(item.copyWith(children: childrenForRole));
-      }
+  /// Every page in [masterNavigationTree] at every depth, parents before children.
+  static List<AppNavItem> flattenAll([List<AppNavItem> items = masterNavigationTree]) {
+    final flat = <AppNavItem>[];
+    void walk(AppNavItem item) {
+      flat.add(item);
+      item.children.forEach(walk);
     }
-    return result;
-  }
-
-  /// Returns a flattened list of all top-level items and subpages for a role
-  static List<AppNavItem> getFlatItemsForRole(String role) {
-    final items = getNavItemsForRole(role);
-    final List<AppNavItem> flat = [];
-    for (final it in items) {
-      flat.add(it);
-      for (final child in it.children) {
-        flat.add(child);
-      }
-    }
+    items.forEach(walk);
     return flat;
   }
+
+  /// Builds the role's page tree from flat page rows (parent links via [AppNavItem.parentKey]).
+  /// A nested page is shown only when its parent is also offered to the role.
+  static List<AppNavItem> buildTreeForRole(List<AppNavItem> flatPages, String role) {
+    final norm = normalizeRole(role);
+    final offered = flatPages.where((p) => p.supportedRoles.contains(norm)).toList();
+    final byParent = <String?, List<AppNavItem>>{};
+    for (final p in offered) {
+      byParent.putIfAbsent(p.parentKey, () => []).add(p);
+    }
+
+    List<AppNavItem> build(String? parentKey, Set<String> path) {
+      final level = [...?byParent[parentKey]]
+        ..sort((a, b) {
+          final c = a.sortOrder.compareTo(b.sortOrder);
+          return c != 0 ? c : a.title.compareTo(b.title);
+        });
+      return [
+        for (final p in level)
+          if (!path.contains(p.key)) p.copyWith(children: build(p.key, {...path, p.key})),
+      ];
+    }
+
+    return build(null, const {});
+  }
+
+  /// Returns the complete navigation tree tailored for a specific role
+  static List<AppNavItem> getNavItemsForRole(String role) =>
+      buildTreeForRole(flattenAll(), role);
+
+  /// Returns a flattened list of all top-level items and subpages for a role
+  static List<AppNavItem> getFlatItemsForRole(String role) =>
+      flattenAll(getNavItemsForRole(role));
 }

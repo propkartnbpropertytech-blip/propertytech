@@ -97,6 +97,9 @@ class PropertiesRepository {
   static DateTime? _lastRefreshAt;
   static const _minRefreshInterval = Duration(seconds: 45);
 
+  /// Lets the next load fetch from the server immediately (e.g. after another Admin changes sharing).
+  static void invalidateRefreshThrottle() => _lastRefreshAt = null;
+
   void _triggerBackgroundPropertiesRefresh({
     String? search,
     String? categoryId,

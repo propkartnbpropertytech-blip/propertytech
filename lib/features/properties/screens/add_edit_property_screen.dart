@@ -11,6 +11,8 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/design_system/widgets/form/crm_video_picker.dart';
 import 'package:dio/dio.dart';
 import '../../settings/services/upload_limits_manager.dart';
+import '../services/property_sharing_controller.dart';
+import '../../../core/design_system/widgets/app_status_snackbar.dart';
 
 class AddEditPropertyScreen extends StatefulWidget {
   final PropertyMetadataModel metadata;
@@ -87,6 +89,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
   String? _selectedParkingType;
   String? _selectedParkingOption;
   bool _isVerified = false;
+  bool _shareWithAdmins = true;
   DateTime? _availableDate;
   String? _selectedParkingSlot;
   String? _selectedSection;
@@ -128,6 +131,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     UploadLimitsManager().addListener(_onUploadLimitsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPropertyNameSuggestions();
+      if (widget.property == null) PropertySharingController.instance.load();
       UploadLimitsManager().fetchFromBackend(silent: true);
       if (widget.property == null && CRMDraftRepository().hasDraft('property')) {
         _showRestoreDraftDialog();
@@ -1238,6 +1242,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             ? _availableDate?.toIso8601String().substring(0, 10)
             : null,
       };
+      if (widget.property == null && PropertySharingController.instance.canManageProperties) {
+        propertyData['share_with_admins'] = _shareWithAdmins;
+      }
 
       if (widget.property == null) {
         final repository = PropertiesRepository();
@@ -1254,7 +1261,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
         if (duplicateResult['duplicate'] == true) {
           if (mounted) {
-            Navigator.pop(context); // pop loading spinner
+            Navigator.of(context, rootNavigator: true).pop(); // pop loading spinner
           }
 
           final details = duplicateResult['details'] as Map<String, dynamic>? ?? {};
@@ -1315,7 +1322,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       }
 
       if (mounted) {
-        Navigator.pop(context); // pop loading spinner
+        Navigator.of(context, rootNavigator: true).pop(); // pop loading spinner
       }
 
       if (widget.property == null) {
@@ -1336,7 +1343,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
-        Navigator.pop(context); // pop loading spinner
+        Navigator.of(context, rootNavigator: true).pop(); // pop loading spinner
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to publish property: $e"), backgroundColor: CRMColors.danger),
         );
@@ -1350,6 +1357,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
+        final sidePadding = _addFormSidePadding(constraints.maxWidth);
 
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -1363,19 +1371,24 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
             formKey: _formKey,
             isDirty: true,
             onSave: () async {
-              _submitForm();
+              _onSavePressed();
               return true;
             },
             child: Column(
               children: [
-                _buildWizardProgress(isMobile),
+                _buildWizardProgress(isMobile, sidePadding: sidePadding),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.l),
-                    child: _buildActiveStepContent(isMobile),
+                    padding: _isAddMode
+                        ? EdgeInsets.symmetric(
+                            horizontal: sidePadding,
+                            vertical: isMobile ? CRMSpacing.m : CRMSpacing.l,
+                          )
+                        : EdgeInsets.all(isMobile ? CRMSpacing.s : CRMSpacing.l),
+                    child: _constrainAddFormWidth(_buildActiveStepContent(isMobile)),
                   ),
                 ),
-                _buildWizardActions(isEdit),
+                _buildWizardActions(isEdit, sidePadding: sidePadding),
               ],
             ),
           ),
@@ -1384,7 +1397,33 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     );
   }
 
-  Widget _buildWizardProgress(bool isMobile) {
+  static const double _addFormMaxWidth = 1080;
+
+  double _addFormSidePadding(double availableWidth) {
+    if (availableWidth < 600) return CRMSpacing.m;
+    if (availableWidth < 1024) return CRMSpacing.xl;
+    return CRMSpacing.xxl;
+  }
+
+  /// Centers Add Property content in a readable column; Edit popup layout is unchanged.
+  Widget _constrainAddFormWidth(Widget child) {
+    if (!_isAddMode) return child;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _addFormMaxWidth),
+        child: SizedBox(width: double.infinity, child: child),
+      ),
+    );
+  }
+
+  EdgeInsets _stepCardPadding(bool isMobile) {
+    if (!_isAddMode) {
+      return isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m);
+    }
+    return isMobile ? const EdgeInsets.all(CRMSpacing.m) : const EdgeInsets.all(CRMSpacing.l);
+  }
+
+  Widget _buildWizardProgress(bool isMobile, {double? sidePadding}) {
     return Container(
       decoration: BoxDecoration(
         color: CRMColors.cardBgOf(context),
@@ -1393,20 +1432,24 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         ),
       ),
       padding: EdgeInsets.symmetric(
-        vertical: CRMSpacing.m,
-        horizontal: isMobile ? CRMSpacing.s : CRMSpacing.l,
+        vertical: _isAddMode && !isMobile ? CRMSpacing.l : CRMSpacing.m,
+        horizontal: _isAddMode && sidePadding != null
+            ? sidePadding
+            : (isMobile ? CRMSpacing.s : CRMSpacing.l),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildStepNode(0, 'Basic', isMobile),
-          _buildStepDivider(),
-          _buildStepNode(1, 'Location', isMobile),
-          _buildStepDivider(),
-          _buildStepNode(2, 'Price', isMobile),
-          _buildStepDivider(),
-          _buildStepNode(3, 'Owner & Media', isMobile),
-        ],
+      child: _constrainAddFormWidth(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildStepNode(0, 'Basic', isMobile),
+            _buildStepDivider(),
+            _buildStepNode(1, 'Location', isMobile),
+            _buildStepDivider(),
+            _buildStepNode(2, 'Price', isMobile),
+            _buildStepDivider(),
+            _buildStepNode(3, 'Owner & Media', isMobile),
+          ],
+        ),
       ),
     );
   }
@@ -1635,6 +1678,43 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     );
   }
 
+  Widget _buildShareWithAdminsToggle(bool isRent) {
+    final sharing = PropertySharingController.instance;
+    return ListenableBuilder(
+      listenable: sharing,
+      builder: (context, _) {
+        if (!sharing.canManageProperties) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: CRMSpacing.m),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+              border: Border.all(color: CRMColors.borderOf(context)),
+            ),
+            child: SwitchListTile(
+              dense: true,
+              secondary: Icon(
+                _shareWithAdmins ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                color: CRMColors.primaryOf(context),
+              ),
+              title: const Text(
+                'Share This Property with Other Admins',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Visible to other Admins only when ${isRent ? 'Rent' : 'Resale'} sharing is also enabled.',
+                style: const TextStyle(fontSize: 12),
+              ),
+              value: _shareWithAdmins,
+              activeTrackColor: CRMColors.primaryOf(context),
+              onChanged: (v) => setState(() => _shareWithAdmins = v),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildBasicStep(bool isMobile) {
     final selectedCategoryItem = widget.metadata.categories.firstWhere(
       (c) => c.id == _selectedCategory,
@@ -1683,11 +1763,12 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     return CRMCard(
       title: 'Basic Property Setup',
       subtitle: 'Complete listing definitions and categories',
-      padding: isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m),
+      padding: _stepCardPadding(isMobile),
       child: Column(
         children: [
           _buildPropertyNameField(),
           const SizedBox(height: CRMSpacing.m),
+          if (widget.property == null) _buildShareWithAdminsToggle(isRent),
 
           if (isMobile) ...[
             Row(
@@ -1701,6 +1782,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                     ),
                     items: widget.metadata.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                    validator: (v) => _requiredForAdd('Category', v),
                     onChanged: (v) {
                       setState(() {
                         _selectedCategory = v;
@@ -1730,6 +1812,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                     ),
                     items: widget.metadata.listingTypes.map((l) => DropdownMenuItem(value: l.id, child: Text(l.name))).toList(),
+                    validator: (v) => _requiredForAdd('Listing Type', v),
                     onChanged: (v) {
                       setState(() {
                         _selectedListingType = v;
@@ -1773,6 +1856,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                           ),
                           items: widget.metadata.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                          validator: (v) => _requiredForAdd('Category', v),
                           onChanged: (v) {
                             setState(() {
                               _selectedCategory = v;
@@ -1804,6 +1888,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                           ),
                           items: widget.metadata.listingTypes.map((l) => DropdownMenuItem(value: l.id, child: Text(l.name))).toList(),
+                          validator: (v) => _requiredForAdd('Listing Type', v),
                           onChanged: (v) {
                             setState(() {
                               _selectedListingType = v;
@@ -1849,6 +1934,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                     ),
                     items: filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))).toList(),
+                    validator: (v) => _requiredForAdd('Property Type', v),
                     onChanged: (v) => setState(() => _selectedType = v),
                   ),
                 ),
@@ -1903,6 +1989,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                           ),
                           items: filteredTypes.map((t) => DropdownMenuItem(value: t.id, child: Text(t.name))).toList(),
+                          validator: (v) => _requiredForAdd('Property Type', v),
                           onChanged: (v) => setState(() => _selectedType = v),
                         ),
                       ),
@@ -1958,6 +2045,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
               ),
               items: filteredStatuses.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
+              validator: (v) => _requiredForAdd('Property Status', v),
               onChanged: (v) {
                 setState(() {
                   _selectedStatus = v;
@@ -1990,6 +2078,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
                     ),
                     items: filteredStatuses.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
+                    validator: (v) => _requiredForAdd('Property Status', v),
                     onChanged: (v) {
                       setState(() {
                         _selectedStatus = v;
@@ -2085,6 +2174,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
             ),
             items: _cities.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+            validator: (v) => _requiredForAdd('City', v),
             onChanged: (v) {
               setState(() => _selectedCity = v);
               if (v != null) _updateAreasForCity(v);
@@ -2110,6 +2200,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
             ),
             items: _filteredAreas.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
+            validator: (v) => _requiredForAdd('Area', v),
             onChanged: (v) => setState(() => _selectedArea = v),
           ),
         ),
@@ -2182,7 +2273,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     return CRMCard(
       title: 'Location Mapping',
       subtitle: 'Specify geo-coordinates and landmark directions',
-      padding: isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m),
+      padding: _stepCardPadding(isMobile),
       child: Column(
         children: [
           if (isMobile) ...[
@@ -2244,6 +2335,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
               labelText: 'Address Details *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
             ),
+            validator: (v) => _requiredForAdd('Address Details', v),
           ),
           const SizedBox(height: CRMSpacing.m),
           landmarkField,
@@ -3100,7 +3192,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     return CRMCard(
       title: 'Pricing & Sizing Sockets',
       subtitle: 'Complete budget calculations and builtup area parameters',
-      padding: isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m),
+      padding: _stepCardPadding(isMobile),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3645,7 +3737,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     return CRMCard(
       title: 'Contacts Info & Visibility',
       subtitle: 'Verify contact profiles and direct remarks',
-      padding: isMobile ? const EdgeInsets.all(CRMSpacing.s) : const EdgeInsets.all(CRMSpacing.m),
+      padding: _stepCardPadding(isMobile),
       child: Column(
         children: [
           if (isMobile) ...[
@@ -3698,8 +3790,103 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     );
   }
 
-  Widget _buildWizardActions(bool isEdit) {
+  bool get _isAddMode => widget.property == null;
+
+  String? _requiredForAdd(String label, String? value) =>
+      _isAddMode && (value == null || value.trim().isEmpty) ? '$label is required' : null;
+
+  /// Fields marked with * on [step] that are still empty (Add Property only).
+  List<String> _missingRequiredFields(int step) {
+    if (!_isAddMode) return const [];
+    bool isEmpty(String? v) => v == null || v.trim().isEmpty;
+    final categoryName = widget.metadata.categories
+        .firstWhere((c) => c.id == _selectedCategory, orElse: () => LookupItem(id: '', name: ''))
+        .name
+        .trim()
+        .toLowerCase();
+    final listingItem = widget.metadata.listingTypes
+        .firstWhere((l) => l.id == _selectedListingType, orElse: () => LookupItem(id: '', name: ''));
+    final isLand = categoryName.contains('land') || categoryName.contains('plot');
+    final isRent = listingItem.name.trim().toLowerCase() == 'rent' || listingItem.id == 'rent';
+
+    final missing = <String>[];
+    switch (step) {
+      case 0:
+        if (isEmpty(_titleController.text)) missing.add('Location / Property Name');
+        if (isEmpty(_selectedCategory)) missing.add('Category');
+        if (isEmpty(_selectedListingType)) missing.add('Listing Type');
+        if (isEmpty(_selectedType)) missing.add('Property Type');
+        if (isEmpty(_selectedStatus)) missing.add('Property Status');
+        break;
+      case 1:
+        if (isEmpty(_selectedCity)) missing.add('City');
+        if (isEmpty(_selectedArea)) missing.add('Area');
+        if (isEmpty(_addressController.text)) missing.add('Address Details');
+        break;
+      case 2:
+        if (isEmpty(_priceController.text)) missing.add('Price');
+        if (!isLand && isEmpty(_superBuiltupController.text)) missing.add('Super Builtup Area');
+        if (isLand && isEmpty(_plotController.text)) missing.add('Plot Area Size');
+        if (isRent && isEmpty(_selectedDepositMonth)) missing.add('Deposit Months');
+        break;
+      case 3:
+        if (isEmpty(_ownerNameController.text)) missing.add('Contact Name');
+        if (isEmpty(_ownerMobileController.text)) missing.add('Contact Mobile');
+        break;
+    }
+    return missing;
+  }
+
+  void _showRequiredFieldsWarning(List<String> missing) {
+    AppStatusSnackBar.show(
+      context,
+      message: missing.isEmpty
+          ? 'Please fill all required fields marked with *.'
+          : 'Please fill required fields: ${missing.join(', ')}',
+      isSuccess: false,
+      icon: Icons.warning_amber_rounded,
+    );
+  }
+
+  void _onNextPressed() {
+    if (!_isAddMode) {
+      if (_formKey.currentState!.validate()) {
+        setState(() => _currentStep++);
+      }
+      return;
+    }
+    final missing = _missingRequiredFields(_currentStep);
+    final formValid = CRMFormUtils.validateAndScroll(_formKey, context);
+    if (!formValid || missing.isNotEmpty) {
+      _showRequiredFieldsWarning(missing);
+      return;
+    }
+    setState(() => _currentStep++);
+  }
+
+  void _onSavePressed() {
+    if (_isAddMode) {
+      for (var step = 0; step < 4; step++) {
+        final missing = _missingRequiredFields(step);
+        if (missing.isNotEmpty) {
+          if (step != _currentStep) setState(() => _currentStep = step);
+          _showRequiredFieldsWarning(missing);
+          return;
+        }
+      }
+      if (!CRMFormUtils.validateAndScroll(_formKey, context)) {
+        _showRequiredFieldsWarning(const []);
+        return;
+      }
+    }
+    _submitForm();
+  }
+
+  Widget _buildWizardActions(bool isEdit, {double? sidePadding}) {
     final screenWidth = MediaQuery.of(context).size.width;
+    final barPadding = _isAddMode && sidePadding != null
+        ? EdgeInsets.symmetric(horizontal: sidePadding, vertical: CRMSpacing.m)
+        : const EdgeInsets.all(CRMSpacing.m);
     final isMobile = screenWidth < 500;
 
     final cancelButton = CRMButton(
@@ -3720,17 +3907,13 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         ? CRMButton(
             label: 'Next',
             variant: CRMButtonVariant.primary,
-            onPressed: () {
-              if (_formKey.currentState!.validate()) {
-                setState(() => _currentStep++);
-              }
-            },
+            onPressed: _onNextPressed,
           )
         : CRMButton(
             label: isEdit ? 'Save Changes' : 'Save Property',
             variant: CRMButtonVariant.primary,
             isLoading: _isSubmitting,
-            onPressed: _isSubmitting ? null : _submitForm,
+            onPressed: _isSubmitting ? null : _onSavePressed,
           );
 
     final saveChangesButton = (isEdit && _currentStep < 3)
@@ -3744,7 +3927,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     if (isMobile) {
       return Container(
-        padding: const EdgeInsets.all(CRMSpacing.m),
+        padding: barPadding,
         decoration: BoxDecoration(
           color: CRMColors.cardBgOf(context),
           border: Border(top: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5), width: 0.5)),
@@ -3788,29 +3971,31 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(CRMSpacing.m),
+      padding: barPadding,
       decoration: BoxDecoration(
         color: CRMColors.cardBgOf(context),
         border: Border(top: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.5), width: 0.5)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          cancelButton,
-          Row(
-            children: [
-              if (backButton != null) ...[
-                backButton,
-                const SizedBox(width: CRMSpacing.s),
+      child: _constrainAddFormWidth(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            cancelButton,
+            Row(
+              children: [
+                if (backButton != null) ...[
+                  backButton,
+                  const SizedBox(width: CRMSpacing.s),
+                ],
+                if (saveChangesButton != null) ...[
+                  saveChangesButton,
+                  const SizedBox(width: CRMSpacing.s),
+                ],
+                nextButton,
               ],
-              if (saveChangesButton != null) ...[
-                saveChangesButton,
-                const SizedBox(width: CRMSpacing.s),
-              ],
-              nextButton,
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

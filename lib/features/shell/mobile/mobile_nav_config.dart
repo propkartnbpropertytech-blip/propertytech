@@ -86,6 +86,11 @@ class MobileNavAccess {
     if (r.startsWith('/admin/lead-allocation') && !RoleGuard.isAdmin(role)) {
       return false;
     }
+    if (r.startsWith('/my-campaign-leads') &&
+        RoleGuard.isSales(role) &&
+        !RoleGuard.canAction('page.my_campaign_leads')) {
+      return false;
+    }
     return RoleGuard.canViewPage(role, route);
   }
 }
@@ -352,6 +357,7 @@ class MobileNavConfig {
             ),
           ],
           settings,
+          if (RoleGuard.canAction('page.settings.appearance.sync_diagnostics'))
           MobileMoreEntry(
             id: 'sync_diagnostics',
             label: 'Sync diagnostics',
@@ -363,9 +369,19 @@ class MobileNavConfig {
         const MobileMoreSection(title: 'Account', entries: [profile]),
       ];
     } else {
-      sections = const [
-        MobileMoreSection(title: 'Work', entries: [library, messages]),
-        MobileMoreSection(title: 'Account', entries: [profile, support, settings, bin]),
+      sections = [
+        MobileMoreSection(title: 'Work', entries: [
+          if (RoleGuard.isSales(role))
+            const MobileMoreEntry(
+              id: 'campaign_leads',
+              label: 'Campaign Leads',
+              icon: Icons.campaign_outlined,
+              route: '/my-campaign-leads',
+            ),
+          library,
+          messages,
+        ]),
+        const MobileMoreSection(title: 'Account', entries: [profile, support, settings, bin]),
       ];
     }
 

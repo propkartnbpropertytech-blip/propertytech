@@ -3,6 +3,26 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/api_exception.dart';
 
+/// Page/tab a lead was moved to the Recycle Bin from (`requirements.deleted_from`).
+class RecycleBinSource {
+  RecycleBinSource._();
+
+  static const leads = 'leads';
+  static const campaignRequirement = 'campaign_requirement';
+  static const campaignPropertyListing = 'campaign_property_listing';
+
+  static String label(String? source) => switch (source) {
+        campaignRequirement => 'Campaign Leads › Requirement Leads',
+        campaignPropertyListing => 'Campaign Leads › Property Listing Leads',
+        _ => 'Leads',
+      };
+}
+
+String requirementDeletePath(String id, {String? deletedFrom}) =>
+    deletedFrom == null || deletedFrom.isEmpty
+        ? '/requirements/$id'
+        : '/requirements/$id?deletedFrom=${Uri.encodeQueryComponent(deletedFrom)}';
+
 class RequirementsService {
   final ApiClient _apiClient = ApiClient();
 
@@ -133,9 +153,11 @@ class RequirementsService {
     }
   }
 
-  Future<Map<String, dynamic>> deleteRequirement(String id) async {
+  /// [deletedFrom] records the page/tab the lead left for the Recycle Bin: `leads`,
+  /// `campaign_requirement` or `campaign_property_listing`.
+  Future<Map<String, dynamic>> deleteRequirement(String id, {String? deletedFrom}) async {
     try {
-      final response = await _apiClient.delete('/requirements/$id');
+      final response = await _apiClient.delete(requirementDeletePath(id, deletedFrom: deletedFrom));
       if (response.data is Map<String, dynamic>) {
         return response.data as Map<String, dynamic>;
       }

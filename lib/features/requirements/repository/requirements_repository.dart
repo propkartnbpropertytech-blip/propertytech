@@ -535,9 +535,9 @@ class RequirementsRepository {
     }
   }
 
-  Future<void> deleteRequirement(String id) async {
+  Future<void> deleteRequirement(String id, {String? deletedFrom}) async {
     try {
-      await _requirementsService.deleteRequirement(id);
+      await _requirementsService.deleteRequirement(id, deletedFrom: deletedFrom);
       await _coordinator.requirementLocal.deleteRequirement(id);
       _coordinator.refreshRequirements();
     } catch (e) {

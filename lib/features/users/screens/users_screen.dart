@@ -22,6 +22,8 @@ import '../../../core/api/cloudinary_uploader.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -45,12 +47,31 @@ class _UsersScreenState extends State<UsersScreen> {
     super.initState();
     _triggerFetch();
     _fetchPasswordResets();
+    _employeeActionSignature = _currentEmployeeActionSignature();
+    PermissionMatrixService.instance.addListener(_onEmployeeActionPermissionsChanged);
   }
 
   @override
   void dispose() {
+    PermissionMatrixService.instance.removeListener(_onEmployeeActionPermissionsChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  String _employeeActionSignature = '';
+
+  bool _can(String actionKey) => RoleGuard.canAction(actionKey);
+
+  String _currentEmployeeActionSignature() => PermissionMatrixService.adminActionKeys
+      .where((k) => k.startsWith('page.employees.'))
+      .map((k) => _can(k) ? '1' : '0')
+      .join();
+
+  void _onEmployeeActionPermissionsChanged() {
+    final signature = _currentEmployeeActionSignature();
+    if (!mounted || signature == _employeeActionSignature) return;
+    _employeeActionSignature = signature;
+    setState(() {});
   }
 
   Future<void> _fetchPasswordResets() async {
@@ -712,7 +733,8 @@ class _UsersScreenState extends State<UsersScreen> {
               // 2. Statistics Overview Cards
               _buildStatisticsRow(),
               if (authState is Authenticated &&
-                  (authState.user.role == 'Super Admin' || authState.user.role == 'Admin')) ...[
+                  (authState.user.role == 'Super Admin' || authState.user.role == 'Admin') &&
+                  _can('page.employees.tree')) ...[
                 const SizedBox(height: CRMSpacing.s),
                 Align(
                   alignment: Alignment.centerRight,
@@ -752,7 +774,7 @@ class _UsersScreenState extends State<UsersScreen> {
     final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
     return CRMPageHeader(
       title: isSuperAdmin ? "Users" : "Employees",
-      trailing: CRMButton(
+      trailing: !_can('page.employees.add') ? null : CRMButton(
         label: "Add Employee",
         prefixIcon: Icons.add_rounded,
         height: 40,
@@ -1293,7 +1315,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       value: user.isActive,
                       activeTrackColor: CRMColors.primary,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      onChanged: (val) {
+                      onChanged: !_can('page.employees.active_toggle') ? null : (val) {
                         context.read<UsersBloc>().add(
                           ToggleUserStatusRequested(id: user.id, isActive: val),
                         );
@@ -1310,6 +1332,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (_can('page.employees.details'))
                           IconButton(
                             icon: Icon(
                               Icons.chevron_right_rounded,
@@ -1325,6 +1348,7 @@ class _UsersScreenState extends State<UsersScreen> {
                             ),
                             onPressed: () => _openEmployeePage(user),
                           ),
+                          if (_can('page.employees.edit'))
                           IconButton(
                             icon: Icon(
                               Icons.edit_outlined,
@@ -1339,6 +1363,7 @@ class _UsersScreenState extends State<UsersScreen> {
                             ),
                             onPressed: () => _showAddEditUserDialog(user),
                           ),
+                          if (_can('page.employees.delete'))
                           IconButton(
                             icon: Icon(
                               Icons.delete_outline_rounded,
@@ -1491,7 +1516,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     child: Switch(
                       value: user.isActive,
                       activeTrackColor: CRMColors.primary,
-                      onChanged: (val) {
+                      onChanged: !_can('page.employees.active_toggle') ? null : (val) {
                         context.read<UsersBloc>().add(
                           ToggleUserStatusRequested(id: user.id, isActive: val),
                         );
@@ -1513,6 +1538,7 @@ class _UsersScreenState extends State<UsersScreen> {
             spacing: CRMSpacing.s,
             runSpacing: 4,
             children: [
+              if (_can('page.employees.details'))
               TextButton.icon(
                 style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _openEmployeePage(user),
@@ -1523,6 +1549,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
                 label: Text('Open', style: TextStyle(color: CRMColors.primary)),
               ),
+              if (_can('page.employees.edit'))
               TextButton.icon(
                 style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _showAddEditUserDialog(user),
@@ -1533,6 +1560,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
                 label: Text('Edit', style: TextStyle(color: CRMColors.primary)),
               ),
+              if (_can('page.employees.delete'))
               TextButton.icon(
                 style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _showDeleteConfirmDialog(user),
@@ -2009,6 +2037,7 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   void _openEmployeePage(UserModel user) {
+    if (!_can('page.employees.details')) return;
     context.push('/users/${user.id}');
   }
 

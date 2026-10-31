@@ -23,6 +23,8 @@ import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/design_system/widgets/form/crm_multi_select_dropdown.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/security/crm_control_guard.dart';
+import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
 import 'package:flutter/services.dart';
 import '../../auth/models/user_model.dart';
 import '../bloc/properties_bloc.dart';
@@ -38,6 +40,12 @@ import '../../../core/config/app_config.dart';
 import '../../../core/utils/file_downloader.dart';
 import '../../../core/utils/formatters.dart';
 import '../widgets/property_pdf_content_selection_dialog.dart';
+import '../widgets/share_my_properties_toggle.dart';
+import '../widgets/property_share_card_toggle.dart';
+import '../widgets/shared_property_admin_badge.dart';
+import '../widgets/property_notes_button.dart';
+import '../services/property_notes_controller.dart';
+import '../services/property_sharing_controller.dart';
 
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/telemetry/audit_telemetry_service.dart';
@@ -153,6 +161,65 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     });
     _loadArchivedPropertyIds();
     _loadProperties();
+    _propertyActionSignature = _currentPropertyActionSignature();
+    PermissionMatrixService.instance.addListener(_onActionPermissionsChanged);
+    _canManagePropertySharing = PropertySharingController.instance.canManageProperties;
+    PropertySharingController.instance.addListener(_onPropertySharingAccessChanged);
+    PropertySharingController.instance.load(force: true);
+    _sharedSetVersion = PropertySharingController.instance.sharedSetVersion;
+    if (RoleGuard.currentUser?.role == 'Admin') {
+      _sharedPropertiesPollTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => PropertySharingController.instance.load(force: true),
+      );
+    }
+  }
+
+  bool _canManagePropertySharing = false;
+  int _sharedSetVersion = 0;
+  Timer? _sharedPropertiesPollTimer;
+
+  void _onPropertySharingAccessChanged() {
+    if (!mounted) return;
+    final version = PropertySharingController.instance.sharedSetVersion;
+    if (version != _sharedSetVersion) {
+      _sharedSetVersion = version;
+      PropertiesRepository.invalidateRefreshThrottle();
+      _loadProperties();
+    }
+    final canManage = PropertySharingController.instance.canManageProperties;
+    if (canManage == _canManagePropertySharing) return;
+    setState(() => _canManagePropertySharing = canManage);
+  }
+
+  static const _propertyActionKeys = [
+    'page.properties.add',
+    'page.properties.export',
+    'page.properties.edit',
+    'page.properties.delete',
+    'page.properties.message',
+    'page.properties.share',
+    'page.properties.archive',
+    'page.properties.visibility_controls',
+    'page.properties.notes',
+  ];
+  String _propertyActionSignature = '';
+
+  bool _can(String actionKey) =>
+      PermissionMatrixService.instance.isActionAllowed(RoleGuard.currentUser?.role, actionKey);
+
+  String _currentPropertyActionSignature() =>
+      _propertyActionKeys.map((k) => _can(k) ? '1' : '0').join();
+
+  void _onActionPermissionsChanged() {
+    final signature = _currentPropertyActionSignature();
+    if (!mounted || signature == _propertyActionSignature) return;
+    _propertyActionSignature = signature;
+    PropertySharingController.instance.load(force: true);
+    PropertyNotesController.instance.refreshAccess();
+    setState(() {
+      if (!_can('page.properties.archive')) _archiveTabOnly = false;
+    });
   }
 
   void _onSearchChangedDebounced() {
@@ -275,6 +342,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   @override
   void dispose() {
+    PermissionMatrixService.instance.removeListener(_onActionPermissionsChanged);
+    PropertySharingController.instance.removeListener(_onPropertySharingAccessChanged);
+    _sharedPropertiesPollTimer?.cancel();
     _searchDebounceTimer?.cancel();
     _propertySearchRefreshSub?.cancel();
     _searchController.removeListener(_onSearchChangedDebounced);
@@ -434,7 +504,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       },
       itemBuilder: (context) => [
         if (_activeTab == 'My Deleted') ...[
-          if (isMine)
+          if (isMine && _can('page.recycle_bin.properties_restore'))
             const PopupMenuItem<String>(
               value: 'restore',
               child: Row(
@@ -448,6 +518,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             ),
         ] else ...[
           if (isMine) ...[
+            if (_can('page.properties.edit'))
             PopupMenuItem<String>(
               value: 'edit',
               child: Row(
@@ -459,6 +530,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 ],
               ),
             ),
+            if (_can('page.properties.delete'))
             PopupMenuItem<String>(
               value: 'delete',
               child: Row(
@@ -471,6 +543,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               ),
             ),
           ],
+          if (_can('page.properties.message'))
           PopupMenuItem<String>(
             value: 'message',
             child: Row(
@@ -482,6 +555,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               ],
             ),
           ),
+          if (_can('page.properties.share'))
           PopupMenuItem<String>(
             value: 'share',
             child: Row(
@@ -493,7 +567,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               ],
             ),
           ),
-          if (_archivedPropertyIds.contains(p.id))
+          if (_can('page.properties.archive') && _archivedPropertyIds.contains(p.id))
             PopupMenuItem<String>(
               value: 'unarchive',
               child: Row(
@@ -505,7 +579,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 ],
               ),
             )
-          else
+          else if (_can('page.properties.archive'))
             PopupMenuItem<String>(
               value: 'archive',
               child: Row(
@@ -910,6 +984,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (_can('page.properties.share'))
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: CRMColors.primaryOf(context),
@@ -2484,13 +2559,28 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           ],
                         );
 
+                        final isSharedFromOtherAdmin =
+                            PropertySharingController.instance.isSharedFromOtherAdmin(p);
                         final badges = Wrap(
                           spacing: 8,
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            _buildCardPortalBadge(p),
-                            _buildCardStatusBadge(p, metadata),
+                            if (_canManagePropertySharing &&
+                                PropertySharingController.instance.canToggleProperty(p))
+                              PropertyShareCardToggle(property: p),
+                            if (!isSharedFromOtherAdmin)
+                              _buildCardPortalBadge(p),
+                            if (isSharedFromOtherAdmin)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  PropertyNotesButton(property: p, trailingSpacing: 8),
+                                  _buildCardStatusBadge(p, metadata),
+                                ],
+                              )
+                            else
+                              _buildCardStatusBadge(p, metadata),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 5),
@@ -2539,13 +2629,38 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           ],
                         );
 
+                        final showOwnerAdmin =
+                            PropertySharingController.instance.showsOwnerAdminBadge(p);
+                        Widget badgesWithOwner(CrossAxisAlignment align) {
+                          final Widget badgeBlock = isSharedFromOtherAdmin
+                              ? badges
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: align,
+                                  children: [
+                                    badges,
+                                    PropertyNotesButton(property: p, topSpacing: 6),
+                                  ],
+                                );
+                          return showOwnerAdmin
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: align,
+                                  children: [
+                                    SharedPropertyAdminBadge(property: p, bottomSpacing: 6),
+                                    badgeBlock,
+                                  ],
+                                )
+                              : badgeBlock;
+                        }
+
                         if (isNarrow || rowConstraints.maxWidth < 450) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               titleBlock,
                               const SizedBox(height: 8),
-                              badges,
+                              badgesWithOwner(CrossAxisAlignment.start),
                             ],
                           );
                         }
@@ -2556,7 +2671,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                           children: [
                             Expanded(child: titleBlock),
                             const SizedBox(width: 12),
-                            badges,
+                            badgesWithOwner(CrossAxisAlignment.end),
                           ],
                         );
                       },
@@ -3112,6 +3227,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                   backgroundColor: CRMColors.danger),
             );
           } else if (state is PropertyCreatedState) {
+            PropertySharingController.instance.load(force: true);
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 final lt = state.property.listingTypeName.toLowerCase();
@@ -3286,7 +3402,7 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
                             ),
                           ),
                           _buildMyAddedToggle(),
-                          _buildArchiveToggle(),
+                          if (_can('page.properties.archive')) _buildArchiveToggle(),
                         ],
                       ),
                       const SizedBox(height: CRMSpacing.l),
@@ -3710,7 +3826,21 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
   Widget _buildPageHeader(PropertyMetadataModel? metadata) {
     return CRMPageHeader(
       title: 'Properties',
-      trailing: CrmControlGuard(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShareMyPropertiesToggle(isRent: _activeListingTab == 'Rent'),
+          if (_can('page.properties.add')) ...[
+            const SizedBox(width: 12),
+            _buildAddPropertyHeaderButton(metadata),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddPropertyHeaderButton(PropertyMetadataModel? metadata) {
+    return CrmControlGuard(
         controlKey: 'action.properties.create',
         child: CRMButton(
         label: 'Add Property',
@@ -3727,7 +3857,6 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
           }
           _showAddEditPropertyDialog(context, metadata);
         },
-      ),
       ),
     );
   }
@@ -4899,7 +5028,8 @@ _recomputeFilteredProperties();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     final role = currentUser?.role.toLowerCase() ?? '';
-    final bool canExport = role == 'admin' || role == 'super admin' || role == 'telecaller';
+    final bool canExport = (role == 'admin' || role == 'super admin' || role == 'telecaller') &&
+        _can('page.properties.export');
     final screenWidth = MediaQuery.of(context).size.width;
     final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
 
@@ -5497,6 +5627,22 @@ _recomputeFilteredProperties();
     final propertiesBloc = context.read<PropertiesBloc>();
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
+
+    if (property == null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: propertiesBloc,
+            child: AddEditPropertyScreen(
+              metadata: metadata,
+              activeTab: _activeTab,
+              activeListingTab: _activeListingTab,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
 
     showDialog(
       context: context,
@@ -6375,21 +6521,27 @@ _recomputeFilteredProperties();
                             ],
                           ),
                         ),
-                        if (metadata != null)
-                          ElevatedButton.icon(
-                            onPressed: () => _showAddEditPropertyDialog(context, metadata),
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text(
-                              'Add Property',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: CRMColors.primaryOf(context),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ShareMyPropertiesToggle(compact: true, isRent: _activeListingTab == 'Rent'),
+                            if (metadata != null && _can('page.properties.add'))
+                              ElevatedButton.icon(
+                                onPressed: () => _showAddEditPropertyDialog(context, metadata),
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text(
+                                  'Add Property',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: CRMColors.primaryOf(context),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -6399,7 +6551,7 @@ _recomputeFilteredProperties();
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _buildMyAddedToggle(),
-                        _buildArchiveToggle(),
+                        if (_can('page.properties.archive')) _buildArchiveToggle(),
                       ],
                     ),
                     const SizedBox(height: CRMSpacing.m),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../dashboard/models/kpi_models.dart';
 import '../../dashboard/repository/dashboard_repository.dart';
@@ -250,10 +252,33 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     },
   ];
 
+  late String _kpiActionSignature;
+
+  bool get _canAddKpi => RoleGuard.canAction('page.settings.kpi.add');
+  bool get _canToggleKpi => RoleGuard.canAction('page.settings.kpi.active');
+  bool get _canUseKpiActions => RoleGuard.canAction('page.settings.kpi.actions');
+
+  String _currentKpiActionSignature() =>
+      [_canAddKpi, _canToggleKpi, _canUseKpiActions].map((v) => v ? '1' : '0').join();
+
+  void _onKpiActionPermissionsChanged() {
+    final next = _currentKpiActionSignature();
+    if (next == _kpiActionSignature || !mounted) return;
+    setState(() => _kpiActionSignature = next);
+  }
+
   @override
   void initState() {
     super.initState();
+    _kpiActionSignature = _currentKpiActionSignature();
+    PermissionMatrixService.instance.addListener(_onKpiActionPermissionsChanged);
     _fetchKpiRegistry();
+  }
+
+  @override
+  void dispose() {
+    PermissionMatrixService.instance.removeListener(_onKpiActionPermissionsChanged);
+    super.dispose();
   }
 
   Future<void> _fetchKpiRegistry() async {
@@ -473,6 +498,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
               ),
             ],
           ),
+          if (_canAddKpi)
           ElevatedButton.icon(
             onPressed: () => _openKpiConfigDialog(),
             icon: const Icon(Icons.add_rounded, size: 18),
@@ -848,7 +874,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
                         child: Switch(
                           value: kpi.isEnabled,
                           activeTrackColor: const Color(0xFF10B981),
-                          onChanged: (val) => _toggleKpiStatus(kpi, val),
+                          onChanged: _canToggleKpi ? (val) => _toggleKpiStatus(kpi, val) : null,
                         ),
                       ),
                     ),
@@ -858,12 +884,13 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (_canUseKpiActions)
                           IconButton(
                             icon: const Icon(Icons.edit_outlined, size: 16),
                             tooltip: 'Edit KPI',
                             onPressed: () => _openKpiConfigDialog(kpi),
                           ),
-                          if (!kpi.isSystem)
+                          if (_canUseKpiActions && !kpi.isSystem)
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded,
                                   size: 16, color: Colors.redAccent),
@@ -917,7 +944,7 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
     required VoidCallback onTap,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: _canUseKpiActions ? onTap : null,
       borderRadius: BorderRadius.circular(4),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
