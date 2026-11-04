@@ -33,12 +33,24 @@
   # Route backend API requests directly to the PropKart Node.js API backend
   RewriteRule ^api/(.*)$ https://api-propkart.nbpropertytech.com/api/$1 [P,L]
 
+  # Allow direct access to .well-known directory (Digital Asset Links, ACME, etc.)
+  RewriteRule ^\.well-known/ - [L]
+
   # Fallback for standard Single Page Application routing
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /index.html [L]
 </IfModule>
+
+# Digital Asset Links for Android App Links & Play Store Credential Sharing
+<Files "assetlinks.json">
+  <IfModule mod_headers.c>
+    Header set Content-Type "application/json; charset=utf-8"
+    Header set Access-Control-Allow-Origin "*"
+    Header set Cache-Control "max-age=86400, public"
+  </IfModule>
+</Files>
 
 # --- PERFORMANCE OPTIMIZATIONS FOR HOSTINGER ---
 
