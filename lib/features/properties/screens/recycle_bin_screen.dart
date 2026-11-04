@@ -15,6 +15,8 @@ import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/data_table.dart';
+import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/utils/currency.dart';
 import '../models/property_model.dart';
 import '../services/properties_service.dart';
@@ -27,7 +29,15 @@ import '../../users/repository/users_repository.dart';
 import '../../users/models/user_model.dart' as user_settings_model;
 
 class RecycleBinScreen extends StatefulWidget {
-  const RecycleBinScreen({super.key});
+  /// Set by a search link: 'properties' or 'requirements'.
+  final String? initialTab;
+  /// Set by a search link: 'rent' or 'resale'.
+  final String? initialListing;
+  final String? initialSearch;
+  /// Changes on every search link, so opening the same record twice still applies it.
+  final String? linkStamp;
+
+  const RecycleBinScreen({super.key, this.initialTab, this.initialListing, this.initialSearch, this.linkStamp});
 
   @override
   State<RecycleBinScreen> createState() => _RecycleBinScreenState();
@@ -46,6 +56,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   List<PropertyModel> _binProperties = [];
   List<RequirementModel> _binRequirements = [];
+  /// Requirement id → page/tab it was moved to the bin from ([RecycleBinSource]).
+  final Map<String, String> _binDeletedFrom = {};
   final Map<String, user_settings_model.UserModel> _usersMap = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -138,9 +150,26 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     return haystack.contains(q);
   }
 
+  late String _binActionSignature;
+
+  bool _can(String key) => RoleGuard.canAction(key);
+
+  String _currentBinActionSignature() => PermissionMatrixService.adminActionKeys
+      .where((k) => k.startsWith('page.recycle_bin.'))
+      .map((k) => _can(k) ? '1' : '0')
+      .join();
+
+  void _onBinActionPermissionsChanged() {
+    final next = _currentBinActionSignature();
+    if (next == _binActionSignature || !mounted) return;
+    setState(() => _binActionSignature = next);
+  }
+
   @override
   void initState() {
     super.initState();
+    _binActionSignature = _currentBinActionSignature();
+    PermissionMatrixService.instance.addListener(_onBinActionPermissionsChanged);
     _binRefreshSub = SyncManager().tableChanges.listen((tables) {
       if (!mounted) return;
       if (tables.contains('properties') || tables.contains('requirements')) {
@@ -148,11 +177,50 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       }
     });
     _loadAutoDeleteDays();
+    _applySearchLink();
     _fetchBinData();
   }
 
   @override
+  void didUpdateWidget(covariant RecycleBinScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final changed = widget.linkStamp != oldWidget.linkStamp ||
+        widget.initialSearch != oldWidget.initialSearch ||
+        widget.initialTab != oldWidget.initialTab ||
+        widget.initialListing != oldWidget.initialListing;
+    if (!changed) return;
+    var applied = false;
+    setState(() => applied = _applySearchLink());
+    if (applied) _fetchBinData();
+  }
+
+  /// Opens the tab and listing that hold the linked record and searches down to it.
+  bool _applySearchLink() {
+    final tab = widget.initialTab?.trim().toLowerCase() ?? '';
+    final search = widget.initialSearch?.trim() ?? '';
+    if (tab.isEmpty && search.isEmpty) return false;
+    final listing = widget.initialListing?.trim().toLowerCase() ?? '';
+    final listingTab = listing == 'rent' ? 'Rent' : listing == 'resale' ? 'Re-sale' : null;
+    if (tab == 'properties') {
+      _selectedTab = 'Properties';
+      if (listingTab != null) _propertiesSubTab = listingTab;
+    } else if (tab == 'requirements') {
+      _selectedTab = 'Requirements';
+      _requirementsSubTab = 'Bin';
+      if (listingTab != null) _requirementsListingSubTab = listingTab;
+    }
+    if (search.isNotEmpty) {
+      _searchController.text = search;
+      _searchQuery = search.toLowerCase();
+    }
+    _currentPropertiesPage = 1;
+    _currentRequirementsPage = 1;
+    return true;
+  }
+
+  @override
   void dispose() {
+    PermissionMatrixService.instance.removeListener(_onBinActionPermissionsChanged);
     _binSearchDebounce?.cancel();
     _binRefreshSub?.cancel();
     _searchController.dispose();
@@ -331,6 +399,12 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       final currentUserId = currentUser?.id;
 
       List<RequirementModel> parsedList = list.map((r) => RequirementModel.fromJson(r)).toList();
+      final deletedFrom = <String, String>{
+        if (searchingBin)
+          for (final raw in list)
+            if (raw is Map && raw['id'] != null && (raw['deleted_from'] ?? '').toString().isNotEmpty)
+              raw['id'].toString(): raw['deleted_from'].toString(),
+      };
 
       if (currentUser != null) {
         final role = currentUser.role;
@@ -364,6 +438,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       if (!mounted || request != _binSearchRequest) return;
       setState(() {
         _binRequirements = parsedList;
+        _binDeletedFrom
+          ..clear()
+          ..addAll(deletedFrom);
         _serverRequirementSearch = searchingBin ? query : null;
         _isLoading = false;
       });
@@ -414,7 +491,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       _binRequirements.removeWhere((item) => item.id == r.id);
     });
 
-    final String newStatus = r.status == 'Bin' || r.status.startsWith('Rejected') ? 'Follow-up' : (r.status.isEmpty ? 'Active' : r.status);
+    final fromBin = _requirementsSubTab == 'Bin';
+    // A bin restore only clears deleted_at on the server, so the lead keeps its status and section.
+    final String newStatus = fromBin
+        ? r.status
+        : (r.status == 'Bin' || r.status.startsWith('Rejected') ? 'Follow-up' : (r.status.isEmpty ? 'Active' : r.status));
     final restoredReq = r.copyWith(status: newStatus);
     try {
       await RepositoryCoordinator().requirementLocal.saveRequirements([restoredReq.toLocal()]);
@@ -422,12 +503,15 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       RepositoryCoordinator().refreshDashboard();
     } catch (_) {}
 
+    final source = fromBin ? _binDeletedFrom.remove(r.id) : null;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Requirement restored successfully'),
+        SnackBar(
+          content: Text(source == null
+              ? 'Requirement restored successfully'
+              : 'Lead restored to ${RecycleBinSource.label(source)}'),
           backgroundColor: CRMColors.success,
-          duration: Duration(seconds: 2),
+          duration: const Duration(seconds: 2),
         ),
       );
     }
@@ -630,7 +714,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                 icon: const Icon(Icons.arrow_drop_down),
                 style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
                 dropdownColor: CRMColors.cardBgOf(context),
-                onChanged: (int? newValue) {
+                onChanged: !_can('page.recycle_bin.auto_delete') ? null : (int? newValue) {
                   if (newValue != null) {
                     _saveAutoDeleteDays(newValue);
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -660,7 +744,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             ),
           ),
         ),
-        if (hasData && isAdmin)
+        if (hasData && isAdmin && _can('page.recycle_bin.empty_bin'))
           CRMButton(
             label: 'Empty Bin',
             variant: CRMButtonVariant.danger,
@@ -946,7 +1030,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                   final isUserAdminOrSuperAdmin = currentUser != null &&
                                       (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
                                   final canPermanentlyDelete = currentUser != null &&
-                                      (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin');
+                                      (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin') &&
+                                      _can('page.recycle_bin.properties_delete');
 
                                   final targetProperties = _visibleBinProperties;
                                   final totalItems = targetProperties.length;
@@ -1013,6 +1098,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                                   Row(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
+                                                      if (_can('page.recycle_bin.properties_restore'))
                                                       IconButton(
                                                         icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
                                                         tooltip: 'Restore Property',
@@ -1106,6 +1192,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                                       children: [
                                                         Text(r.clientName, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
                                                         Text(r.clientMobile, style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                                        if (_binDeletedFrom[r.id] != null) _buildDeletedFromBadge(_binDeletedFrom[r.id]!),
                                                       ],
                                                     ),
                                                   ),
@@ -1185,12 +1272,13 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                                   Row(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
+                                                      if (_can('page.recycle_bin.requirements_restore'))
                                                       IconButton(
                                                         icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
                                                         tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active / Restore',
                                                         onPressed: () => _restoreRequirement(r),
                                                       ),
-                                                      if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin) ...[
+                                                      if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')) ...[
                                                         const SizedBox(width: 4),
                                                         IconButton(
                                                           icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
@@ -1198,7 +1286,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                                           onPressed: () => _permanentDeleteRequirement(r.id),
                                                         ),
                                                       ]
-                                                      else if (_requirementsSubTab != 'Bin') ...[
+                                                      else if (_requirementsSubTab != 'Bin' && _can('page.recycle_bin.requirements_delete')) ...[
                                                         const SizedBox(width: 4),
                                                         IconButton(
                                                           icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 20),
@@ -1396,6 +1484,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              if (_can('page.recycle_bin.properties_restore'))
               IconButton(
                 icon: const Icon(Icons.restore_rounded, color: CRMColors.success, size: 22),
                 tooltip: 'Restore Property',
@@ -1412,6 +1501,28 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDeletedFromBadge(String source) {
+    final label = RecycleBinSource.label(source);
+    final primary = CRMColors.primaryOf(context);
+    return Tooltip(
+      message: 'Deleted from $label. Restore returns it there.',
+      child: Container(
+        margin: const EdgeInsets.only(top: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: primary),
+        ),
       ),
     );
   }
@@ -1475,6 +1586,10 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
               fontSize: 14,
             ),
           ),
+          if (_binDeletedFrom[r.id] != null) ...[
+            const SizedBox(height: 4),
+            _buildDeletedFromBadge(_binDeletedFrom[r.id]!),
+          ],
           const SizedBox(height: CRMSpacing.s),
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: CRMSpacing.s),
@@ -1524,19 +1639,20 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              if (_can('page.recycle_bin.requirements_restore'))
               IconButton(
                 icon: const Icon(Icons.restore_rounded, color: CRMColors.success, size: 22),
                 tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active',
                 onPressed: () => _restoreRequirement(r),
               ),
-              if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin) ...[
+              if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')) ...[
                 const SizedBox(width: 4),
                 IconButton(
                   icon: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
                   tooltip: 'Permanently Delete',
                   onPressed: () => _permanentDeleteRequirement(r.id),
                 ),
-              ] else if (_requirementsSubTab != 'Bin') ...[
+              ] else if (_requirementsSubTab != 'Bin' && _can('page.recycle_bin.requirements_delete')) ...[
                 const SizedBox(width: 4),
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 22),

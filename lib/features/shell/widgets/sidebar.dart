@@ -172,6 +172,17 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         isActive: currentPath.startsWith('/requirements'),
                         badgeCount: leadsBadgeCount > 0 ? leadsBadgeCount : null,
                       ),
+                    if (RoleGuard.canViewPage(widget.userRole, '/requirements') &&
+                        ((RoleGuard.isSales(widget.userRole) && RoleGuard.canAction('page.my_campaign_leads')) ||
+                         RoleGuard.isAdmin(widget.userRole) ||
+                         RoleGuard.isSuperAdmin(widget.userRole)))
+                      _buildNavItem(
+                        context,
+                        title: 'Campaign Leads',
+                        icon: Icons.campaign_outlined,
+                        route: '/my-campaign-leads',
+                        isActive: currentPath.startsWith('/my-campaign-leads'),
+                      ),
                     if (widget.userRole.isEmpty ||
                         (RoleGuard.canManageEmployees(widget.userRole) &&
                          RoleGuard.canViewPage(widget.userRole, '/users')))
@@ -563,8 +574,11 @@ class _ModernSidebarState extends State<ModernSidebar> {
         widget.currentPath.startsWith('/integration');
     final isConnectionsActive =
         widget.currentPath.startsWith('/campaign/connections');
-    final isMetaActive = widget.currentPath.startsWith('/campaign/meta');
-    final isHousingActive = widget.currentPath.startsWith('/campaign/housing');
+    final isSourcesActive = widget.currentPath.startsWith('/campaign/sources') ||
+        widget.currentPath.startsWith('/campaign/meta') ||
+        widget.currentPath.startsWith('/campaign/housing') ||
+        widget.currentPath.startsWith('/campaign/portal-leads') ||
+        widget.currentPath.startsWith('/campaign/leads');
 
     final isAnyCampaignUnderDev =
         PageControlService.instance.isRouteUnderDevelopment('/campaign/connections', widget.userRole) ||
@@ -787,27 +801,14 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         primaryColor: primaryColor,
                         primaryHoverColor: primaryHoverColor,
                       ),
-                    if (RoleGuard.canViewPage(widget.userRole, '/campaign/meta')) ...[
+                    if (RoleGuard.canViewPage(widget.userRole, '/campaign/sources')) ...[
                       const SizedBox(height: 2),
                       _buildSubNavItem(
                         context,
-                        title: 'Meta',
-                        icon: Icons.campaign_outlined,
-                        route: '/campaign/meta',
-                        isActive: isMetaActive,
-                        isDark: isDark,
-                        primaryColor: primaryColor,
-                        primaryHoverColor: primaryHoverColor,
-                      ),
-                    ],
-                    if (RoleGuard.canViewPage(widget.userRole, '/campaign/housing')) ...[
-                      const SizedBox(height: 2),
-                      _buildSubNavItem(
-                        context,
-                        title: 'Housing',
-                        icon: Icons.apartment_outlined,
-                        route: '/campaign/housing',
-                        isActive: isHousingActive,
+                        title: 'Sources',
+                        icon: Icons.source_outlined,
+                        route: '/campaign/sources',
+                        isActive: isSourcesActive,
                         isDark: isDark,
                         primaryColor: primaryColor,
                         primaryHoverColor: primaryHoverColor,

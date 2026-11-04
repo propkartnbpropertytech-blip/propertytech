@@ -867,7 +867,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                     user: user,
                     onCall: () => _call(user.mobile),
                     onEmail: () => _email(user.email),
-                    onToggleActive: (val) {
+                    onToggleActive: !RoleGuard.canAction('page.employees.active_toggle') ? null : (val) {
                       context.read<UsersBloc>().add(
                             ToggleUserStatusRequested(
                               id: user.id,
@@ -1534,7 +1534,7 @@ class _ProfileSummaryCard extends StatelessWidget {
   final UserModel user;
   final VoidCallback onCall;
   final VoidCallback onEmail;
-  final ValueChanged<bool> onToggleActive;
+  final ValueChanged<bool>? onToggleActive;
   final String createdLabel;
 
   const _ProfileSummaryCard({
@@ -2231,7 +2231,9 @@ class _TeamSection extends StatelessWidget {
                     ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    onTap: () => context.push('/users/${members[i].id}'),
+                    onTap: RoleGuard.canAction('page.employees.details')
+                        ? () => context.push('/users/${members[i].id}')
+                        : null,
                     leading: CircleAvatar(
                       radius: 16,
                       backgroundColor:

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../../core/security/admin_action_gate.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
@@ -138,11 +139,14 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                 ? 'meta'
                 : (widget.providerFocus == 'HOUSING' ? 'housing' : 'connections'),
             trailing: widget.providerFocus == null
-                ? CRMButton(
-                    label: 'Add Integration',
-                    prefixIcon: Icons.add_rounded,
-                    height: isMobile ? 48 : 40,
-                    onPressed: () => _showAddIntegration(context),
+                ? AdminActionGate(
+                    actionKey: 'page.campaign.add_integration',
+                    child: CRMButton(
+                      label: 'Add Integration',
+                      prefixIcon: Icons.add_rounded,
+                      height: isMobile ? 48 : 40,
+                      onPressed: () => _showAddIntegration(context),
+                    ),
                   )
                 : CRMButton(
                     label: 'Back to Connections',
@@ -286,12 +290,14 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
         .map((row) => row['provider']?.toString().toLowerCase())
         .whereType<String>()
         .toSet();
+    final canAdd = RoleGuard.canAction('page.campaign.add_integration');
     final placeholders = <Map<String, String>>[
       if (!savedProviders.contains('99acres')) {'title': '99acres', 'provider': '99acres'},
       if (!savedProviders.contains('magicbricks')) {'title': 'MagicBricks', 'provider': 'magicbricks'},
       if (!savedProviders.contains('nobroker')) {'title': 'NoBroker', 'provider': 'nobroker'},
     ];
     final tiles = <Widget>[
+      if (canAdd)
       for (final item in placeholders)
         _buildPortalTile(
           context,

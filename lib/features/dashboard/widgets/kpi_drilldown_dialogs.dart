@@ -836,7 +836,7 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
           LayoutBuilder(
             builder: (context, constraints) {
               final isMobile = constraints.maxWidth < 600;
-              final toggle = _selectedSource == null ? _buildLeadTypeToggle(isDark) : null;
+              final toggle = (_selectedSource == null || widget.initialStage != null) ? _buildLeadTypeToggle(isDark) : null;
 
               final titleContent = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -847,9 +847,11 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
                         ? 'Deal Won Leads${widget.initialAreaName != null ? ' - ${widget.initialAreaName}' : ''}'
                         : widget.initialAreaName != null
                             ? '${widget.initialAreaName} Leads'
-                            : (_selectedSource != null && _selectedSource != 'All')
-                                ? '$_selectedSource Leads'
-                                : 'Total Leads by Source',
+                            : (widget.initialStage != null && widget.initialStage!.isNotEmpty)
+                                ? '${widget.initialStage == 'CNR' ? 'CNR (No Response)' : widget.initialStage} Leads'
+                                : (_selectedSource != null && _selectedSource != 'All')
+                                    ? '$_selectedSource Leads'
+                                    : 'Total Leads by Source',
                     style: TextStyle(
                       fontSize: isMobile ? 15 : 18,
                       fontWeight: FontWeight.bold,
@@ -860,7 +862,7 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${widget.initialAreaName != null ? 'Area: ${widget.initialAreaName} | ' : ''}${widget.initialSource != null && widget.initialSource != 'All' ? 'Source: ${widget.initialSource} | ' : ''}Type: $_selectedLeadType | Range: ${widget.params.dateFilter}',
+                    '${widget.initialAreaName != null ? 'Area: ${widget.initialAreaName} | ' : ''}${widget.initialStage != null ? 'Stage: ${widget.initialStage} | ' : ''}${widget.initialSource != null && widget.initialSource != 'All' ? 'Source: ${widget.initialSource} | ' : ''}Type: $_selectedLeadType | Range: ${widget.initialStage == 'CNR' ? 'All Time' : widget.params.dateFilter}',
                     style: TextStyle(fontSize: isMobile ? 11 : 12, color: subColor),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -972,7 +974,11 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
             onTap: () {
               if (_selectedLeadType != type) {
                 setState(() => _selectedLeadType = type);
-                _fetchBreakdown();
+                if (_selectedSource != null) {
+                  _fetchLeadsList(_selectedSource!);
+                } else {
+                  _fetchBreakdown();
+                }
               }
             },
             child: Container(
@@ -1097,8 +1103,13 @@ class _LeadsDrilldownDialogState extends State<_LeadsDrilldownDialog> {
     }
 
     if (_leads.isEmpty) {
+      final emptyMsg = widget.initialStage != null
+          ? 'No ${widget.initialStage == 'CNR' ? 'CNR (No Response)' : widget.initialStage} leads found for selected filters.'
+          : (_selectedSource != null && _selectedSource != 'All')
+              ? 'No leads found for source $_selectedSource.'
+              : 'No leads found for selected filters.';
       return Center(
-        child: Text('No leads found for source $_selectedSource.', style: TextStyle(color: subColor)),
+        child: Text(emptyMsg, style: TextStyle(color: subColor)),
       );
     }
 
@@ -1371,12 +1382,35 @@ class _LeadDetailsDialog extends StatelessWidget {
       String v;
       if (rawV is List) {
         v = rawV.map((item) => item.toString()).join(', ');
+      } else if (rawV is Map) {
+        final map = Map<String, dynamic>.from(rawV);
+        if (k.toLowerCase().contains('cnr')) {
+          final parts = <String>[];
+          final st = map['status']?.toString();
+          final rem = map['remarks']?.toString();
+          final tc = (map['telecaller_name'] != null && map['telecaller_name'].toString() != 'null' && map['telecaller_name'].toString().isNotEmpty)
+              ? map['telecaller_name'].toString()
+              : lead.telecallerName;
+          final dt = map['marked_at']?.toString() ?? map['interacted_at']?.toString();
+          if (st != null && st.isNotEmpty && st.toLowerCase() != 'null') parts.add('Status: $st');
+          if (rem != null && rem.isNotEmpty && rem.toLowerCase() != 'null') parts.add('Remarks: $rem');
+          if (tc != null && tc.isNotEmpty && tc.toLowerCase() != 'null') parts.add('Telecaller: $tc');
+          if (dt != null && dt.isNotEmpty && dt.toLowerCase() != 'null') parts.add('Date: ${_formatDateTime(dt)}');
+          v = parts.isNotEmpty ? parts.join(' • ') : map.entries.where((e) => e.value != null && e.value.toString() != 'null').map((e) => '${e.key}: ${e.value}').join(', ');
+        } else {
+          v = map.entries
+              .where((e) => e.value != null && e.value.toString() != 'null' && e.value.toString().isNotEmpty)
+              .map((e) => '${e.key.toString().replaceAll('_', ' ')}: ${e.value}')
+              .join(' • ');
+        }
       } else {
         v = rawV?.toString().trim() ?? '';
       }
       if (!ignoredKeys.contains(k) && v.isNotEmpty && v != 'null') {
         var title = k.replaceAll('_', ' ').replaceAll('?', '').trim();
-        if (title.isNotEmpty) {
+        if (title.toLowerCase() == 'cnr') {
+          title = 'CNR Details';
+        } else if (title.isNotEmpty) {
           title = title.split(' ').map((w) => w.isNotEmpty ? (w[0].toUpperCase() + w.substring(1).toLowerCase()) : '').join(' ');
         }
         var cleanV = v.replaceAll('_', ' ').trim();
@@ -1891,15 +1925,15 @@ class _LeadDetailsDialog extends StatelessWidget {
                                     border: Border.all(color: borderColor),
                                   ),
                                   child: Text(
-                                    (lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty)
+                                    (lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty && lead.telecallerRemarks!.trim().toLowerCase() != 'null')
                                         ? lead.telecallerRemarks!
                                         : 'No telecaller remarks recorded.',
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: (lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty)
+                                      color: (lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty && lead.telecallerRemarks!.trim().toLowerCase() != 'null')
                                           ? textColor
                                           : subColor,
-                                      fontStyle: (lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty)
+                                      fontStyle: (lead.telecallerRemarks != null && lead.telecallerRemarks!.trim().isNotEmpty && lead.telecallerRemarks!.trim().toLowerCase() != 'null')
                                           ? FontStyle.normal
                                           : FontStyle.italic,
                                     ),
@@ -2054,15 +2088,15 @@ class _LeadDetailsDialog extends StatelessWidget {
                                     border: Border.all(color: borderColor),
                                   ),
                                   child: Text(
-                                    (lead.salesRemarks != null && lead.salesRemarks!.trim().isNotEmpty)
+                                    (lead.salesRemarks != null && lead.salesRemarks!.trim().isNotEmpty && lead.salesRemarks!.trim().toLowerCase() != 'null')
                                         ? lead.salesRemarks!
                                         : 'No sales remarks recorded yet.',
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: (lead.salesRemarks != null && lead.salesRemarks!.trim().isNotEmpty)
+                                      color: (lead.salesRemarks != null && lead.salesRemarks!.trim().isNotEmpty && lead.salesRemarks!.trim().toLowerCase() != 'null')
                                           ? textColor
                                           : subColor,
-                                      fontStyle: (lead.salesRemarks != null && lead.salesRemarks!.trim().isNotEmpty)
+                                      fontStyle: (lead.salesRemarks != null && lead.salesRemarks!.trim().isNotEmpty && lead.salesRemarks!.trim().toLowerCase() != 'null')
                                           ? FontStyle.normal
                                           : FontStyle.italic,
                                     ),

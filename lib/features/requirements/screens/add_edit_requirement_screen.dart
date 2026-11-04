@@ -170,11 +170,46 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
           if (_selectedTypeIds.isEmpty && req.propertyTypeId.isNotEmpty) {
             _selectedTypeIds.add(req.propertyTypeId);
           }
+          if ((_selectedTypeId == null || _selectedTypeId!.isEmpty) && _types.isNotEmpty) {
+            final targetType = (req.propertyTypeName.isNotEmpty && req.propertyTypeName != 'Unknown')
+                ? req.propertyTypeName
+                : (req.metaCustomFields?['property_field'] is List && (req.metaCustomFields!['property_field'] as List).isNotEmpty
+                    ? (req.metaCustomFields!['property_field'] as List).first?.toString() ?? ''
+                    : (req.metaCustomFields?['property_type']?.toString() ?? ''));
+            if (targetType.isNotEmpty) {
+              final matched = _types.where((t) => t.name.toLowerCase().trim() == targetType.toLowerCase().trim()).firstOrNull;
+              if (matched != null) {
+                _selectedTypeId = matched.id;
+                if (!_selectedTypeIds.contains(matched.id)) {
+                  _selectedTypeIds.add(matched.id);
+                }
+              }
+            }
+          }
           _canonicalizeSelectedPropertyTypes(_getFilteredTypes());
           _selectedConfigId = req.configurationId;
           _selectedConfigIds.addAll(req.configurationIds);
           if (_selectedConfigIds.isEmpty && req.configurationId != null) {
             _selectedConfigIds.add(req.configurationId!);
+          }
+          if (_selectedConfigIds.isEmpty) {
+            final targetConfig = (req.configurationName != null && req.configurationName!.isNotEmpty)
+                ? req.configurationName!
+                : (req.metaCustomFields?['configuration']?.toString() ?? '');
+            if (targetConfig.isNotEmpty) {
+              final parts = targetConfig
+                  .split(RegExp(r'[,/|]'))
+                  .map((p) => p.trim().toLowerCase())
+                  .where((p) => p.isNotEmpty)
+                  .toList();
+              for (final cfg in _configurations) {
+                final cfgLower = cfg.name.trim().toLowerCase();
+                if (parts.any((p) => p == cfgLower || p.replaceAll(' ', '') == cfgLower.replaceAll(' ', ''))) {
+                  _selectedConfigIds.add(cfg.id);
+                  _selectedConfigId ??= cfg.id;
+                }
+              }
+            }
           }
           if (req.listingTypeId != null && req.listingTypeId != 'Unknown' && req.listingTypeId!.isNotEmpty) {
             _selectedListingTypeId = req.listingTypeId;
@@ -208,6 +243,16 @@ class _AddEditRequirementScreenState extends State<AddEditRequirementScreen> {
                 final matched = _areas.where((a) => a.name.toLowerCase().trim() == name.toLowerCase().trim()).firstOrNull;
                 if (matched != null && !_selectedAreaIds.contains(matched.id)) {
                   _selectedAreaIds.add(matched.id);
+                }
+              }
+            }
+            if (_selectedAreaIds.isEmpty && _areas.isNotEmpty) {
+              final loc = (req.metaCustomFields?['locality']?.toString() ?? req.displayAreasText).toLowerCase().trim();
+              if (loc.isNotEmpty && loc != 'all areas') {
+                for (final a in _areas) {
+                  if (loc.contains(a.name.toLowerCase().trim())) {
+                    _selectedAreaIds.add(a.id);
+                  }
                 }
               }
             }

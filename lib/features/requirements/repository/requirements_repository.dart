@@ -373,6 +373,18 @@ class RequirementsRepository {
     final preservedStatus = resolveStoredRequirementStatus(submitted.status, incoming.status);
 
     final merged = incoming.copyWith(
+      clientName: keep(incoming.clientName, submitted.clientName),
+      clientMobile: keep(incoming.clientMobile, submitted.clientMobile),
+      minBudget: incoming.minBudget > 0 ? incoming.minBudget : submitted.minBudget,
+      maxBudget: incoming.maxBudget > 0 ? incoming.maxBudget : submitted.maxBudget,
+      configurationId: keep(incoming.configurationId, submitted.configurationId),
+      configurationName: keep(incoming.configurationName, submitted.configurationName),
+      configurationIds: incoming.configurationIds.isNotEmpty ? incoming.configurationIds : submitted.configurationIds,
+      propertyTypeId: keep(incoming.propertyTypeId, submitted.propertyTypeId),
+      propertyTypeName: keep(incoming.propertyTypeName, submitted.propertyTypeName),
+      propertyTypeIds: incoming.propertyTypeIds.isNotEmpty ? incoming.propertyTypeIds : submitted.propertyTypeIds,
+      remarks: keep(incoming.remarks, submitted.remarks),
+      notes: keep(incoming.notes, submitted.notes),
       adminId: keep(incoming.adminId, submitted.adminId),
       createdBy: keep(incoming.createdBy, submitted.createdBy),
       creatorName: keep(incoming.creatorName, submitted.creatorName),
@@ -535,9 +547,9 @@ class RequirementsRepository {
     }
   }
 
-  Future<void> deleteRequirement(String id) async {
+  Future<void> deleteRequirement(String id, {String? deletedFrom}) async {
     try {
-      await _requirementsService.deleteRequirement(id);
+      await _requirementsService.deleteRequirement(id, deletedFrom: deletedFrom);
       await _coordinator.requirementLocal.deleteRequirement(id);
       _coordinator.refreshRequirements();
     } catch (e) {
@@ -629,10 +641,12 @@ class RequirementsRepository {
   Future<Map<String, dynamic>> getSalesPropertyListingLeads({
     String? userId,
     bool orgWide = false,
+    bool allAdmins = false,
   }) {
     return _requirementsService.getSalesPropertyListingLeads(
       userId: userId,
       orgWide: orgWide,
+      allAdmins: allAdmins,
     );
   }
 
@@ -653,6 +667,18 @@ class RequirementsRepository {
     return _requirementsService.updateSalesLeadStatus(
       leadId: leadId,
       status: status,
+    );
+  }
+
+  Future<Map<String, dynamic>> transferCampaignLead({
+    required String leadId,
+    required String toSalesUserId,
+    String? reason,
+  }) {
+    return _requirementsService.transferCampaignLead(
+      leadId: leadId,
+      toSalesUserId: toSalesUserId,
+      reason: reason,
     );
   }
 

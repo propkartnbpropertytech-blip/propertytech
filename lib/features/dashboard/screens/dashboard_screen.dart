@@ -37,6 +37,7 @@ import '../models/kpi_models.dart';
 import '../repository/dashboard_repository.dart';
 import '../widgets/kpi_drilldown_dialogs.dart';
 import '../widgets/generic_kpi_drilldown_dialog.dart';
+import '../widgets/sales_campaign_kpis.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/security/permission_matrix_service.dart';
@@ -105,6 +106,31 @@ class _DashboardScreenState extends State<DashboardScreen>
           _loadingLifecycle = false;
         });
       }
+    }
+  }
+
+  SalesCampaignKpiData? _salesCampaignKpis;
+  bool _loadingSalesCampaignKpis = false;
+  String? _salesCampaignKpiKey;
+
+  String _salesCampaignKpiKeyFor(KpiFilterParams kpiFilters) =>
+      kpiFilters.toQueryParams().toString();
+
+  Future<void> _fetchSalesCampaignKpis(KpiFilterParams kpiFilters) async {
+    final key = _salesCampaignKpiKeyFor(kpiFilters);
+    if (_salesCampaignKpiKey == key || _loadingSalesCampaignKpis || !mounted) return;
+    _salesCampaignKpiKey = key;
+    setState(() => _loadingSalesCampaignKpis = true);
+    try {
+      final res = await SalesCampaignKpiService.fetch(kpiFilters);
+      if (mounted) {
+        setState(() {
+          _salesCampaignKpis = res;
+          _loadingSalesCampaignKpis = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingSalesCampaignKpis = false);
     }
   }
 
@@ -257,6 +283,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             if (state is DashboardLoadedState || state is DashboardRefreshing) {
               _propertyDetailFutures.clear();
             }
+            if (state is DashboardLoadedState) {
+              _salesCampaignKpiKey = null;
+            }
           },
           builder: (context, state) {
             final viewport = MediaQuery.sizeOf(context).width;
@@ -402,6 +431,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                             children: [
                                               scheduleWidget,
                                               if (RoleGuard.isSuperAdmin(role) ||
+                                                  role.trim().toLowerCase() == 'admin' ||
                                                   PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.followups') ||
                                                   PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.site_visits')) ...[
                                                 const SizedBox(height: 20),
@@ -419,6 +449,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         const SizedBox(height: 20),
                                         scheduleWidget,
                                         if (RoleGuard.isSuperAdmin(role) ||
+                                            role.trim().toLowerCase() == 'admin' ||
                                             PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.followups') ||
                                             PermissionMatrixService.instance.hasPermission(role, 'page.dashboard.site_visits')) ...[
                                           const SizedBox(height: 20),
@@ -646,6 +677,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 16),
           scheduleWidget,
           if (RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role) ||
+              (RoleGuard.currentUser?.role ?? '').trim().toLowerCase() == 'admin' ||
               PermissionMatrixService.instance.hasPermission(RoleGuard.currentUser?.role, 'page.dashboard.followups') ||
               PermissionMatrixService.instance.hasPermission(RoleGuard.currentUser?.role, 'page.dashboard.site_visits')) ...[
             const SizedBox(height: 16),
@@ -1461,7 +1493,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           onTap: () async {
             await KpiDrilldownDialogs.showLeadsDrilldown(
               context,
-              params: kpiFilters,
+              params: kpiFilters.copyWith(dateFilter: 'All'),
               initialStage: 'CNR',
             );
             if (mounted) {
@@ -1560,6 +1592,56 @@ class _DashboardScreenState extends State<DashboardScreen>
             await KpiDrilldownDialogs.showAssignedToSalesDrilldown(
               context,
               params: kpiFilters,
+            );
+            if (mounted) {
+              context.read<DashboardBloc>().add(RefreshDashboard());
+            }
+          },
+        ),
+      );
+    }
+
+    if (RoleGuard.isAdmin(RoleGuard.currentUser?.role)) {
+      if (_salesCampaignKpiKey != _salesCampaignKpiKeyFor(kpiFilters) &&
+          !_loadingSalesCampaignKpis) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _fetchSalesCampaignKpis(kpiFilters);
+        });
+      }
+      final campaignKpis = _salesCampaignKpis ?? const SalesCampaignKpiData();
+
+      cards.add(
+        StatCard(
+          title: 'Lead Allocated',
+          value: '${campaignKpis.allocatedTotal}',
+          subtitle:
+              'Listing ${campaignKpis.allocatedListing} · Requirement ${campaignKpis.allocatedRequirement}',
+          icon: Icons.alt_route_rounded,
+          accentColor: const Color(0xFF6366F1),
+          onTap: () async {
+            await SalesCampaignLeadsDialog.showAllocated(
+              context,
+              filters: kpiFilters,
+            );
+            if (mounted) {
+              context.read<DashboardBloc>().add(RefreshDashboard());
+            }
+          },
+        ),
+      );
+
+      cards.add(
+        StatCard(
+          title: 'Sales Lead Outcomes',
+          value: '${campaignKpis.interested} / ${campaignKpis.rejected}',
+          subtitle:
+              'Interested ${campaignKpis.interested} · Rejected ${campaignKpis.rejected}',
+          icon: Icons.fact_check_rounded,
+          accentColor: const Color(0xFF0EA5E9),
+          onTap: () async {
+            await SalesCampaignLeadsDialog.showOutcomes(
+              context,
+              filters: kpiFilters,
             );
             if (mounted) {
               context.read<DashboardBloc>().add(RefreshDashboard());

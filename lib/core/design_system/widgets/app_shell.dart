@@ -20,9 +20,13 @@ import '../tokens/app_shadows.dart';
 import 'crm_brand_lockup.dart';
 import '../../api/dio_client.dart';
 import '../../utils/budget_formatter.dart';
+import '../../../features/search/ai_search_routes.dart';
 import '../../../features/search/ai_search_session.dart';
+import '../../../features/search/ai_search_suggestions.dart';
 import '../../../features/search/services/ai_search_service.dart';
+import '../../../features/search/widgets/ai_search_history_sheet.dart';
 import '../../../features/search/widgets/ai_search_panel.dart';
+import 'package:flutter/services.dart';
 import '../../network/sync_manager.dart';
 import 'dart:async';
 import '../../../core/storage/repository_coordinator.dart';
@@ -72,9 +76,15 @@ class _CRMAppShellState extends State<CRMAppShell>
     _searchRefreshSub = SyncManager().tableChanges.listen((tables) {
       if (!mounted) return;
       final query = _searchController.text.trim();
-      if (query.isEmpty) return;
-      if (tables.any(_liveSearchTables.contains)) _performSearch(query);
+      if (query.isEmpty || _searchOverlayEntry == null) return;
+      if (!tables.any(_liveSearchTables.contains)) return;
+      if (_aiResultsMode) {
+        _performSearch(query);
+      } else {
+        _scheduleSuggest(query);
+      }
     });
+    _searchFocusNode.onKeyEvent = _handleSearchKey;
 
     _notifCenterSub = NotificationCenter.stream.listen((newNotif) {
       if ((newNotif['action'] ?? '').toString() == 'refresh' ||
@@ -165,6 +175,7 @@ class _CRMAppShellState extends State<CRMAppShell>
     _searchController.dispose();
     _searchFocusNode.dispose();
     _aiSearch.dispose();
+    _suggestTimer?.cancel();
     _searchRefreshSub?.cancel();
     _notificationsTimer?.cancel();
     _notifCenterSub?.cancel();
@@ -194,6 +205,18 @@ class _CRMAppShellState extends State<CRMAppShell>
   String? _aiCategory;
   int _aiPage = 1;
   Map<String, int> _aiTotals = {};
+  List<Map<String, dynamic>> _employeeSuggestions = [];
+  List<Map<String, dynamic>> _recycleBinSuggestions = [];
+  Map<String, dynamic>? _aiIntent;
+  AiSuggestions _aiSuggest = AiSuggestions.empty;
+  DateTime? _aiSuggestAt;
+  bool _aiResultsMode = false;
+  bool _suggestLoading = false;
+  int _suggestRequest = 0;
+  Timer? _suggestTimer;
+  int _aiHighlight = -1;
+  String? _aiRecordQuery;
+  String _aiRecordSource = 'typed';
   StreamSubscription<Set<String>>? _searchRefreshSub;
   static const _liveSearchTables = {
     'properties',
@@ -573,7 +596,11 @@ class _CRMAppShellState extends State<CRMAppShell>
         fingerprint =
             '$type|$titleLower|${(n['message'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'\s*\(sales person:[^)]*\)'), '')}';
       }
-      if (!isDueNotif) {
+      if (type == 'property_status_changed') {
+        fingerprint = 'propstatus|${id.isNotEmpty ? id : payload['event_key'] ?? fingerprint}';
+      } else if (type == 'property_share_toggled') {
+        fingerprint = 'propshare|${id.isNotEmpty ? id : fingerprint}';
+      } else if (!isDueNotif) {
         if (type.contains('assign')) {
           final audience = (payload['audience'] ?? '').toString();
           if (clientKey.isNotEmpty &&
@@ -641,7 +668,10 @@ class _CRMAppShellState extends State<CRMAppShell>
         if (!isDueNotif &&
             type != 'lead_created' &&
             type != 'property_created' &&
-            !(isAssigned && alreadyLocalAssign)) {
+            type != 'property_share_toggled' &&
+            !(isAssigned && alreadyLocalAssign) &&
+            !AppNotifierService.wasOsShown(id)) {
+          if (type == 'property_status_changed') AppNotifierService.markOsShown(id);
           AppNotifierService.notify(
             title: n['title'] ?? 'Notification',
             message: n['message'] ?? '',
@@ -761,16 +791,198 @@ class _CRMAppShellState extends State<CRMAppShell>
     _aiFiltersEdited = false;
     _aiCategory = null;
     _aiPage = 1;
-    _aiSearch.schedule(text, (generation, value) {
-      if (!mounted || !_aiSearch.isCurrent(generation)) return;
-      final trimmed = value.trim();
-      if (trimmed.isEmpty) {
-        setState(() => _clearAiResults(keepMemory: true));
-        _showSearchOverlay();
-        return;
-      }
-      _runAiSearch(trimmed, generation);
+    _aiSearch.dismiss();
+    _refreshSearchPanel(() {
+      _aiResultsMode = false;
+      _aiHighlight = -1;
+      _isSearching = false;
+      if (text.trim().isEmpty) _clearAiResults(keepMemory: true);
     });
+    _showSearchOverlay();
+    _scheduleSuggest(text);
+  }
+
+  void _refreshSearchPanel(VoidCallback update) {
+    if (!mounted) return;
+    setState(update);
+    if (_searchOverlayEntry != null && _searchOverlayEntry!.mounted) {
+      _searchOverlayEntry!.markNeedsBuild();
+    }
+  }
+
+  /// Opens the panel and loads recent and popular searches, reusing a fresh answer for the same text.
+  void _openSearch() {
+    _showSearchOverlay();
+    if (_aiResultsMode) return;
+    final text = _searchController.text.trim();
+    final fresh = _aiSuggestAt != null &&
+        _aiSuggest.query == text &&
+        DateTime.now().difference(_aiSuggestAt!) < const Duration(seconds: 20);
+    if (!fresh) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchOverlayEntry != null) {
+          _scheduleSuggest(text);
+        }
+      });
+    }
+  }
+
+  void _scheduleSuggest(String text, {bool immediate = false}) {
+    _suggestTimer?.cancel();
+    final requestId = ++_suggestRequest;
+    if (immediate) {
+      _loadSuggestions(text.trim(), requestId);
+      return;
+    }
+    _suggestTimer = Timer(const Duration(milliseconds: 250), () => _loadSuggestions(text.trim(), requestId));
+  }
+
+  Future<void> _loadSuggestions(String text, int requestId) async {
+    if (!mounted || requestId != _suggestRequest) return;
+    _refreshSearchPanel(() => _suggestLoading = true);
+    final result = await _aiSearchService.suggest(text);
+    if (!mounted || requestId != _suggestRequest || _aiResultsMode) return;
+    if (_searchController.text.trim() != text) return;
+    _refreshSearchPanel(() {
+      _suggestLoading = false;
+      _searchStale = false;
+      _searchFailed = result.failed && text.isNotEmpty;
+      _searchOffline = result.offline;
+      if (result.failed) return;
+      _aiSuggest = result.suggestions;
+      _aiSuggestAt = DateTime.now();
+      _aiHighlight = -1;
+      final records = result.suggestions.records;
+      if (text.isEmpty) {
+        _clearAiResults(keepMemory: true);
+      } else {
+        _propertySuggestions = [];
+        _requirementSuggestions = [];
+        _ownerSuggestions = [];
+        _clientSuggestions = [];
+        _callingLeadSuggestions = [];
+        _employeeSuggestions = [];
+        _recycleBinSuggestions = [];
+        _aiTotals = {};
+        _aiChips = [];
+        _applySearchData({...?records, 'intent': ?result.suggestions.intent});
+      }
+    });
+  }
+
+  List<AiSuggestionEntry> _suggestionEntries() => AiSearchPanel.suggestionEntries(
+        query: _searchController.text,
+        recent: _aiSuggest.recent,
+        popular: _aiSuggest.popular,
+        completions: _aiSuggest.completions,
+      );
+
+  KeyEventResult _handleSearchKey(FocusNode node, KeyEvent event) {
+    if (_searchOverlayEntry == null || event is KeyUpEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      _closeSearch();
+      return KeyEventResult.handled;
+    }
+    if (_aiResultsMode) return KeyEventResult.ignored;
+    if (key != LogicalKeyboardKey.arrowDown && key != LogicalKeyboardKey.arrowUp) return KeyEventResult.ignored;
+    final count = _suggestionEntries().length;
+    if (count == 0) return KeyEventResult.ignored;
+    _refreshSearchPanel(() {
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _aiHighlight = _aiHighlight >= count - 1 ? -1 : _aiHighlight + 1;
+      } else {
+        _aiHighlight = _aiHighlight <= -1 ? count - 1 : _aiHighlight - 1;
+      }
+    });
+    return KeyEventResult.handled;
+  }
+
+  /// Enter in the field: the highlighted suggestion wins over the typed text.
+  void _submitSearch(String value) {
+    final entries = _aiResultsMode ? const <AiSuggestionEntry>[] : _suggestionEntries();
+    if (_aiHighlight >= 0 && _aiHighlight < entries.length) {
+      _selectSuggestion(entries[_aiHighlight]);
+      return;
+    }
+    if (value.trim().isNotEmpty) _performSearch(value.trim(), source: 'typed');
+  }
+
+  void _selectSuggestion(AiSuggestionEntry entry) {
+    final source = switch (entry.kind) {
+      'recent' => 'history',
+      'popular' => 'popular',
+      'example' => 'example',
+      _ => 'suggestion',
+    };
+    _runQuery(entry.text, source);
+  }
+
+  void _runQuery(String text, String source) {
+    _searchController.text = text;
+    _searchController.selection = TextSelection.collapsed(offset: text.length);
+    _aiFiltersEdited = false;
+    _aiCategory = null;
+    _aiPage = 1;
+    _showSearchOverlay();
+    _performSearch(text, source: source);
+  }
+
+  Future<void> _removeRecent(AiRecentSearch item) async {
+    _refreshSearchPanel(() {
+      _aiHighlight = -1;
+      _aiSuggest = AiSuggestions(
+        query: _aiSuggest.query,
+        recent: _aiSuggest.recent.where((row) => row.id != item.id).toList(),
+        popular: _aiSuggest.popular,
+        pages: _aiSuggest.pages,
+        completions: _aiSuggest.completions,
+        records: _aiSuggest.records,
+        intent: _aiSuggest.intent,
+      );
+    });
+    await _aiSearchService.removeHistory(item.id);
+    if (mounted && !_aiResultsMode) _scheduleSuggest(_searchController.text, immediate: true);
+  }
+
+  void _openHistory() {
+    _hideSearchOverlay();
+    AiSearchHistorySheet.show(
+      context,
+      service: _aiSearchService,
+      onSelect: (query) {
+        if (!mounted) return;
+        _searchFocusNode.requestFocus();
+        _runQuery(query, 'history');
+      },
+    ).whenComplete(() => _aiSuggestAt = null);
+  }
+
+  /// Saves the opened record or page to the user's history; never delays navigation.
+  void _recordSelection(String type, String? id, String route) {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+    unawaited(_aiSearchService.record(
+      query: query,
+      source: type == 'page' ? 'page' : 'record',
+      selectionType: type,
+      selectionId: id,
+      selectionRoute: route,
+    ));
+    _aiSuggestAt = null;
+  }
+
+  void _openSearchRoute(String type, String? id, String route) {
+    _recordSelection(type, id, route);
+    _hideSearchOverlay();
+    _searchFocusNode.unfocus();
+    if (_isMobileSearchActive) _closeMobileSearch();
+    context.go(route);
+  }
+
+  bool _canOpenSearchRoute(String route) {
+    final role = RoleGuard.currentUser?.role;
+    return MobileNavAccess.canOpen(role, Uri.parse(route).path);
   }
 
   int _searchRequest = 0;
@@ -786,6 +998,9 @@ class _CRMAppShellState extends State<CRMAppShell>
     _ownerSuggestions = [];
     _clientSuggestions = [];
     _callingLeadSuggestions = [];
+    _employeeSuggestions = [];
+    _recycleBinSuggestions = [];
+    _aiIntent = null;
     _aiChips = [];
     _aiTotals = {};
     _searchFailed = false;
@@ -805,6 +1020,7 @@ class _CRMAppShellState extends State<CRMAppShell>
   void _applySearchData(Map<String, dynamic> data, {String? onlyCategory}) {
     final intent = data['intent'];
     if (intent is Map) {
+      _aiIntent = Map<String, dynamic>.from(intent);
       _aiEntity = intent['entity']?.toString() ?? 'all';
       final filters = intent['filters'];
       _aiFilters = filters is Map ? Map<String, dynamic>.from(filters) : {};
@@ -825,9 +1041,11 @@ class _CRMAppShellState extends State<CRMAppShell>
       if (category == 'owners') _ownerSuggestions = rows;
       if (category == 'clients') _clientSuggestions = rows;
       if (category == 'leads') _callingLeadSuggestions = rows;
+      if (category == 'employees') _employeeSuggestions = rows;
+      if (category == 'recycle_bin') _recycleBinSuggestions = rows;
     }
     if (onlyCategory == null) {
-      for (final category in ['properties', 'requirements', 'owners', 'clients', 'leads']) {
+      for (final category in ['properties', 'requirements', 'owners', 'clients', 'leads', 'employees', 'recycle_bin']) {
         assign(category);
       }
     } else {
@@ -835,7 +1053,16 @@ class _CRMAppShellState extends State<CRMAppShell>
     }
   }
 
-  void _performSearch(String query) {
+  void _performSearch(String query, {String? source}) {
+    _suggestTimer?.cancel();
+    _suggestRequest++;
+    _aiResultsMode = true;
+    _aiHighlight = -1;
+    _suggestLoading = false;
+    if (source != null) {
+      _aiRecordQuery = query.trim();
+      _aiRecordSource = source;
+    }
     _aiSearch.submit(query, (generation, value) {
       if (value.trim().isEmpty) return;
       _runAiSearch(value.trim(), generation);
@@ -883,6 +1110,15 @@ class _CRMAppShellState extends State<CRMAppShell>
       }
     });
     _searchOverlayEntry?.markNeedsBuild();
+    if (_aiRecordQuery == query && onlyCategory == null && _aiCategory == null && !_aiFiltersEdited) {
+      _aiRecordQuery = null;
+      _aiSuggestAt = null;
+      unawaited(_aiSearchService.record(
+        query: query,
+        source: _aiRecordSource,
+        resultCount: _aiTotals.values.fold<int>(0, (sum, value) => sum + value),
+      ));
+    }
   }
 
   void _removeAiChip(String key) {
@@ -898,6 +1134,17 @@ class _CRMAppShellState extends State<CRMAppShell>
   }
 
   void _loadMoreAi(String category) {
+    if (category == 'properties') {
+      final route = AiSearchRoutes.propertiesPage(_aiIntent, query: _searchController.text.trim());
+      if (_canOpenSearchRoute(route)) {
+        _openSearchRoute('page', '_properties', route);
+        return;
+      }
+    }
+    _suggestTimer?.cancel();
+    _suggestRequest++;
+    _aiResultsMode = true;
+    _suggestLoading = false;
     _aiCategory = category;
     _aiPage = 1;
     _aiSearch.submit(_searchController.text, (generation, value) {
@@ -907,15 +1154,35 @@ class _CRMAppShellState extends State<CRMAppShell>
 
   Widget _buildAiSearchPanel(BuildContext context) {
     String textOf(dynamic value) => value?.toString() ?? '';
-    AiSearchGroupData group(String title, String category, List rows, AiSearchRowData Function(Map<String, dynamic> row) mapRow) {
+    AiSearchGroupData group(String title, String category, List rows, AiSearchRowData Function(Map<String, dynamic> row) mapRow, IconData icon, {bool canLoadMore = true}) {
       final maps = rows.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
       return AiSearchGroupData(
         title: title,
         category: category,
         total: _aiTotals[category] ?? maps.length,
-        rows: maps.take(8).map(mapRow).toList(),
+        rows: maps.take(_aiResultsMode ? 8 : 3).map(mapRow).toList(),
+        icon: icon,
+        canLoadMore: canLoadMore,
       );
     }
+    String joinParts(List<String> parts) => parts.where((part) => part.trim().isNotEmpty).join(' • ');
+    String propertySubtitle(Map<String, dynamic> p) => joinParts([
+          'Code: ${textOf(p['property_code'])}',
+          '₹${BudgetFormatter.format(_searchPrice(p['price']))}',
+          textOf(p['configuration']),
+          textOf(p['area']).isNotEmpty ? textOf(p['area']) : textOf(p['city']),
+          textOf(p['listing_type']),
+        ]);
+    String leadSubtitle(Map<String, dynamic> row) => joinParts([
+          textOf(row['mobile']).isEmpty ? '' : 'Mobile: ${row['mobile']}',
+          textOf(row['listing_type']),
+          textOf(row['status']),
+          textOf(row['area']),
+        ]);
+    final role = RoleGuard.currentUser?.role;
+    final query = _searchController.text.trim();
+    final filteredRoute = query.isEmpty ? null : AiSearchRoutes.filteredPage(_aiIntent, role: role, query: query);
+    final openFiltered = filteredRoute != null && _canOpenSearchRoute(filteredRoute) ? filteredRoute : null;
     return AiSearchPanel(
       query: _searchController.text,
       loading: _isSearching,
@@ -924,86 +1191,135 @@ class _CRMAppShellState extends State<CRMAppShell>
       stale: _searchStale,
       uncertain: _searchUncertain,
       chips: _aiChips,
-      onExample: (example) {
-        _searchController.text = example;
-        _searchController.selection = TextSelection.collapsed(offset: example.length);
-        _aiFiltersEdited = false;
-        _aiCategory = null;
-        _aiPage = 1;
-        _performSearch(example);
-      },
+      resultsMode: _aiResultsMode,
+      suggestLoading: _suggestLoading,
+      recent: _aiSuggest.recent,
+      popular: _aiResultsMode ? const [] : _aiSuggest.popular,
+      completions: _aiResultsMode ? const [] : _aiSuggest.completions,
+      pages: _aiResultsMode || query.isEmpty
+          ? const []
+          : _aiSuggest.pages.where((page) => _canOpenSearchRoute(page.route)).toList(),
+      highlight: _aiHighlight,
+      onExample: (example) => _runQuery(example, 'example'),
+      onSuggestion: _selectSuggestion,
+      onRemoveRecent: _removeRecent,
+      onViewAllHistory: _openHistory,
+      onPage: (page) => _openSearchRoute('page', page.id, page.route),
+      onSeeAll: query.isEmpty ? null : () => _performSearch(query, source: 'typed'),
+      onOpenFiltered: openFiltered == null
+          ? null
+          : () => _openSearchRoute('page', Uri.parse(openFiltered).path.replaceAll('/', '_'), openFiltered),
+      openFilteredLabel: openFiltered == null ? null : 'Open ${_searchPageLabel(openFiltered)} with these filters',
       onRemoveChip: _removeAiChip,
       onMore: _loadMoreAi,
       onClose: _closeSearch,
       groups: [
         group('Properties', 'properties', _propertySuggestions, (p) {
+          final status = AiSearchRoutes.propertyStatus(p);
           return AiSearchRowData(
             title: textOf(p['title']),
-            subtitle: p['is_recycle_bin'] == true
-                ? 'Code: ${p['property_code']} • ₹${BudgetFormatter.format(_searchPrice(p['price']))} • [In Recycle Bin]'
-                : 'Code: ${p['property_code']} • ₹${BudgetFormatter.format(_searchPrice(p['price']))}',
-            onTap: () {
-              _hideSearchOverlay();
-              if (p['is_recycle_bin'] == true) {
-                context.go('/bin');
-              } else {
-                context.go('/properties?openId=${p['id']}&t=${DateTime.now().millisecondsSinceEpoch}');
-              }
-            },
+            subtitle: propertySubtitle(p),
+            badge: status,
+            badgeColor: status == 'Sold Out' ? CRMColors.info : CRMColors.warning,
+            onTap: () => _openSearchRoute('property', textOf(p['id']), AiSearchRoutes.property(p, intent: _aiIntent)),
           );
-        }),
-        group('Leads', 'leads', _callingLeadSuggestions, (lead) {
-          return AiSearchRowData(
-            title: textOf(lead['name']),
-            subtitle: '${lead['queue']} · ${lead['status']}',
-            onTap: () {
-              _hideSearchOverlay();
-              final queue = lead['queue'];
-              final path = queue == 'CNR'
-                  ? '/telecaller/cnr'
-                  : queue == 'Callback'
-                      ? '/telecaller/callbacks'
-                      : (RoleGuard.isTelecaller(RoleGuard.currentUser?.role) ? '/telecaller/leads' : '/campaign/leads');
-              context.go(path);
-            },
-          );
-        }),
-        group('Requirements', 'requirements', _requirementSuggestions, (row) {
+        }, Icons.apartment_outlined),
+        group('Leads', 'requirements', _requirementSuggestions, (row) {
           return AiSearchRowData(
             title: textOf(row['customer_name']),
-            subtitle: 'Mobile: ${row['mobile']}',
+            subtitle: leadSubtitle(row),
             onTap: () {
-              _hideSearchOverlay();
-              context.go('/requirements?openId=${row['id']}&t=${DateTime.now().millisecondsSinceEpoch}');
+              var route = AiSearchRoutes.requirement(row, role: role);
+              if (!_canOpenSearchRoute(route)) {
+                route = AiSearchRoutes.requirement({...row, 'is_direct_sales_campaign': false}, role: role);
+              }
+              _openSearchRoute('requirement', textOf(row['id']), route);
             },
           );
-        }),
+        }, Icons.person_search_outlined),
+        group('Campaign Leads', 'leads', _callingLeadSuggestions, (lead) {
+          return AiSearchRowData(
+            title: textOf(lead['name']),
+            subtitle: [textOf(lead['queue']), AiSearchRoutes.leadStatus(lead)].where((part) => part.isNotEmpty).join(' · '),
+            onTap: () {
+              final route = AiSearchRoutes.firstAllowed(AiSearchRoutes.leadCandidates(lead, role), (path) => MobileNavAccess.canOpen(role, path));
+              if (route == null) {
+                _hideSearchOverlay();
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                  const SnackBar(content: Text('You do not have access to the page for this lead.')),
+                );
+                return;
+              }
+              _openSearchRoute('lead', textOf(lead['id']), route);
+            },
+          );
+        }, Icons.phone_in_talk_outlined),
         group('Clients', 'clients', _clientSuggestions, (row) {
           return AiSearchRowData(
             title: textOf(row['name']),
             subtitle: 'Mobile: ${row['mobile']}',
-            onTap: () {
-              _hideSearchOverlay();
-              context.go('/clients?search=${Uri.encodeQueryComponent(textOf(row['name']))}');
-            },
+            onTap: () => _openSearchRoute('client', textOf(row['id']), AiSearchRoutes.client(row)),
           );
-        }),
+        }, Icons.contacts_outlined),
         group('Owners', 'owners', _ownerSuggestions, (row) {
           return AiSearchRowData(
             title: textOf(row['name']),
             subtitle: 'Mobile: ${row['mobile']}',
+            onTap: () => _openSearchRoute('owner', textOf(row['id']), AiSearchRoutes.owner(row)),
+          );
+        }, Icons.key_outlined),
+        group('Employees', 'employees', _employeeSuggestions, (row) {
+          return AiSearchRowData(
+            title: textOf(row['name']),
+            subtitle: textOf(row['role']),
+            onTap: () => _openSearchRoute(
+              'employee',
+              textOf(row['id']),
+              AiSearchRoutes.employee(row, canOpenDetails: RoleGuard.canAction('page.employees.details')),
+            ),
+          );
+        }, Icons.badge_outlined),
+        group('Recycle Bin', 'recycle_bin', _recycleBinSuggestions, (row) {
+          final isProperty = textOf(row['kind']) == 'property';
+          return AiSearchRowData(
+            title: isProperty ? textOf(row['title']) : textOf(row['customer_name']),
+            subtitle: isProperty ? 'Deleted property • ${propertySubtitle(row)}' : 'Deleted lead • ${leadSubtitle(row)}',
+            badge: 'Deleted · Recycle Bin',
             onTap: () {
-              _hideSearchOverlay();
-              context.go('/owners?search=${Uri.encodeQueryComponent(textOf(row['name']))}');
+              final route = AiSearchRoutes.recycleBin(row);
+              if (!_canOpenSearchRoute(route)) {
+                _hideSearchOverlay();
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                  const SnackBar(content: Text('You do not have access to the Recycle Bin.')),
+                );
+                return;
+              }
+              _openSearchRoute(isProperty ? 'property' : 'requirement', textOf(row['id']), route);
             },
           );
-        }),
+        }, Icons.delete_outline_rounded, canLoadMore: false),
       ],
     );
   }
 
+  static String _searchPageLabel(String route) {
+    final path = Uri.parse(route).path;
+    return switch (path) {
+      '/properties' => 'Properties',
+      '/requirements' => 'Leads',
+      '/telecaller/leads' => 'My Calling',
+      '/clients' => 'Clients',
+      '/owners' => 'Owners',
+      _ => 'the page',
+    };
+  }
+
   void _closeSearch() {
     _aiSearch.dismiss();
+    _suggestTimer?.cancel();
+    _suggestRequest++;
+    _suggestLoading = false;
+    _aiHighlight = -1;
     _hideSearchOverlay();
     _searchFocusNode.unfocus();
   }
@@ -1015,6 +1331,8 @@ class _CRMAppShellState extends State<CRMAppShell>
     _aiChips = [];
     _aiCategory = null;
     _aiPage = 1;
+    _aiResultsMode = false;
+    _aiSuggestAt = null;
     setState(() => _clearAiResults(keepMemory: true));
     _closeSearch();
   }
@@ -1036,30 +1354,45 @@ class _CRMAppShellState extends State<CRMAppShell>
             ? (availableHeight < 520 ? availableHeight : 520)
             : 100;
 
-        final Widget cardContent = ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: calculatedMaxHeight),
-          child: _buildAiSearchPanel(context),
-        );
-
-        if (isMobile) {
-          return Positioned(
-            left: 16,
-            right: 16,
-            top: 70 + topPadding + 8,
-            child: cardContent,
+        Widget cardContent;
+        try {
+          cardContent = ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: calculatedMaxHeight),
+            child: _buildAiSearchPanel(context),
           );
+        } catch (e, st) {
+          debugPrint('⚠️ Error in _buildAiSearchPanel: $e\n$st');
+          cardContent = const SizedBox.shrink();
         }
 
-        return Positioned(
-          width: CRMBreakpoints.adaptiveWidth(context, 520),
-          child: CompositedTransformFollower(
-            link: _searchLayerLink,
-            showWhenUnlinked: false,
-            targetAnchor: Alignment.bottomLeft,
-            followerAnchor: Alignment.topLeft,
-            offset: const Offset(0, 8),
-            child: cardContent,
-          ),
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _closeSearch,
+              ),
+            ),
+            if (isMobile)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 70 + topPadding + 8,
+                child: cardContent,
+              )
+            else
+              Positioned(
+                width: CRMBreakpoints.adaptiveWidth(context, 520),
+                child: CompositedTransformFollower(
+                  link: _searchLayerLink,
+                  showWhenUnlinked: false,
+                  targetAnchor: Alignment.bottomLeft,
+                  followerAnchor: Alignment.topLeft,
+                  offset: const Offset(0, 8),
+                  child: cardContent,
+                ),
+              ),
+          ],
         );
       },
     );
@@ -1222,13 +1555,9 @@ class _CRMAppShellState extends State<CRMAppShell>
                               searchFocusNode: _searchFocusNode,
                               searchLayerLink: _searchLayerLink,
                               onSearchChanged: _onSearchChanged,
-                              onSearchOpened: _showSearchOverlay,
+                              onSearchOpened: _openSearch,
                               onSearchCleared: _clearSearch,
-                              onSearchSubmitted: (val) {
-                                if (val.trim().isNotEmpty) {
-                                  _performSearch(val.trim());
-                                }
-                              },
+                              onSearchSubmitted: _submitSearch,
                               unreadNotifications: _unreadNotificationsCount,
                               unreadMessages: _unreadTeamMessagesCount,
                               onNotificationsTap: () {
@@ -1317,7 +1646,7 @@ class _CRMAppShellState extends State<CRMAppShell>
                   _mobileSearchLocation = location;
                 });
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _showSearchOverlay();
+                  if (mounted) _openSearch();
                 });
               },
               onNotifications: () {
@@ -1341,14 +1670,10 @@ class _CRMAppShellState extends State<CRMAppShell>
                       focusNode: _searchFocusNode,
                       layerLink: _searchLayerLink,
                       onChanged: _onSearchChanged,
-                      onSubmitted: (val) {
-                        if (val.trim().isNotEmpty) {
-                          _performSearch(val.trim());
-                        }
-                      },
+                      onSubmitted: _submitSearch,
                       onClear: () {
                         _searchController.clear();
-                        _hideSearchOverlay();
+                        _onSearchChanged('');
                       },
                       onClose: _closeMobileSearch,
                     )
@@ -2354,6 +2679,8 @@ class _CRMAppShellState extends State<CRMAppShell>
     if (type.contains('housing')) return 'HOUSING LEAD';
     if (type.contains('assign')) return 'LEAD ASSIGNED';
     if (type.contains('site_visit') || type.contains('visit')) return 'SITE VISIT';
+    if (type.contains('property_status')) return 'PROPERTY STATUS';
+    if (type.contains('property_share')) return 'PROPERTY SHARING';
     if (type.contains('property')) return 'PROPERTY ADDED';
     if (type.contains('created')) return 'LEAD ADDED';
     if (type.contains('new_lead')) return 'NEW LEAD';
@@ -2599,9 +2926,12 @@ class _CRMAppShellState extends State<CRMAppShell>
         color: isDark ? CRMColors.warning : CRMColors.textSecondary,
       ),
       tooltip: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-      onPressed: () {
-        ThemeManager().toggleTheme();
-      },
+      onPressed: !RoleGuard.canAction(
+              isDark ? 'page.settings.appearance.light' : 'page.settings.appearance.dark')
+          ? null
+          : () {
+              ThemeManager().toggleTheme();
+            },
     );
   }
 

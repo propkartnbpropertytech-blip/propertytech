@@ -44,7 +44,8 @@ class PatchRequirementStatusEvent extends RequirementsEvent {
 
 class DeleteRequirementEvent extends RequirementsEvent {
   final String id;
-  DeleteRequirementEvent(this.id);
+  final String? deletedFrom;
+  DeleteRequirementEvent(this.id, {this.deletedFrom});
 }
 
 // --- States ---
@@ -195,6 +196,17 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     Emitter<RequirementsState> emit,
   ) async {
     try {
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        final optimisticList = current.requirements.map((r) {
+          return r.id == event.requirement.id ? event.requirement : r;
+        }).toList();
+        final exists = current.requirements.any((r) => r.id == event.requirement.id);
+        emit(RequirementsLoaded(
+          requirements: exists ? optimisticList : [...current.requirements, event.requirement],
+        ));
+      }
+
       final RequirementModel updated;
       if (event.patch != null) {
         await requirementsRepository.updateRequirementFields(event.requirement.id, event.patch!);
@@ -262,7 +274,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     Emitter<RequirementsState> emit,
   ) async {
     try {
-      await requirementsRepository.deleteRequirement(event.id);
+      await requirementsRepository.deleteRequirement(event.id, deletedFrom: event.deletedFrom);
       List<RequirementModel> next = [];
       if (state is RequirementsLoaded) {
         final current = state as RequirementsLoaded;

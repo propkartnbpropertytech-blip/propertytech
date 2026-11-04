@@ -338,6 +338,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     // while network sign-out is still in flight.
     emit(Unauthenticated());
     try {
+      await PushNotificationService.unregisterCurrentUser()
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    try {
       await _authRepository.logout();
     } catch (_) {}
     try {

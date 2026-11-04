@@ -6,6 +6,8 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
+import '../../../core/security/admin_action_gate.dart';
+import '../../../core/security/role_guard.dart';
 import '../../properties/models/property_model.dart';
 import '../../properties/repository/properties_repository.dart';
 import '../../properties/services/properties_service.dart';
@@ -331,7 +333,7 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () async {
+            onPressed: !RoleGuard.canAction('page.settings.location.add_city') ? null : () async {
               Navigator.pop(context);
               setState(() => _isLoading = true);
               try {
@@ -702,10 +704,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                         style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                       ),
                     ),
-                    CRMButton(
-                      label: 'Add New City',
-                      prefixIcon: Icons.add_rounded,
-                      onPressed: () => _openCityForm(),
+                    AdminActionGate(
+                      actionKey: 'page.settings.location.add_city',
+                      child: CRMButton(
+                        label: 'Add New City',
+                        prefixIcon: Icons.add_rounded,
+                        onPressed: () => _openCityForm(),
+                      ),
                     ),
                   ],
                 ),
@@ -722,10 +727,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                     Text('${filtered.length} active cities configured', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
                   ],
                 ),
-                CRMButton(
-                  label: 'Add New City',
-                  prefixIcon: Icons.add_rounded,
-                  onPressed: () => _openCityForm(),
+                AdminActionGate(
+                  actionKey: 'page.settings.location.add_city',
+                  child: CRMButton(
+                    label: 'Add New City',
+                    prefixIcon: Icons.add_rounded,
+                    onPressed: () => _openCityForm(),
+                  ),
                 ),
               ],
             ),
@@ -1112,10 +1120,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                         style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
                       ),
                     ),
-                    CRMButton(
-                      label: 'Add New Area',
-                      prefixIcon: Icons.add_rounded,
-                      onPressed: () => _openAreaForm(),
+                    AdminActionGate(
+                      actionKey: 'page.settings.location.add_area',
+                      child: CRMButton(
+                        label: 'Add New Area',
+                        prefixIcon: Icons.add_rounded,
+                        onPressed: () => _openAreaForm(),
+                      ),
                     ),
                   ],
                 ),
@@ -1132,10 +1143,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                     Text('${filtered.length} areas mapped to active cities', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
                   ],
                 ),
-                CRMButton(
-                  label: 'Add New Area',
-                  prefixIcon: Icons.add_rounded,
-                  onPressed: () => _openAreaForm(),
+                AdminActionGate(
+                  actionKey: 'page.settings.location.add_area',
+                  child: CRMButton(
+                    label: 'Add New Area',
+                    prefixIcon: Icons.add_rounded,
+                    onPressed: () => _openAreaForm(),
+                  ),
                 ),
               ],
             ),
@@ -1828,10 +1842,13 @@ class _LocationConfigScreenState extends State<LocationConfigScreen> with Single
                   ],
                 ),
               ),
-              CRMButton(
-                label: 'Add New Zone',
-                prefixIcon: Icons.add_rounded,
-                onPressed: _showAddZoneDialog,
+              AdminActionGate(
+                actionKey: 'page.settings.location.add_zone',
+                child: CRMButton(
+                  label: 'Add New Zone',
+                  prefixIcon: Icons.add_rounded,
+                  onPressed: _showAddZoneDialog,
+                ),
               ),
             ],
           ),

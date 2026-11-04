@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_typography.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
+import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
 import '../../dashboard/models/kpi_models.dart';
 import '../../dashboard/widgets/stat_card.dart';
 import '../../dashboard/widgets/kpi_drilldown_dialogs.dart';
@@ -38,10 +40,42 @@ class OperationalKpiBreakdownSection extends StatefulWidget {
 
 class _OperationalKpiBreakdownSectionState extends State<OperationalKpiBreakdownSection> {
   String _activeTab = 'all'; // 'all', 'sourcing', 'manual', 'pipeline', 'qualified'
+  static const _tabIds = ['all', 'sourcing', 'manual', 'pipeline', 'qualified'];
+  late String _tabPermissionSignature;
+
+  bool _tabAllowed(String tabId) => RoleGuard.canAction('page.reports.executive.$tabId');
+
+  String _currentTabPermissionSignature() =>
+      _tabIds.map((t) => _tabAllowed(t) ? '1' : '0').join();
+
+  void _onTabPermissionsChanged() {
+    final next = _currentTabPermissionSignature();
+    if (next == _tabPermissionSignature || !mounted) return;
+    setState(() => _tabPermissionSignature = next);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _tabPermissionSignature = _currentTabPermissionSignature();
+    PermissionMatrixService.instance.addListener(_onTabPermissionsChanged);
+  }
+
+  @override
+  void dispose() {
+    PermissionMatrixService.instance.removeListener(_onTabPermissionsChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     if (widget.kpis == null) return const SizedBox.shrink();
+
+    final allowedTabs = _tabIds.where(_tabAllowed).toList();
+    if (allowedTabs.isEmpty) return const SizedBox.shrink();
+    final activeTab = allowedTabs.contains(_activeTab) ? _activeTab : allowedTabs.first;
+    bool showModule(String tabId) =>
+        _tabAllowed(tabId) && (activeTab == 'all' || activeTab == tabId);
 
     final isMobile = MediaQuery.of(context).size.width < 768;
 
@@ -114,15 +148,16 @@ class _OperationalKpiBreakdownSectionState extends State<OperationalKpiBreakdown
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _buildTabPill('all', 'All Modules (24 KPIs)', Icons.dashboard_customize_rounded),
-                    const SizedBox(width: 8),
-                    _buildTabPill('sourcing', 'Inventory Sourcing', Icons.add_home_work_rounded),
-                    const SizedBox(width: 8),
-                    _buildTabPill('manual', 'Manual & Direct Leads', Icons.person_add_alt_1_rounded),
-                    const SizedBox(width: 8),
-                    _buildTabPill('pipeline', 'Sales Pipeline', Icons.workspace_premium_rounded),
-                    const SizedBox(width: 8),
-                    _buildTabPill('qualified', 'Qualified Leads', Icons.verified_user_rounded),
+                    for (final pill in [
+                      ('all', 'All Modules (24 KPIs)', Icons.dashboard_customize_rounded),
+                      ('sourcing', 'Inventory Sourcing', Icons.add_home_work_rounded),
+                      ('manual', 'Manual & Direct Leads', Icons.person_add_alt_1_rounded),
+                      ('pipeline', 'Sales Pipeline', Icons.workspace_premium_rounded),
+                      ('qualified', 'Qualified Leads', Icons.verified_user_rounded),
+                    ].where((p) => allowedTabs.contains(p.$1))) ...[
+                      if (pill.$1 != allowedTabs.first) const SizedBox(width: 8),
+                      _buildTabPill(pill.$1, pill.$2, pill.$3, activeTab),
+                    ],
                   ],
                 ),
               ),
@@ -132,19 +167,19 @@ class _OperationalKpiBreakdownSectionState extends State<OperationalKpiBreakdown
         const SizedBox(height: 16),
 
         // Subsections based on active tab
-        if (_activeTab == 'all' || _activeTab == 'sourcing') ...[
+        if (showModule('sourcing')) ...[
           _buildInventorySourcingSection(),
           const SizedBox(height: 20),
         ],
-        if (_activeTab == 'all' || _activeTab == 'manual') ...[
+        if (showModule('manual')) ...[
           _buildManualDirectLeadsSection(),
           const SizedBox(height: 20),
         ],
-        if (_activeTab == 'all' || _activeTab == 'pipeline') ...[
+        if (showModule('pipeline')) ...[
           _buildSalesPipelineSection(),
           const SizedBox(height: 20),
         ],
-        if (_activeTab == 'all' || _activeTab == 'qualified') ...[
+        if (showModule('qualified')) ...[
           _buildQualifiedLeadsSection(),
           const SizedBox(height: 20),
         ],
@@ -152,8 +187,8 @@ class _OperationalKpiBreakdownSectionState extends State<OperationalKpiBreakdown
     );
   }
 
-  Widget _buildTabPill(String tabId, String label, IconData icon) {
-    final isSelected = _activeTab == tabId;
+  Widget _buildTabPill(String tabId, String label, IconData icon, String activeTab) {
+    final isSelected = activeTab == tabId;
     final primary = CRMColors.primaryOf(context);
 
     return InkWell(

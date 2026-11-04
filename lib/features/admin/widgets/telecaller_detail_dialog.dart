@@ -466,8 +466,18 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
           )
         : currentLeads;
     final history = List<dynamic>.from(_data?['history'] ?? []);
-    final rawPropertyLeads = List<dynamic>.from(_data?['propertyListingLeads'] ?? []);
-    final rawReqLeads = List<dynamic>.from(_data?['requirementLeads'] ?? []);
+    bool isManualLead(dynamic l) {
+      if (l is! Map) return false;
+      final src = (l['source'] ?? l['rawSource'] ?? l['lead_source'] ?? '').toString().trim().toUpperCase();
+      final camp = (l['campaign'] ?? l['campaignId'] ?? l['campaignName'] ?? '').toString().trim().toUpperCase();
+      return src == 'MANUAL' || camp == 'MANUAL';
+    }
+    final rawPropertyLeads = List<dynamic>.from(_data?['propertyListingLeads'] ?? [])
+        .where((l) => !isManualLead(l))
+        .toList();
+    final rawReqLeads = List<dynamic>.from(_data?['requirementLeads'] ?? [])
+        .where((l) => !isManualLead(l))
+        .toList();
 
     final status = profile['availability']?.toString() ?? 'INACTIVE';
     final isFresh = profile['heartbeatFresh'] == true;
@@ -1134,7 +1144,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                   if (widget.isSales) ...[
                     _metricBox(
                       'Total Allocated',
-                      '${_data?['leadStats']?['allocatedLeads'] ?? _data?['leadStats']?['totalAssigned'] ?? (_directory.isNotEmpty ? _directory.length : currentLeads.length)}',
+                      '${rawPropertyLeads.length + rawReqLeads.length}',
                       Icons.assignment_outlined,
                       CRMColors.primary,
                       isDark,
@@ -1149,7 +1159,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                     ),
                     _metricBox(
                       'Property Listing Leads',
-                      '${_data?['propertyListingCount'] ?? (_data?['propertyListingLeads'] as List?)?.length ?? 0}',
+                      '${rawPropertyLeads.length}',
                       Icons.holiday_village_outlined,
                       const Color(0xFF0D9488),
                       isDark,
@@ -1162,7 +1172,7 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
                     ),
                     _metricBox(
                       'Requirement Leads',
-                      '${_data?['requirementCount'] ?? (_data?['requirementLeads'] as List?)?.length ?? 0}',
+                      '${rawReqLeads.length}',
                       Icons.person_search_outlined,
                       const Color(0xFF2563EB),
                       isDark,
@@ -2057,7 +2067,14 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
 
   Widget _buildCampaignDetailsSection(bool isDark, bool isMobile) {
     final rawCampaigns = _data?['campaignAllocations'] as List<dynamic>? ?? [];
-    final campaigns = rawCampaigns.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final campaigns = rawCampaigns
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .where((camp) {
+          final id = (camp['campaignId']?.toString() ?? '').trim().toUpperCase();
+          final name = (camp['campaignName']?.toString() ?? '').trim().toUpperCase();
+          return id != 'MANUAL' && name != 'MANUAL';
+        })
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2550,7 +2567,15 @@ class _TelecallerDetailDialogState extends State<TelecallerDetailDialog> {
   }
 
   List<Map<String, dynamic>> _filterSalesDirectLeads(List<dynamic> leadsList) {
-    final list = leadsList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    final list = leadsList
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((lead) {
+          final src = (lead['source'] ?? lead['rawSource'] ?? lead['lead_source'] ?? '').toString().trim().toUpperCase();
+          final camp = (lead['campaign'] ?? lead['campaignId'] ?? lead['campaignName'] ?? '').toString().trim().toUpperCase();
+          return src != 'MANUAL' && camp != 'MANUAL';
+        })
+        .toList();
     if (_selectedCategoryName == null) return list;
     final categoryLeadIds = _selectedCategoryLeadIds();
     if (categoryLeadIds != null) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
+import '../../../core/security/admin_action_gate.dart';
 import '../models/report_configuration.dart';
 import '../models/report_data.dart';
 import '../services/report_export_service.dart';
@@ -32,6 +33,13 @@ class _ReportExportMenuState extends State<ReportExportMenu> {
 
   @override
   Widget build(BuildContext context) {
+    return AdminActionBuilder(
+      actionKey: 'page.reports.export',
+      builder: (context, allowed) => allowed ? _buildMenu(context) : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildMenu(BuildContext context) {
     final primaryColor = CRMColors.primary;
 
     if (_isExporting) {

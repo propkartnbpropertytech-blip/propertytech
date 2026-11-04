@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
+import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
 
@@ -36,8 +37,24 @@ class ReportsSubshellNav extends StatelessWidget {
     required this.currentPath,
   });
 
+  /// Role Drill-down action key controlling the report at [path], or null when always visible.
+  static String? actionKeyForPath(String path) {
+    if (path.startsWith('/reports/properties')) return 'page.reports.properties';
+    if (path.startsWith('/reports/leads/telecaller')) return 'page.reports.telecaller';
+    if (path.startsWith('/reports/leads/sales')) return 'page.reports.sales';
+    if (path.startsWith('/reports/leads/metrics')) return 'page.reports.lead_metrics';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: PermissionMatrixService.instance,
+      builder: (context, _) => _buildNav(context),
+    );
+  }
+
+  Widget _buildNav(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final isProperties = currentPath.startsWith('/reports/properties');
     final activeDomain = isProperties ? ReportDomain.properties : ReportDomain.leads;
@@ -71,6 +88,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     }
                   },
                 ),
+                if (RoleGuard.canAction('page.reports.properties')) ...[
                 const SizedBox(width: 8),
                 _buildDomainPill(
                   context,
@@ -82,6 +100,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     }
                   },
                 ),
+                ],
               ],
             ),
           ),
@@ -101,6 +120,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     isActive: currentPath.contains('/overall-business-insight'),
                     isFunctional: true,
                   ),
+                  if (RoleGuard.canAction('page.reports.telecaller'))
                   _buildSubTab(
                     context,
                     title: 'Telecaller Report',
@@ -109,6 +129,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     isActive: currentPath.contains('/telecaller'),
                     isFunctional: true,
                   ),
+                  if (RoleGuard.canAction('page.reports.sales'))
                   _buildSubTab(
                     context,
                     title: 'Sales Report',
@@ -117,7 +138,7 @@ class ReportsSubshellNav extends StatelessWidget {
                     isActive: currentPath.contains('/sales'),
                     isFunctional: true,
                   ),
-                  if (isAdmin)
+                  if (isAdmin && RoleGuard.canAction('page.reports.lead_metrics'))
                     _buildSubTab(
                       context,
                       title: 'Lead Metrics',

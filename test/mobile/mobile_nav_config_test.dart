@@ -108,6 +108,16 @@ void main() {
       expect(routes, contains('/profile'));
     });
 
+    test('Campaign Leads is in More for Admin and Super Admin, not for Telecaller', () {
+      for (final role in ['Admin', 'Super Admin']) {
+        expect(_moreRoutes(role, canView: _all), contains('/my-campaign-leads'), reason: role);
+        expect(MobileNavAccess.canOpen(role, '/my-campaign-leads'), isTrue, reason: role);
+      }
+      expect(_moreRoutes('Sales', canView: _all), contains('/my-campaign-leads'));
+      expect(_moreRoutes('Telecaller', canView: _all), isNot(contains('/my-campaign-leads')));
+      expect(_moreRoutes('Admin', canView: (r) => r != '/my-campaign-leads'), isNot(contains('/my-campaign-leads')));
+    });
+
     test('empty sections are dropped', () {
       final sections =
           MobileNavConfig.moreForRole('Sales', canView: (r) => r == '/profile');

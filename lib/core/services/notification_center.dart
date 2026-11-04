@@ -38,10 +38,7 @@ class NotificationCenter {
     _deletedIds.clear();
     try {
       final prefs = await SharedPreferences.getInstance();
-      var jsonStr = prefs.getString(_cacheKey(userId));
-      if ((jsonStr == null || jsonStr.isEmpty) && userId != null) {
-        jsonStr = prefs.getString('app_local_notifications_cache');
-      }
+      final jsonStr = prefs.getString(_cacheKey(userId));
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(jsonStr);
         for (final item in list) {
@@ -52,10 +49,7 @@ class NotificationCenter {
           }
         }
       }
-      var delStr = prefs.getString(_deletedKey(userId));
-      if ((delStr == null || delStr.isEmpty) && userId != null) {
-        delStr = prefs.getString('app_deleted_notification_ids');
-      }
+      final delStr = prefs.getString(_deletedKey(userId));
       if (delStr != null && delStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(delStr);
         _deletedIds.addAll(list.map((e) => e.toString()));
@@ -64,7 +58,7 @@ class NotificationCenter {
     if (userId != null &&
         _localNotifications.isEmpty &&
         previousList.isNotEmpty &&
-        (previousUserId == null || previousUserId == userId)) {
+        previousUserId == userId) {
       _localNotifications.addAll(previousList);
       _deletedIds.addAll(previousDeleted);
     }

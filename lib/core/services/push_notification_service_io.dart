@@ -21,6 +21,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 class PushNotificationService {
+  static const String propertyStatusType = 'property_status_changed';
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
@@ -72,6 +73,19 @@ class PushNotificationService {
       FirebaseMessaging.onMessage.listen((message) {
         final title = message.notification?.title ?? message.data['title'] ?? 'New client lead assigned';
         final body = message.notification?.body ?? message.data['message'] ?? '';
+        if (message.data['type'] == propertyStatusType) {
+          final id = message.data['id']?.toString();
+          if (AppNotifierService.wasOsShown(id)) return;
+          AppNotifierService.markOsShown(id);
+          AppNotifierService.notify(
+            title: title,
+            message: body,
+            type: propertyStatusType,
+            route: message.data['route']?.toString(),
+            data: message.data,
+          );
+          return;
+        }
         AppNotifierService.notify(
           title: title,
           message: body,
@@ -90,6 +104,17 @@ class PushNotificationService {
           'payload': message.data,
         });
       });
+      final launchMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (launchMessage != null && launchMessage.data['type'] == propertyStatusType) {
+        Future.delayed(const Duration(seconds: 3), () {
+          AppNotifierService.handleNotificationTap({
+            'id': launchMessage.data['id'],
+            'type': launchMessage.data['type'],
+            'route': launchMessage.data['route'],
+            'payload': launchMessage.data,
+          });
+        });
+      }
     } catch (e) {
       debugPrint('[PushNotificationService] FCM listeners skipped: $e');
     }
@@ -114,6 +139,17 @@ class PushNotificationService {
       });
     } catch (e) {
       debugPrint('[PushNotificationService] Token register skipped: $e');
+    }
+  }
+
+  /// Stops pushes for the signed-in user on this device. Call before the session token is cleared.
+  static Future<void> unregisterCurrentUser() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null || token.isEmpty) return;
+      await DioClient.dio.delete('/notifications/device-token', data: {'token': token});
+    } catch (e) {
+      debugPrint('[PushNotificationService] Token unregister skipped: $e');
     }
   }
 

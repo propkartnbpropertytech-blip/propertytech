@@ -124,8 +124,8 @@ class RequirementListItemViewModel {
 
     String mapped = rej
         ? effStatus
-        : ((r.status == 'Assigned' || r.status == 'Assigned to Sales')
-            ? 'Assigned to Sales'
+        : ((r.status == 'Assigned' || r.status == 'Assigned to Sales' || r.status == 'Allocate to Sales')
+            ? 'Allocate to Sales'
             : (unhandledAssigned ? 'Not Started' : effStatus));
     if (mapped == 'Active' || mapped == 'Live') mapped = 'Interested';
     if (mapped == 'Closed' || mapped == 'Won') mapped = 'Won';
@@ -279,9 +279,13 @@ class RequirementListItemViewModel {
         (meta['direct_sales_allocated'] == true ||
          meta['direct_sales_allocated'] == 'true' ||
          meta['is_direct_sales_allocated'] == true ||
-         meta['is_direct_sales_allocated'] == 'true')) {
+         meta['is_direct_sales_allocated'] == 'true' ||
+         meta['transferred_from_sales'] == true ||
+         meta['campaign_lead_transferred'] == true)) {
       return true;
     }
+
+    if (r.isCampaignLead) return true;
 
     return false;
   }
@@ -358,9 +362,10 @@ class RequirementFilterEngine {
     if (selNorm == rStNorm || selNorm == mStNorm) return true;
 
     // Assigned to Sales / Assigned
-    if (sel == 'assigned' || sel == 'assigned to sales') {
+    if (sel == 'assigned' || sel == 'assigned to sales' || sel == 'allocate to sales') {
       return rSt == 'assigned' ||
           rSt == 'assigned to sales' ||
+          rSt == 'allocate to sales' ||
           mSt == 'assigned' ||
           mSt == 'assigned to sales';
     }
@@ -433,6 +438,7 @@ class RequirementFilterEngine {
     List<users_model.UserModel> knownUsers = const [],
     Set<String>? unassignedLeadIds,
     PropertyMetadataModel? metadata,
+    bool campaignMode = false,
   }) {
     if (items.isEmpty) return const [];
 
@@ -524,12 +530,19 @@ class RequirementFilterEngine {
         continue;
       }
 
-      // 0. Campaign leads (Housing, Meta, Webhook, Portal, etc.) MUST NOT appear on the Leads page until assigned to a Salesperson.
-      if (r.isCampaignLead) {
-        final assigned = r.assignedTo?.trim();
-        final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
-        if (!hasAssignedSalesperson) {
+      // 0. Campaign leads belong to the Campaign Leads page only.
+      // They MUST NOT appear on the regular Leads page.
+      if (!campaignMode) {
+        if (r.isCampaignLead || r.isDirectSalesAllocated || RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) {
           continue;
+        }
+      } else {
+        if (r.isCampaignLead) {
+          final assigned = r.assignedTo?.trim();
+          final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+          if (!hasAssignedSalesperson) {
+            continue;
+          }
         }
       }
 
@@ -551,7 +564,7 @@ class RequirementFilterEngine {
               RequirementListItemViewModel._checkUserAssignee(r, currentUser);
           if (!canView) continue;
 
-          if (activeMainTab == 'Leads') {
+          if (!campaignMode && activeMainTab == 'Leads') {
             if (salesLeadGroupFilter == 'assigned') {
               final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
               final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
@@ -611,7 +624,7 @@ class RequirementFilterEngine {
         }
       } else if (isRejectedTab) {
         if (!vm.isRejected) continue;
-      } else if (activeMainTab == 'Leads') {
+      } else if (activeMainTab == 'Leads' || activeMainTab == 'Assign to Me') {
         if (selectedStatus != 'Rejected' && vm.isRejected) continue;
         if (vm.isWon || mappedStatus == 'Won' || r.status == 'Won' || r.status == 'Closed') {
           if (selectedStatus != 'Won') continue;
@@ -659,7 +672,7 @@ class RequirementFilterEngine {
           }
           if (!matchesSales) continue;
 
-          if (activeMainTab == 'Leads' && salesLeadGroupFilter != 'all') {
+          if (!campaignMode && activeMainTab == 'Leads' && salesLeadGroupFilter != 'all') {
             final salesRole = selectedSales?.roleName ?? '';
             if (salesRole.toLowerCase().contains('sales') || selectedSales == null) {
               if (salesLeadGroupFilter == 'assigned') {

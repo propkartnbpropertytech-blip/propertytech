@@ -14,6 +14,8 @@ import '../../../core/theme/theme_manager.dart';
 import 'package:propkart/core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
 import '../bloc/sales_dashboard_bloc.dart';
+import '../../dashboard/models/kpi_models.dart';
+import '../../dashboard/widgets/sales_campaign_kpis.dart';
 // --- SCREEN ENTRY ---
 class SalesDashboardScreen extends StatelessWidget {
   final SalesDashboardBloc? bloc;
@@ -67,10 +69,35 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
 
   final TextEditingController _noteController = TextEditingController();
 
+  // Campaign Leads KPI state
+  SalesCampaignKpiData? _campaignKpiData;
+  bool _loadingCampaignKpis = false;
+
+  Future<void> _loadCampaignKpis() async {
+    if (!mounted) return;
+    setState(() => _loadingCampaignKpis = true);
+    try {
+      final filters = KpiFilterParams(
+        businessType: _isRentMode ? 'rent' : 'resale',
+        dateFilter: 'all',
+      );
+      final data = await SalesCampaignKpiService.fetch(filters);
+      if (!mounted) return;
+      setState(() {
+        _campaignKpiData = data;
+        _loadingCampaignKpis = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingCampaignKpis = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _isRentMode = ThemeManager().isRentMode;
+    _loadCampaignKpis();
   }
 
   @override
@@ -191,6 +218,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
               _notesPage = 1;
               _activityPage = 1;
             });
+            _loadCampaignKpis();
             context.read<SalesDashboardBloc>().add(SalesDashboardRequested());
           },
           child: ListView(
@@ -286,6 +314,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                   ),
                 ],
               ),
+              const SizedBox(height: 24),
+
+              // Campaign Leads KPI Section
+              _buildCampaignLeadsSection(context, isWide: true),
               const SizedBox(height: 24),
 
               if (isWide) ...[
@@ -522,6 +554,10 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
               ),
             ],
           ),
+          const SizedBox(height: 20),
+
+          // Campaign Leads KPI Section
+          _buildCampaignLeadsSection(context, isWide: false),
           const SizedBox(height: 20),
 
           // Section 1: My Scheduled
@@ -958,6 +994,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
               _selectedPropertyAreas.clear();
             });
             ThemeManager().setRentMode(true);
+            _loadCampaignKpis();
           }),
           _togglePill('Re-Sale', !_isRentMode, () {
             setState(() {
@@ -970,6 +1007,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
               _selectedPropertyAreas.clear();
             });
             ThemeManager().setRentMode(false);
+            _loadCampaignKpis();
           }),
         ],
       ),
@@ -2815,6 +2853,201 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       final years = (diff.inDays / 365).floor();
       return 'Added $years ${years == 1 ? 'year' : 'years'} ago';
     }
+  }
+
+
+  // --- CAMPAIGN LEADS KPI SECTION (5 KPIs) ---
+  Widget _buildCampaignLeadsSection(BuildContext context, {required bool isWide}) {
+    final kpis = _campaignKpiData;
+    final filters = KpiFilterParams(
+      businessType: _isRentMode ? 'rent' : 'resale',
+      dateFilter: 'all',
+    );
+
+    final autoAllocateCard = _campaignKpiCard(
+      context,
+      title: 'Auto Allocate Leads',
+      value: '${kpis?.allocatedTotal ?? 0}',
+      subtitle: '${kpis?.allocatedListing ?? 0} Listing · ${kpis?.allocatedRequirement ?? 0} Req',
+      icon: Icons.assignment_ind_outlined,
+      accentColor: const Color(0xFF0D9488),
+      onTap: () {
+        SalesCampaignLeadsDialog.showAllocated(
+          context,
+          filters: filters,
+          initialData: kpis,
+        );
+      },
+    );
+
+    final interestedCard = _campaignKpiCard(
+      context,
+      title: 'Interested',
+      value: '${kpis?.interested ?? 0}',
+      subtitle: '${kpis?.interestedListing ?? 0} Listing · ${kpis?.interestedRequirement ?? 0} Req',
+      icon: Icons.thumb_up_alt_outlined,
+      accentColor: const Color(0xFF10B981),
+      onTap: () {
+        SalesCampaignLeadsDialog.showInterested(
+          context,
+          filters: filters,
+          initialData: kpis,
+        );
+      },
+    );
+
+    final rejectedCard = _campaignKpiCard(
+      context,
+      title: 'Rejected',
+      value: '${kpis?.rejected ?? 0}',
+      subtitle: '${kpis?.rejectedListing ?? 0} Listing · ${kpis?.rejectedRequirement ?? 0} Req',
+      icon: Icons.cancel_outlined,
+      accentColor: const Color(0xFFEF4444),
+      onTap: () {
+        SalesCampaignLeadsDialog.showRejected(
+          context,
+          filters: filters,
+          initialData: kpis,
+        );
+      },
+    );
+
+    final followupsCard = _campaignKpiCard(
+      context,
+      title: 'Follow-Ups',
+      value: '${kpis?.followupsTotal ?? 0}',
+      subtitle: '${kpis?.followupsListing ?? 0} Listing · ${kpis?.followupsRequirement ?? 0} Req',
+      icon: Icons.event_repeat_rounded,
+      accentColor: const Color(0xFF6366F1),
+      onTap: () {
+        SalesCampaignLeadsDialog.showFollowups(
+          context,
+          filters: filters,
+          initialData: kpis,
+        );
+      },
+    );
+
+    final siteVisitSchedCard = _campaignKpiCard(
+      context,
+      title: 'Site Visit Sched',
+      value: '${kpis?.siteVisitsScheduledTotal ?? 0}',
+      subtitle: 'Scheduled Visits',
+      icon: Icons.calendar_month_outlined,
+      accentColor: const Color(0xFFF59E0B),
+      onTap: () {
+        SalesCampaignLeadsDialog.showSiteVisitsScheduled(
+          context,
+          filters: filters,
+          initialData: kpis,
+        );
+      },
+    );
+
+    final isDark = ThemeManager().isDarkMode;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D9488).withValues(alpha: isDark ? 0.25 : 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.campaign_outlined, size: 20, color: Color(0xFF0D9488)),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Campaign Leads',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                letterSpacing: -0.2,
+              ),
+            ),
+            if (_loadingCampaignKpis) ...[
+              const SizedBox(width: 10),
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (isWide)
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              autoAllocateCard,
+              interestedCard,
+              rejectedCard,
+              followupsCard,
+              siteVisitSchedCard,
+            ],
+          )
+        else
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: MediaQuery.of(context).size.width < 360 ? 1.15 : 1.3,
+            children: [
+              autoAllocateCard,
+              interestedCard,
+              rejectedCard,
+              followupsCard,
+              siteVisitSchedCard,
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _campaignKpiCard(
+    BuildContext context, {
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color accentColor,
+    required VoidCallback onTap,
+  }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isWide = screenWidth >= 1024;
+
+    Widget card = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: StatCard(
+          title: title,
+          value: value,
+          subtitle: subtitle,
+          icon: icon,
+          accentColor: accentColor,
+          isCompact: true,
+          onTap: onTap,
+        ),
+      ),
+    );
+
+    if (isWide) {
+      return SizedBox(
+        width: 220,
+        child: card,
+      );
+    }
+    return card;
   }
 
 }

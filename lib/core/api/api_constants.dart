@@ -61,6 +61,8 @@ class ApiConstants {
   static const adminAllocationEngineToggle = "/admin/allocation-engine/toggle";
   static const adminAllocationEngineStatus = "/admin/allocation-engine/status";
   static const adminReassignLead = "/admin/reassign-lead";
+  static const adminReassignLeadSales = "/admin/reassign-lead/sales";
+  static String adminReassignLeadOptions(String leadId) => "/admin/reassign-lead/${Uri.encodeComponent(leadId)}/options";
   static const adminTransferCampaignLeadToSales = "/admin/campaign-leads/transfer-to-sales";
   static const adminAllocateOldLeads = "/admin/allocate-old-leads";
   static const adminTokenExpiration = "/admin/token-expiration";

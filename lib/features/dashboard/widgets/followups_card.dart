@@ -150,8 +150,10 @@ class _FollowupsCardState extends State<FollowupsCard> {
       builder: (context, _) {
         final role = RoleGuard.currentUser?.role ?? 'Admin';
         final permService = PermissionMatrixService.instance;
-        final canViewFollowups = RoleGuard.isSuperAdmin(role) || permService.hasPermission(role, 'page.dashboard.followups');
-        final canViewSiteVisits = RoleGuard.isSuperAdmin(role) || permService.hasPermission(role, 'page.dashboard.site_visits');
+        // For Admin these toggles only control the "+ Add" button; both sections stay visible.
+        final isAdminRole = role.trim().toLowerCase() == 'admin';
+        final canViewFollowups = isAdminRole || RoleGuard.isSuperAdmin(role) || permService.hasPermission(role, 'page.dashboard.followups');
+        final canViewSiteVisits = isAdminRole || RoleGuard.isSuperAdmin(role) || permService.hasPermission(role, 'page.dashboard.site_visits');
 
         if (!canViewFollowups && !canViewSiteVisits) {
           return const SizedBox.shrink();
@@ -181,6 +183,9 @@ class _FollowupsCardState extends State<FollowupsCard> {
         final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
         final targetListingType = ThemeManager().isRentMode ? 'Rent' : 'Re-Sale';
         final isSiteVisitSection = _mainSection == 'Site Visit Scheduled';
+        final canAddInSection = !isAdminRole ||
+            permService.hasPermission(
+                role, isSiteVisitSection ? 'page.dashboard.site_visits' : 'page.dashboard.followups');
 
         final syncResult = FollowupSyncEngine.categorizeFollowups(
           serverFollowups: widget.followups,
@@ -281,7 +286,7 @@ class _FollowupsCardState extends State<FollowupsCard> {
                         ],
                       ),
                     ),
-                    if (widget.onAddFollowup != null)
+                    if (widget.onAddFollowup != null && canAddInSection)
                       InkWell(
                         onTap: widget.onAddFollowup,
                         borderRadius: BorderRadius.circular(8),

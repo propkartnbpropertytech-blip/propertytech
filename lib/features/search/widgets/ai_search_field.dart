@@ -33,25 +33,43 @@ class AiSearchField extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final accent = dark ? const Color(0xFF5EEAD4) : const Color(0xFF0F766E);
     final text = dark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D);
-    final field = _field(context, accent, text, dark, controller?.text.isNotEmpty ?? false);
-    if (controller == null) return field;
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller!,
-      builder: (context, value, _) => _field(context, accent, text, dark, value.text.isNotEmpty),
+    final listenables = <Listenable>[?controller, ?focusNode];
+    if (listenables.isEmpty) return _field(context, accent, text, dark, false, false);
+    return ListenableBuilder(
+      listenable: Listenable.merge(listenables),
+      builder: (context, _) => _field(
+        context,
+        accent,
+        text,
+        dark,
+        controller?.text.isNotEmpty ?? false,
+        focusNode?.hasFocus ?? false,
+      ),
     );
   }
 
-  Widget _field(BuildContext context, Color accent, Color text, bool dark, bool hasText) {
+  Widget _field(BuildContext context, Color accent, Color text, bool dark, bool hasText, bool focused) {
     final fill = dark ? const Color(0xFF1E293B) : Colors.white;
+    final violet = dark ? const Color(0xFFA5B4FC) : const Color(0xFF6366F1);
     return Semantics(
       textField: true,
       label: 'AI Search',
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
         height: dense ? 40 : 42,
+        padding: EdgeInsets.all(focused ? 1.5 : 1),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          gradient: LinearGradient(colors: focused ? [accent, violet] : [accent, accent]),
+          boxShadow: focused
+              ? [BoxShadow(color: violet.withValues(alpha: dark ? 0.35 : 0.22), blurRadius: 14, spreadRadius: 0.5)]
+              : const [],
+        ),
+        child: Container(
         decoration: BoxDecoration(
           color: fill,
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: accent),
+          borderRadius: BorderRadius.circular(radius - 1),
         ),
         child: TextField(
           controller: controller,
@@ -72,7 +90,10 @@ class AiSearchField extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.auto_awesome_rounded, size: 16, color: accent),
+                  ShaderMask(
+                    shaderCallback: (rect) => LinearGradient(colors: [accent, violet]).createShader(rect),
+                    child: const Icon(Icons.auto_awesome_rounded, size: 16, color: Colors.white),
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'AI Search',
@@ -90,9 +111,10 @@ class AiSearchField extends StatelessWidget {
                   )
                 : null,
             border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(vertical: dense ? 10 : 11, horizontal: 8),
+            contentPadding: EdgeInsets.symmetric(vertical: dense ? 9 : 10, horizontal: 8),
             isDense: true,
           ),
+        ),
         ),
       ),
     );

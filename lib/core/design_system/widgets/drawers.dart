@@ -95,6 +95,7 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
 
   bool _isMobileRevealed = false;
   String? _salesPersonMobile;
+  String? _creatorName;
   bool _isLoadingSalesPersonMobile = true;
   bool _isDownloadingImages = false;
 
@@ -481,7 +482,33 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
     );
   }
 
+  /// Actual creator (Admin / Sales / Telecaller) of the property from the server; false when unavailable.
+  Future<bool> _fetchPropertyCreator() async {
+    final id = widget.property.id;
+    if (id.isEmpty || id.startsWith('temp_')) return false;
+    try {
+      final response = await DioClient.dio.get('/properties/$id/creator');
+      final data = response.data is Map ? response.data['data'] : null;
+      final creator = data is Map ? data['creator'] : null;
+      if (creator is! Map) return false;
+      final name = (creator['name'] ?? '').toString().trim();
+      final mobile = (creator['mobile'] ?? '').toString().trim();
+      if (name.isEmpty && mobile.isEmpty) return false;
+      if (mounted) {
+        setState(() {
+          _creatorName = name.isEmpty ? null : name;
+          _salesPersonMobile = mobile.isEmpty ? null : mobile;
+          _isLoadingSalesPersonMobile = false;
+        });
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _fetchSalesPersonMobile() async {
+    if (await _fetchPropertyCreator()) return;
     try {
       final users = await UsersRepository().getUsers();
       final targetId = widget.property.adminId ?? widget.property.createdBy;
@@ -596,9 +623,11 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
   }
 
   Widget _buildRightContactSellerCard(BuildContext context, PropertyModel property, auth_model.UserModel? currentUser) {
-    final sellerName = property.createdByName.isNotEmpty
-        ? property.createdByName
-        : (property.ownerName.isNotEmpty ? property.ownerName : 'NB PROPERTYTECH');
+    final sellerName = (_creatorName != null && _creatorName!.isNotEmpty)
+        ? _creatorName!
+        : property.createdByName.isNotEmpty
+            ? property.createdByName
+            : (property.ownerName.isNotEmpty ? property.ownerName : 'NB PROPERTYTECH');
     final initials = sellerName.isNotEmpty ? sellerName.substring(0, 2).toUpperCase() : 'NP';
 
     final displayMobile = _salesPersonMobile;
@@ -1185,7 +1214,12 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
                             ],
                           ),
                           const SizedBox(height: CRMSpacing.s),
-                          CRMImageSlider(images: property.images, videos: property.videos),
+                          CRMImageSlider(
+                            images: property.images,
+                            videos: property.videos,
+                            downloadFileNamePrefix:
+                                property.propertyCode.isNotEmpty ? property.propertyCode : 'property',
+                          ),
                         ],
                       ),
                       const SizedBox(height: CRMSpacing.l),
@@ -1300,7 +1334,8 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
 class CRMImageSlider extends StatefulWidget {
   final List<String> images;
   final List<String> videos;
-  const CRMImageSlider({super.key, required this.images, required this.videos});
+  final String? downloadFileNamePrefix;
+  const CRMImageSlider({super.key, required this.images, required this.videos, this.downloadFileNamePrefix});
 
   @override
   State<CRMImageSlider> createState() => _CRMImageSliderState();
@@ -1655,6 +1690,7 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
                       builder: (context) => CRMImageZoomViewer(
                         images: widget.images,
                         initialIndex: index,
+                        downloadFileNamePrefix: widget.downloadFileNamePrefix,
                       ),
                     );
                   },
@@ -1690,6 +1726,7 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
                     builder: (context) => CRMImageZoomViewer(
                       images: widget.images,
                       initialIndex: _currentIndex,
+                      downloadFileNamePrefix: widget.downloadFileNamePrefix,
                     ),
                   );
                 },
@@ -1739,6 +1776,7 @@ class _CRMImageSliderState extends State<CRMImageSlider> {
           builder: (context) => CRMImageZoomViewer(
             images: widget.images,
             initialIndex: index,
+            downloadFileNamePrefix: widget.downloadFileNamePrefix,
           ),
         );
       },
@@ -1804,10 +1842,14 @@ class CRMImageZoomViewer extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
 
+  /// When set, shows a per-image download icon; used as the downloaded file name prefix.
+  final String? downloadFileNamePrefix;
+
   const CRMImageZoomViewer({
     super.key,
     required this.images,
     required this.initialIndex,
+    this.downloadFileNamePrefix,
   });
 
   @override
@@ -1818,6 +1860,10 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
   late PageController _pageController;
   late ScrollController _thumbScrollController;
   late int _currentIndex;
+  bool _isDownloadingImage = false;
+  String? _downloadStatusMessage;
+  bool _downloadStatusSuccess = false;
+  Timer? _downloadStatusTimer;
 
   @override
   void initState() {
@@ -1833,9 +1879,97 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
 
   @override
   void dispose() {
+    _downloadStatusTimer?.cancel();
     _pageController.dispose();
     _thumbScrollController.dispose();
     super.dispose();
+  }
+
+  Uint8List? _zipSingleImage(String fileName, Uint8List bytes) {
+    final archive = Archive()..addFile(ArchiveFile(fileName, bytes.length, bytes));
+    final encoded = ZipEncoder().encode(archive);
+    return encoded != null ? Uint8List.fromList(encoded) : null;
+  }
+
+  void _showDownloadStatus(String message, {required bool success}) {
+    if (!mounted) return;
+    _downloadStatusTimer?.cancel();
+    setState(() {
+      _downloadStatusMessage = message;
+      _downloadStatusSuccess = success;
+    });
+    _downloadStatusTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _downloadStatusMessage = null);
+    });
+  }
+
+  Future<void> _downloadCurrentImage() async {
+    final prefix = widget.downloadFileNamePrefix;
+    if (_isDownloadingImage || prefix == null || widget.images.isEmpty) return;
+
+    final index = _currentIndex;
+    final url = widget.images[index].trim();
+    if (url.isEmpty) return;
+
+    final rawExt = url.split('.').last.split('?').first.toLowerCase();
+    final ext = ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt) ? rawExt : 'jpg';
+    final baseName = '${prefix}_image_${index + 1}';
+    final fileName = '$baseName.$ext';
+    final zipFileName = '$baseName.zip';
+    final isMobileView = MediaQuery.sizeOf(context).width < 600;
+
+    setState(() => _isDownloadingImage = true);
+    var success = false;
+    try {
+      final response = await DioClient.dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = response.data;
+      if (data != null && data.isNotEmpty) {
+        final bytes = Uint8List.fromList(data);
+        if (kIsWeb) {
+          if (isMobileView) {
+            final zipBytes = _zipSingleImage(fileName, bytes);
+            if (zipBytes != null) {
+              await FileDownloader.download(zipBytes, zipFileName);
+              success = true;
+            }
+          } else {
+            await FileDownloader.download(bytes, fileName);
+            success = true;
+          }
+        } else if (Platform.isAndroid) {
+          final zipBytes = _zipSingleImage(fileName, bytes);
+          String? zipPath;
+          if (zipBytes != null) {
+            zipPath = await GalleryMediaSaver.saveZipToDownloads(
+              bytes: zipBytes,
+              fileName: zipFileName,
+            );
+          }
+          final galleryCount = await GalleryMediaSaver.saveImagesToGallery(
+            images: [
+              {'bytes': bytes, 'fileName': fileName},
+            ],
+            albumName: 'PropKart - $prefix',
+          );
+          success = galleryCount > 0 || zipPath != null;
+        } else {
+          await FileDownloader.download(bytes, fileName);
+          success = true;
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed downloading image ${index + 1}: $e');
+    } finally {
+      if (mounted) setState(() => _isDownloadingImage = false);
+    }
+
+    _showDownloadStatus(
+      success ? 'Image ${index + 1} downloaded successfully' : 'Failed to download image',
+      success: success,
+    );
   }
 
   void _scrollToThumbnail(int index) {
@@ -1925,17 +2059,73 @@ class _CRMImageZoomViewerState extends State<CRMImageZoomViewer> {
                       ),
                     ),
                   ),
-                  CircleAvatar(
-                    backgroundColor: Colors.black54,
-                    child: IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.downloadFileNamePrefix != null) ...[
+                        CircleAvatar(
+                          backgroundColor: Colors.black54,
+                          child: _isDownloadingImage
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : IconButton(
+                                  icon: const Icon(Icons.download_rounded, color: Colors.white),
+                                  onPressed: _downloadCurrentImage,
+                                ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      CircleAvatar(
+                        backgroundColor: Colors.black54,
+                        child: IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
+
+          if (_downloadStatusMessage != null)
+            Positioned(
+              top: 80,
+              left: 20,
+              right: 20,
+              child: SafeArea(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _downloadStatusSuccess ? CRMColors.success : CRMColors.danger,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _downloadStatusSuccess ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            _downloadStatusMessage!,
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Left Arrow Control (Desktop)
           if (isDesktop && _currentIndex > 0)

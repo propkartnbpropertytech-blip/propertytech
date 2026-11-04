@@ -1150,6 +1150,15 @@ class LeadListItem {
       return fallback;
     }
 
+    String? sanitizeStr(dynamic val) {
+      if (val == null) return null;
+      final s = val.toString().trim();
+      if (s.isEmpty || s.toLowerCase() == 'null' || s.toLowerCase() == 'undefined' || s.toLowerCase() == 'none') {
+        return null;
+      }
+      return s;
+    }
+
     final p = json['phone']?.toString() ?? json['sanitized_phone']?.toString() ?? '';
     final sp = json['sanitized_phone']?.toString() ?? p;
 
@@ -1196,12 +1205,12 @@ class LeadListItem {
       source: json['source']?.toString() ?? 'Other',
       leadType: json['lead_type']?.toString() ?? 'Requirement',
       stage: json['stage']?.toString() ?? 'NEW',
-      allocationStatus: json['allocation_status']?.toString(),
-      callDisposition: json['call_disposition']?.toString(),
-      rejectionReason: json['rejection_reason']?.toString(),
-      archiveReason: json['archive_reason']?.toString(),
-      telecallerRemarks: json['telecaller_remarks']?.toString() ?? json['notes']?.toString(),
-      transferRemarks: json['transfer_remarks']?.toString(),
+      allocationStatus: sanitizeStr(json['allocation_status']),
+      callDisposition: sanitizeStr(json['call_disposition']),
+      rejectionReason: sanitizeStr(json['rejection_reason']),
+      archiveReason: sanitizeStr(json['archive_reason']),
+      telecallerRemarks: sanitizeStr(json['telecaller_remarks']) ?? sanitizeStr(json['notes']),
+      transferRemarks: sanitizeStr(json['transfer_remarks']),
       budget: parseNum(json['budget']),
       budgetFrom: parseNum(json['budget_from']),
       budgetTo: parseNum(json['budget_to']),
@@ -1212,17 +1221,17 @@ class LeadListItem {
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
       telecallerId: json['telecaller_id']?.toString(),
-      telecallerName: json['telecaller_name']?.toString(),
+      telecallerName: sanitizeStr(json['telecaller_name']),
       telecallerEmail: json['telecaller_email']?.toString(),
       telecallerPhone: json['telecaller_phone']?.toString(),
       salesUserId: json['sales_user_id']?.toString(),
-      salesUserName: json['sales_user_name']?.toString(),
+      salesUserName: sanitizeStr(json['sales_user_name']),
       salesUserEmail: json['sales_user_email']?.toString(),
       salesUserPhone: json['sales_user_phone']?.toString(),
-      salesStatus: json['sales_status']?.toString(),
-      salesRemarks: json['sales_remarks']?.toString(),
-      latestCallOutcome: json['latest_call_outcome']?.toString(),
-      latestCallRemarks: json['latest_call_remarks']?.toString(),
+      salesStatus: sanitizeStr(json['sales_status']),
+      salesRemarks: sanitizeStr(json['sales_remarks']),
+      latestCallOutcome: sanitizeStr(json['latest_call_outcome']),
+      latestCallRemarks: sanitizeStr(json['latest_call_remarks']),
       latestCallAt: json['latest_call_at']?.toString(),
       budgetDisplay: json['budget_display']?.toString(),
       configuration: json['configuration']?.toString(),

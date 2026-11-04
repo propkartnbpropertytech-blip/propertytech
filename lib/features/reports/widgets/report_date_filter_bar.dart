@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/security/admin_action_gate.dart';
 import '../../../core/theme/theme_manager.dart';
 import '../models/report_date_range.dart';
 
@@ -15,6 +16,13 @@ class ReportDateFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return AdminActionBuilder(
+      actionKey: 'page.reports.filters',
+      builder: (context, allowed) => allowed ? _buildBar(context) : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildBar(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
 

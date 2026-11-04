@@ -165,6 +165,9 @@ class RequirementModel {
 
   /// Returns true if this lead was manually created via "+ Add Lead" by a Salesperson, Telecaller, or Admin.
   bool get isManuallyAdded {
+    if (isDirectSalesAllocated) return false;
+    if (isCampaignLead) return false;
+    if ((leadSource ?? '').toLowerCase().contains('housing')) return false;
     // 1. Automated integration exclusion:
     // If it has an external Meta Lead ID, Housing sync Lead ID, or Campaign integration info, it is NOT manually added.
     if (isMetaLead ||
@@ -563,25 +566,45 @@ class RequirementModel {
       }
     }
 
-    double computedMin = (json['minBudget'] ?? json['budget_from'] as num?)?.toDouble() ?? 0.0;
-    double computedMax = (json['maxBudget'] ?? json['budget_to'] as num?)?.toDouble() ?? 0.0;
+    double? parseNumeric(dynamic val) {
+      if (val == null) return null;
+      if (val is num) return val.toDouble();
+      return double.tryParse(val.toString().replaceAll(',', '').trim());
+    }
+
+    double computedMin = parseNumeric(json['minBudget'] ?? json['budget_from']) ?? 0.0;
+    double computedMax = parseNumeric(json['maxBudget'] ?? json['budget_to']) ?? 0.0;
     if (computedMin == 0.0 && computedMax == 0.0) {
-      final baseBgt = (json['budget'] as num?)?.toDouble() ?? 0.0;
+      final baseBgt = parseNumeric(json['budget']) ?? 0.0;
       if (baseBgt > 0) {
         computedMin = baseBgt * 0.85;
         computedMax = baseBgt * 1.15;
       } else {
         final meta = json['meta_custom_fields'] ?? json['metaCustomFields'];
         if (meta is Map) {
-          for (final key in [
-            'what_is_your_preferred_monthly_rent_budget?',
-            'what_is_your_monthly_rental_budget?',
-            'What Is Your Monthly Rental Budget?',
-            'what_is_your_expected_monthly_rent?',
-            'expected_monthly_rent',
-            'budget',
-            'Budget',
-          ]) {
+          final minP = parseNumeric(meta['min_price'] ?? meta['minPrice'] ?? meta['budget_from']);
+          final maxP = parseNumeric(meta['max_price'] ?? meta['maxPrice'] ?? meta['budget_to']);
+          if (minP != null && minP > 0 && maxP != null && maxP > 0) {
+            computedMin = minP < maxP ? minP : maxP;
+            computedMax = minP > maxP ? minP : maxP;
+          } else if (minP != null && minP > 0) {
+            computedMin = minP * 0.85;
+            computedMax = minP * 1.15;
+          } else if (maxP != null && maxP > 0) {
+            computedMin = maxP * 0.85;
+            computedMax = maxP * 1.15;
+          } else {
+            for (final key in [
+              'what_is_your_preferred_monthly_rent_budget?',
+              'what_is_your_monthly_rental_budget?',
+              'What Is Your Monthly Rental Budget?',
+              'what_is_your_expected_monthly_rent?',
+              'expected_monthly_rent',
+              'budget',
+              'Budget',
+              'price',
+              'Price',
+            ]) {
             final val = meta[key]?.toString().trim();
             if (val != null && val.isNotEmpty) {
               final clean = val.replaceAll('_', ' ').replaceAll(RegExp(r'[–—]'), '-');
@@ -621,6 +644,7 @@ class RequirementModel {
         }
       }
     }
+  }
 
     return RequirementModel(
       id: json['id'] ?? '',
@@ -630,14 +654,14 @@ class RequirementModel {
       categoryName: catName,
       propertyTypeId: json['propertyTypeId'] ?? json['property_type_id'] ?? '',
       propertyTypeName: typeName,
-      configurationId: json['configurationId'] ?? json['configuration_id'],
+      configurationId: json['configurationId'] ?? json['configuration_id'] ?? (json['configuration'] is Map ? json['configuration']['id']?.toString() : null),
       configurationName: configName,
       listingTypeId: json['listingTypeId'] ?? json['listing_type_id'],
       listingTypeName: listingName,
       minBudget: computedMin,
       maxBudget: computedMax,
-      minArea: (json['minArea'] ?? json['min_area'] as num?)?.toDouble(),
-      maxArea: (json['maxArea'] ?? json['max_area'] as num?)?.toDouble(),
+      minArea: parseNumeric(json['minArea'] ?? json['min_area']),
+      maxArea: parseNumeric(json['maxArea'] ?? json['max_area']),
       areaIds: aIds,
       areaNames: aNames,
       configurationIds: configIds,
@@ -1230,7 +1254,7 @@ class RequirementModel {
 
 String _requirementStatusKey(String value) {
   final normalized = value.trim().toLowerCase();
-  if (normalized == 'assigned' || normalized == 'assigned to sales') return 'assigned';
+  if (normalized == 'assigned' || normalized == 'assigned to sales' || normalized == 'allocate to sales') return 'assigned';
   if (normalized == 'site visit' || normalized == 'site visit sche.' || normalized == 'site visit scheduled') {
     return 'site visit';
   }
@@ -1241,7 +1265,7 @@ String _requirementStatusKey(String value) {
 
 bool _isAssignedRequirementStatus(String value) {
   final normalized = value.trim().toLowerCase();
-  return normalized == 'assigned' || normalized == 'assigned to sales';
+  return normalized == 'assigned' || normalized == 'assigned to sales' || normalized == 'allocate to sales';
 }
 
 bool _isTerminalRequirementStatus(String value) {

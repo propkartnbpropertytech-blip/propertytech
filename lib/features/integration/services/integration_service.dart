@@ -878,6 +878,7 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
   /// Fetch Column Layout settings from backend server DB.
   /// Personal layouts override the organization default for each section.
   Future<bool> fetchColumnLayoutFromServer() async {
+    if (!_mayCallCampaignApi(_columnSettingsPermissions)) return false;
     try {
       final response = await _apiClient.get('/integrations/campaign-column-settings');
       final body = response.data;
@@ -1060,11 +1061,32 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Same permission list the backend checks on GET /integrations/leads. A role without one gets 403.
+  static const _serverLeadPermissions = {
+    'campaign.manage',
+    'telecaller.leads',
+    'telecaller.calls',
+    'requirements.manage',
+    'leads.view',
+    'sales.leads',
+  };
+
+  /// Same permission list the backend checks on /integrations/campaign-column-settings.
+  static const _columnSettingsPermissions = {'campaign.manage', 'telecaller.leads', 'telecaller.calls'};
+
+  bool _mayCallCampaignApi(Set<String> required) {
+    final user = RoleGuard.currentUser;
+    if (user == null || RoleGuard.isSuperAdmin(user.role)) return true;
+    if (user.permissions.any(required.contains)) return true;
+    return RoleGuard.canAccessCampaign(user.role);
+  }
+
   Future<int> _executeFetchServerLeads({
     bool silent = false,
     bool resetWithServer = false,
     String? source,
   }) async {
+    if (!_mayCallCampaignApi(_serverLeadPermissions)) return 0;
     try {
       final queryParameters = <String, dynamic>{'limit': 5000};
       if (source != null && source.isNotEmpty && source != 'All') {

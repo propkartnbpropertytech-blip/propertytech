@@ -44,6 +44,11 @@ class PortalIntegrationsService {
     return Map<String, dynamic>.from((response.data as Map)['data'] as Map);
   }
 
+  Future<void> remove(String id) async {
+    await _api.delete('/portal-integrations/$id');
+    PortalIntegrationsService.invalidate();
+  }
+
   Future<Map<String, dynamic>> getOne(String id) async {
     final response = await _api.get('/portal-integrations/$id');
     return Map<String, dynamic>.from((response.data as Map)['data'] as Map);

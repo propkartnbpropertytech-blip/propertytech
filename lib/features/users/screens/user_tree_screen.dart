@@ -654,7 +654,7 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
   Widget _buildMemberTile(_TreeUser user, IconData icon, Color color) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => context.go('/users/${user.id}'),
+      onTap: RoleGuard.canAction('page.employees.details') ? () => context.go('/users/${user.id}') : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         child: Row(
@@ -1035,7 +1035,9 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: isUnlinked ? null : () => context.go('/users/${admin.id}'),
+      onTap: isUnlinked || !RoleGuard.canAction('page.employees.details')
+          ? null
+          : () => context.go('/users/${admin.id}'),
       child: Container(
         width: 240,
         decoration: _graphCardDecoration(accent, highlighted: !isUnlinked && _matches(admin)),
@@ -1111,7 +1113,7 @@ class _UserTreeScreenState extends State<UserTreeScreen> {
   Widget _graphMemberCard(_TreeUser user, IconData icon, Color color) {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => context.go('/users/${user.id}'),
+      onTap: RoleGuard.canAction('page.employees.details') ? () => context.go('/users/${user.id}') : null,
       child: Container(
         width: 200,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),

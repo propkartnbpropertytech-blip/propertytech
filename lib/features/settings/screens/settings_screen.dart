@@ -20,6 +20,7 @@ import 'kpi_config_screen.dart';
 import '../widgets/backup_management_card.dart';
 import '../services/page_control_service.dart';
 import '../../../core/security/permission_matrix_service.dart';
+import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/widgets/under_development_screen.dart';
 import '../../requirements/services/match_criteria_manager.dart';
 import '../services/upload_limits_manager.dart';
@@ -247,9 +248,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               value: isDark,
               activeColor: CRMColors.primary,
-              onChanged: (val) {
-                ThemeManager().toggleTheme();
-              },
+              onChanged: !RoleGuard.canAction(
+                      isDark ? 'page.settings.appearance.light' : 'page.settings.appearance.dark')
+                  ? null
+                  : (val) {
+                      ThemeManager().toggleTheme();
+                    },
               contentPadding: EdgeInsets.zero,
             ),
             if (isAdminOrSuperAdmin) ...[
@@ -294,6 +298,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() => _activeSection = 'match_criteria');
                 },
               ),
+              if (RoleGuard.canAction('page.settings.appearance.sync_diagnostics')) ...[
               const Divider(height: CRMSpacing.l),
               ListTile(
                 title: Text(
@@ -317,6 +322,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   );
                 },
               ),
+              ],
             ],
           ],
         ),
@@ -427,7 +433,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final primaryColor = isDark ? theme.primaryDark : theme.primaryLight;
 
     return InkWell(
-      onTap: () => ThemeManager().setTheme(theme.id),
+      onTap: RoleGuard.canAction('page.settings.themes.change')
+          ? () => ThemeManager().setTheme(theme.id)
+          : null,
       borderRadius: BorderRadius.circular(CRMBorderRadius.card),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -839,7 +847,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildActionDisabledNotice(String message) {
+    return Row(
+      children: [
+        Icon(Icons.lock_outline_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            message,
+            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRunMatchCriteriaSection() {
+    final canSave = RoleGuard.canAction('page.settings.appearance.match_criteria');
     final manager = MatchCriteriaManager();
     final currentScore = _selectedMatchThreshold.toInt();
     final thresholdColor = manager.thresholdColor;
@@ -967,6 +991,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: CRMSpacing.s),
 
+                if (!canSave) ...[
+                  _buildActionDisabledNotice('Changing the match criteria is disabled by Super Admin.'),
+                  const SizedBox(height: CRMSpacing.s),
+                ],
+                IgnorePointer(
+                  ignoring: !canSave,
+                  child: Opacity(
+                    opacity: canSave ? 1 : 0.5,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     activeTrackColor: thresholdColor,
@@ -1181,6 +1216,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ],
+                ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1450,6 +1489,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildUploadLimitsSection() {
+    final canSave = RoleGuard.canAction('page.settings.upload_limits.save');
     final imageCount = _selectedMaxImages.round().clamp(0, 100);
     final videoCount = _selectedMaxVideos.round().clamp(0, 20);
 
@@ -1569,7 +1609,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 max: 100,
                 divisions: 100,
                 label: '$imageCount',
-                onChanged: (val) {
+                onChanged: !canSave ? null : (val) {
                   setState(() {
                     _selectedMaxImages = val.roundToDouble();
                     _uploadLimitsDirty = true;
@@ -1625,7 +1665,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 max: 20,
                 divisions: 20,
                 label: '$videoCount',
-                onChanged: (val) {
+                onChanged: !canSave ? null : (val) {
                   setState(() {
                     _selectedMaxVideos = val.roundToDouble();
                     _uploadLimitsDirty = true;
@@ -1637,8 +1677,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: CRMSpacing.l),
             const Divider(),
             const SizedBox(height: CRMSpacing.m),
+            if (!canSave) ...[
+              _buildActionDisabledNotice('Updating upload limits is disabled by Super Admin.'),
+              const SizedBox(height: CRMSpacing.s),
+            ],
             ElevatedButton.icon(
-              onPressed: _isSavingUploadLimits ? null : _persistUploadLimits,
+              onPressed: _isSavingUploadLimits || !canSave ? null : _persistUploadLimits,
               icon: _isSavingUploadLimits
                   ? const SizedBox(
                       width: 16,
@@ -1974,15 +2018,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 setState(() => _mobileActiveSection = 'system');
               },
             ),
-            const Divider(height: 1, indent: 48),
-            _buildMobileSettingsTile(
-              icon: Icons.sync_rounded,
-              title: 'Sync Diagnostics',
-              subtitle: 'Offline queue, sync events & database health',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncDebugScreen()),
+            if (RoleGuard.canAction('page.settings.appearance.sync_diagnostics')) ...[
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.sync_rounded,
+                title: 'Sync Diagnostics',
+                subtitle: 'Offline queue, sync events & database health',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SyncDebugScreen()),
+                ),
               ),
-            ),
+            ],
             if (isSuperAdmin) ...[
               const Divider(height: 1, indent: 48),
               _buildMobileSettingsTile(
