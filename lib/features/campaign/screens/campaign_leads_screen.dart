@@ -61,7 +61,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
   Future<void> _loadAllocationTargetRole() async {
     final role = await _service.getAllocationTargetRole();
-    if (mounted && role.isNotEmpty) {
+    if (mounted && role.isNotEmpty && role != _allocationTargetRole) {
       setState(() {
         _allocationTargetRole = role;
       });
@@ -161,6 +161,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     _service.watchCampaignUi();
     // Warm up leads immediately from storage and sync in background
     _service.ensureLoaded();
+    if (_service.lastTargetRole != null && _service.lastTargetRole!.isNotEmpty) {
+      _allocationTargetRole = _service.lastTargetRole!;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final curLock = (_effectiveLockSource ?? widget.initialSource ?? '').toLowerCase();
@@ -4157,7 +4160,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           if (!isPropertyListing) const SizedBox(width: 6),
         ] else if (lead.assignedTelecallerName?.isNotEmpty == true) ...[
           Tooltip(
-            message: 'Allocated to Telecaller: ${lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
+            message: 'Allocated to ${isSalesAllocationMode ? "Sales" : "Telecaller"}: ${isSalesAllocationMode ? (lead.assignedToName ?? lead.assignedTelecallerName) : lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -7640,8 +7643,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final requirementTotalCount = dateFilteredSourceLeads.where((l) => l.leadType == 'Requirement').length;
     final notInterestedTotalCount = dateFilteredSourceLeads.where((l) => isNotInterestedStatus(l.campaignStatus)).length;
 
-    // 2. Leads Assigned to Telecallers KPI (date filtered)
-    final assignedLeads = dateFilteredSourceLeads.where(TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller).toList();
+    // 2. Leads Assigned to Telecallers / Sales KPI (date filtered)
+    final assignedLeads = dateFilteredSourceLeads.where((l) => TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(l, isSalesMode: isSalesAllocationMode)).toList();
     final totalAssignedCount = assignedLeads.length;
     final assignedPropCount = assignedLeads.where((l) => l.leadType == 'Property Listing').length;
     final assignedReqCount = assignedLeads.where((l) => l.leadType == 'Requirement').length;
@@ -7662,8 +7665,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       extraBadgeCount: notInterestedTotalCount,
       extraBadgeIcon: Icons.do_not_disturb_on_rounded,
       extraBadgeColor: const Color(0xFFEF4444),
-      bannerText: '$totalAssignedCount of $totalLeadsCount leads allotted to telecallers ($assignedPercentage% coverage)',
-      bannerIcon: Icons.support_agent_rounded,
+      bannerText: '$totalAssignedCount of $totalLeadsCount leads ${isSalesAllocationMode ? "allocated to sales" : "allotted to telecallers"} ($assignedPercentage% coverage)',
+      bannerIcon: isSalesAllocationMode ? Icons.badge_outlined : Icons.support_agent_rounded,
       icon: Icons.pie_chart_rounded,
       accentColor: primaryColor,
       isClickable: true,
@@ -7676,6 +7679,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               sourceName: isMeta ? 'Meta Ads' : (isHousing ? 'Housing.com' : sourceTitle),
               dateRangeLabel: dateRangeLabel,
               leads: dateFilteredSourceLeads,
+              isSalesMode: isSalesAllocationMode,
             ),
           ),
         );
@@ -7684,10 +7688,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
 
     final assignedCard = _buildSourceKpiCard(
       context,
-      title: 'Leads Allotted to Telecallers',
+      title: isSalesAllocationMode ? 'Leads Allocated to Sales' : 'Leads Allotted to Telecallers',
       subtitle: '$totalAssignedCount out of $totalLeadsCount leads assigned ($assignedPercentage%)',
       totalCount: totalAssignedCount,
-      totalCountLabel: 'Allotted to Telecallers',
+      totalCountLabel: isSalesAllocationMode ? 'Allocated to Sales' : 'Allotted to Telecallers',
       propCount: assignedPropCount,
       reqCount: assignedReqCount,
       extraBadgeLabel: 'Unallocated',
@@ -7696,12 +7700,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       extraBadgeColor: const Color(0xFFF59E0B),
       bannerText: unallocatedCount > 0
           ? '$unallocatedCount leads unallocated & ready for distribution'
-          : 'All $totalLeadsCount leads have been assigned to telecallers',
+          : (isSalesAllocationMode ? 'All $totalLeadsCount leads have been assigned to sales' : 'All $totalLeadsCount leads have been assigned to telecallers'),
       bannerIcon: unallocatedCount > 0 ? Icons.info_outline_rounded : Icons.check_circle_outline_rounded,
-      icon: Icons.support_agent_rounded,
+      icon: isSalesAllocationMode ? Icons.badge_outlined : Icons.support_agent_rounded,
       accentColor: const Color(0xFF6366F1),
       isClickable: true,
-      badgeText: '$dateRangeLabel · View Telecallers →',
+      badgeText: '$dateRangeLabel · ${isSalesAllocationMode ? "View Sales →" : "View Telecallers →"}',
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -7710,6 +7714,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               sourceName: isMeta ? 'Meta Ads' : (isHousing ? 'Housing.com' : sourceTitle),
               dateRangeLabel: dateRangeLabel,
               allSourceLeads: dateFilteredSourceLeads,
+              isSalesMode: isSalesAllocationMode,
             ),
           ),
         );

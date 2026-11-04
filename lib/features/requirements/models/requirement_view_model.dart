@@ -530,13 +530,19 @@ class RequirementFilterEngine {
         continue;
       }
 
-      // 0. Campaign leads belong to the Campaign Leads page only.
-      // They MUST NOT appear on the regular Leads page.
-      if (!campaignMode) {
-        if (r.isCampaignLead || r.isDirectSalesAllocated || RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) {
+      // 0. Campaign leads filtering:
+      if (campaignMode) {
+        // In campaignMode (e.g. My Campaign Leads), only campaign leads belong on this page
+        if (!r.isCampaignLead && !r.isDirectSalesAllocated && !RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) {
+          continue;
+        }
+        final assigned = r.assignedTo?.trim();
+        final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+        if (!hasAssignedSalesperson) {
           continue;
         }
       } else {
+        // On regular Leads page, campaign leads must have an assigned salesperson to appear
         if (r.isCampaignLead) {
           final assigned = r.assignedTo?.trim();
           final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';

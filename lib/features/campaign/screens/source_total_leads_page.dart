@@ -13,6 +13,7 @@ class SourceTotalLeadsPage extends StatefulWidget {
   final String sourceName; // 'Meta Ads' or 'Housing.com'
   final String dateRangeLabel; // e.g. 'Today', 'This Month', etc.
   final List<IntegrationLeadModel> leads;
+  final bool isSalesMode;
 
   const SourceTotalLeadsPage({
     super.key,
@@ -20,6 +21,7 @@ class SourceTotalLeadsPage extends StatefulWidget {
     required this.sourceName,
     this.dateRangeLabel = 'All Time',
     required this.leads,
+    this.isSalesMode = false,
   });
 
   @override
@@ -67,7 +69,7 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
     final allLeads = widget.leads;
     final propLeads = allLeads.where((l) => l.leadType == 'Property Listing').toList();
     final reqLeads = allLeads.where((l) => l.leadType == 'Requirement').toList();
-    final assignedLeads = allLeads.where(TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller).toList();
+    final assignedLeads = allLeads.where((l) => TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(l, isSalesMode: widget.isSalesMode)).toList();
 
     final activeTabLeads = _selectedLeadTypeTab == 'Property Listing' ? propLeads : reqLeads;
 
@@ -86,7 +88,7 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
         final email = lead.getStringValue('Email').toLowerCase();
         final status = lead.campaignStatus.toLowerCase();
         final remarks = (lead.followupRemarks ?? lead.callbackRemarks ?? '').toLowerCase();
-        final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead).toLowerCase();
+        final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead, isSalesMode: widget.isSalesMode).toLowerCase();
         final salesName = (lead.assignedToName ?? '').toLowerCase();
 
         if (!name.contains(query) &&
@@ -207,10 +209,10 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                   _buildStatDivider(context),
                   _buildSummaryStat(
                     context,
-                    title: 'Assigned to Telecaller',
+                    title: widget.isSalesMode ? 'Assigned to Sales' : 'Assigned to Telecaller',
                     count: assignedLeads.length,
                     color: const Color(0xFF6366F1),
-                    icon: Icons.support_agent_rounded,
+                    icon: widget.isSalesMode ? Icons.badge_outlined : Icons.support_agent_rounded,
                   ),
                 ],
               ),
@@ -310,7 +312,7 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                   child: TextField(
                     onChanged: (val) => setState(() => _searchLeadQuery = val),
                     decoration: InputDecoration(
-                      hintText: 'Search by client name, phone, email, notes, telecaller...',
+                      hintText: 'Search by client name, phone, email, notes, ${widget.isSalesMode ? "sales..." : "telecaller..."}',
                       prefixIcon: const Icon(Icons.search_rounded, size: 20),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -598,8 +600,8 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
     final status = lead.campaignStatus.trim().isEmpty ? 'New' : lead.campaignStatus;
     final statusColor = _statusColor(status);
     final dateStr = DateFormat('d MMM y, h:mm a').format(lead.receivedAt);
-    final isAssigned = TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead);
-    final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead);
+    final isAssigned = TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead, isSalesMode: widget.isSalesMode);
+    final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead, isSalesMode: widget.isSalesMode);
     final hasSalesperson = (lead.assignedToName != null && lead.assignedToName!.trim().isNotEmpty) ||
         (lead.assignedTo != null && lead.assignedTo!.trim().isNotEmpty);
     final salesName = lead.assignedToName?.trim().isNotEmpty == true
@@ -839,7 +841,7 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
         ? lead.getStringValue('Phone Number')
         : lead.getStringValue('Mobile');
     final email = lead.getStringValue('Email');
-    final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead);
+    final tcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead, isSalesMode: widget.isSalesMode);
     final hasSalesperson = (lead.assignedToName != null && lead.assignedToName!.trim().isNotEmpty) ||
         (lead.assignedTo != null && lead.assignedTo!.trim().isNotEmpty);
     final salesName = lead.assignedToName?.trim().isNotEmpty == true
@@ -915,8 +917,8 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                           if (hasSalesperson) ...[
                             _buildDetailRow('Assigned Salesperson', salesName),
                           ],
-                          if (TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead)) ...[
-                            _buildDetailRow('Assigned Telecaller', tcName),
+                          if (TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead, isSalesMode: widget.isSalesMode)) ...[
+                            _buildDetailRow(widget.isSalesMode ? 'Assigned Salesperson' : 'Assigned Telecaller', tcName),
                           ],
                           if (lead.allocationStatus != null && lead.allocationStatus!.isNotEmpty) ...[
                             _buildDetailRow('Allocation Status', lead.allocationStatus!),

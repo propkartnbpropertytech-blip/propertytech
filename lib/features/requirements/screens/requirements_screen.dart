@@ -965,12 +965,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     );
 
     final keepTelecallerList = user.role == 'Telecaller';
-    if (!keepTelecallerList && _salesDirectLeadsLoaded && _directPropertyListingIds.isNotEmpty) {
+    final isAdmin = user.role == 'Admin' || user.role == 'Super Admin';
+    if (!isAdmin && !keepTelecallerList && _salesDirectLeadsLoaded && _directPropertyListingIds.isNotEmpty) {
       _filteredViewModels = _filteredViewModels
           .where((vm) => !_directPropertyListingIds.contains(vm.requirement.id))
           .toList();
     }
-    if (!keepTelecallerList && _activeMainTab == 'Leads' && _salesLeadGroupFilter != 'campaign' && _salesDirectLeadsLoaded) {
+    if (!isAdmin && !keepTelecallerList && _activeMainTab == 'Leads' && _salesLeadGroupFilter != 'campaign' && _salesDirectLeadsLoaded) {
       _filteredViewModels = _filteredViewModels
           .where((vm) => !_directRequirementIds.contains(vm.requirement.id))
           .toList();

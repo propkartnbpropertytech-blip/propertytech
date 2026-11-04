@@ -32,15 +32,29 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final res = await _apiClient.get(ApiConstants.campaignAllocationMode);
       final role = (res.data['targetRole'] ?? res.data['allocationMode'] ?? '').toString().trim();
-      if (role.isNotEmpty) return role;
+      if (role.isNotEmpty) {
+        if (lastTargetRole != role) {
+          lastTargetRole = role;
+          notifyListeners();
+        }
+        return role;
+      }
     } catch (_) {}
     try {
       final res = await _apiClient.get(ApiConstants.adminAllocationConfig);
       final data = res.data['data'] as Map<String, dynamic>? ?? {};
-      return (data['targetRole'] ?? '').toString().trim();
+      final role = (data['targetRole'] ?? '').toString().trim();
+      if (role.isNotEmpty) {
+        if (lastTargetRole != role) {
+          lastTargetRole = role;
+          notifyListeners();
+        }
+        return role;
+      }
     } catch (_) {
-      return '';
+      return lastTargetRole ?? '';
     }
+    return lastTargetRole ?? '';
   }
 
   @override
@@ -114,6 +128,14 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _sheetPollTimer;
   String? lastSyncError;
   String? lastTargetRole;
+
+  void setLastTargetRole(String role) {
+    final clean = role.trim();
+    if (clean.isNotEmpty && lastTargetRole != clean) {
+      lastTargetRole = clean;
+      notifyListeners();
+    }
+  }
   List<PropertyModel>? _propertyCache;
   DateTime? _propertyCacheAt;
   int _campaignUiWatchers = 0;
@@ -1100,7 +1122,11 @@ class IntegrationService extends ChangeNotifier with WidgetsBindingObserver {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
         if (data['targetRole'] != null && data['targetRole'].toString().trim().isNotEmpty) {
-          lastTargetRole = data['targetRole'].toString().trim();
+          final newRole = data['targetRole'].toString().trim();
+          if (lastTargetRole != newRole) {
+            lastTargetRole = newRole;
+            notifyListeners();
+          }
         }
         final List<dynamic> leadsList = data['leads'] ?? [];
 
