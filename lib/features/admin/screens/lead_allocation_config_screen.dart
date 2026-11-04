@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/dio_client.dart';
+import '../../integration/services/integration_service.dart';
 
 class LeadAllocationConfigScreen extends StatefulWidget {
   const LeadAllocationConfigScreen({super.key});
@@ -160,6 +161,8 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
         ApiConstants.adminAllocationConfigRole,
         data: {'role': newRole},
       );
+
+      IntegrationService().setLastTargetRole(newRole);
 
       setState(() {
         _targetRole = newRole;
