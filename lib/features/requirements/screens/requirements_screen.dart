@@ -800,15 +800,16 @@ class RequirementsScreen extends StatefulWidget {
 
 class _RequirementsScreenState extends State<RequirementsScreen> {
   String _salesCampaignSubTab = 'Property Listing';
+  String _salesAssignToMeSubTab = 'Property Listing';
   String _salesRejectedSubTab = 'Requirement';
   String _campaignFollowupSubTab = 'Property Listing';
   List<ListingLeadFollowup> _listingFollowups = [];
-  ListingFollowupCounts _listingFollowupCounts = const ListingFollowupCounts();
   bool _listingFollowupsLoading = false;
   bool _listingFollowupsLoaded = false;
   String? _listingFollowupsError;
   final Set<String> _listingFollowupBusyIds = {};
   final TextEditingController _listingFollowupSearchController = TextEditingController();
+  List<ListingLeadFollowup> _requirementFollowups = [];
   String? _listingFilterCategoryId;
   final List<String> _listingFilterConfigIds = [];
   String _listingFilterStatus = 'All';
@@ -823,6 +824,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   final Map<String, bool> _salesUpdatingStatusLeads = {};
   final Set<String> _selectedCampaignLeadIds = {};
   String _campaignSalespersonFilter = 'All';
+  /// Super Admin on the Campaign Leads page: the Admin whose leads are shown, or 'All'.
+  String _campaignAdminFilter = 'All';
+  /// Campaign lead id (and its legacy requirement id) to the Admin the lead belongs to.
+  final Map<String, String> _campaignAdminByLeadId = {};
+  /// Admin id to the label shown for that Admin's leads.
+  final Map<String, String> _campaignAdminLabels = {};
+  /// Admin id to the salespersons holding that Admin's campaign leads.
+  final Map<String, Set<String>> _campaignSalesByAdmin = {};
   bool _campaignBulkUpdating = false;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _wonSearchController = TextEditingController();
@@ -932,9 +941,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         ? _wonConfigurationIds
         : _selectedConfigIds).toSet();
 
-    final campaignRequirementTab = _salesLeadGroupFilter == 'campaign' &&
-        _salesCampaignSubTab == 'Requirement' &&
-        _activeMainTab == 'Leads';
     _filteredViewModels = RequirementFilterEngine.filterAndSort(
       items: _allViewModels,
       currentUser: user,
@@ -943,7 +949,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       selectedCategoryId: effectiveCategoryId,
       selectedConfigIds: effectiveConfigIds,
       selectedStatus: _selectedStatus,
-      salesLeadGroupFilter: campaignRequirementTab ? 'all' : _salesLeadGroupFilter,
+      salesLeadGroupFilter: _salesLeadGroupFilter,
       selectedSalesFilterId: _selectedSalesFilterId,
       selectedTelecallerFilterIds: _selectedTelecallerFilterIds.toSet(),
       selectedReadiness: _selectedReadiness,
@@ -955,6 +961,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       customEndDate: _customEndDate,
       knownUsers: allKnownUsers,
       metadata: _metadata,
+      campaignMode: widget.campaignMode,
     );
 
     final keepTelecallerList = user.role == 'Telecaller';
@@ -972,6 +979,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       _filteredViewModels = _filteredViewModels
           .where((vm) => _isShownCampaignRequirement(vm.requirement))
           .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
+          .where((vm) => _isCampaignLeadAdmin || !_isRequirementLeadTransferredFromOtherSales(vm.requirement, user.id))
+          .toList();
+    }
+    if (widget.campaignMode && _activeMainTab == 'Assign to Me') {
+      _filteredViewModels = _filteredViewModels
+          .where((vm) => _isCampaignPageRequirement(vm.requirement))
+          .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
+          .where((vm) => _isRequirementLeadTransferredFromOtherSales(vm.requirement, user.id))
           .toList();
     }
     if (_activeMainTab == 'Rejected' && _campaignSalespersonFilter != 'All') {
@@ -979,9 +994,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
           .toList();
     }
-    if (widget.campaignMode && _activeMainTab != 'Leads') {
+    if (widget.campaignMode && _activeMainTab != 'Leads' && _activeMainTab != 'Assign to Me') {
       _filteredViewModels = _filteredViewModels
           .where((vm) => _isCampaignPageRequirement(vm.requirement))
+          .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
           .toList();
     }
 
@@ -1062,7 +1078,6 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   String _activeMainTab = "Leads"; // "Leads", "Requirements", or "Follow-ups"
   DateTime? _reqFollowupDateFilter = DateTime.now();
   String _selectedFollowupSubTab = "Today"; // "Today", "Due", "Future"
-  String? _followupQuickWindow;
   String _selectedMainFollowupSection = "Follow ups"; // "Follow ups" or "Site Visit Scheduled"
 
   String _normalizeFollowupSubTab(String val) {
@@ -1086,6 +1101,8 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   bool _hasAutoOpenedAdd = false;
   bool _isMobileFiltersExpanded = false;
   late Future<List<dynamic>> _followupsFuture;
+  /// Last loaded follow-ups data, shown while the Follow-ups tab reloads instead of a spinner.
+  List<dynamic>? _lastFollowupsData;
   StreamSubscription? _requirementsStreamSub;
   StreamSubscription? _dashboardStreamSub;
   StreamSubscription<Map<String, dynamic>>? _salesLeadEventsSub;
@@ -1167,11 +1184,15 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     }
   }
 
-  void _refreshFollowupsFuture({bool force = true}) {
-    _followupsFuture = Future.wait([
-      DashboardRepository().getDashboardData(backgroundRefresh: true, forceRefresh: force),
+  void _refreshFollowupsFuture({bool force = false}) {
+    // Campaign Leads follow-ups come from their own tables; only site visits need fresh dashboard data.
+    final forceDashboard = force && !_usesCampaignRequirementFollowups;
+    final future = Future.wait([
+      DashboardRepository().getDashboardData(backgroundRefresh: true, forceRefresh: forceDashboard),
       RequirementsRepository().getRequirements(refreshFromServer: force),
     ]);
+    _followupsFuture = future;
+    future.then<void>((data) => _lastFollowupsData = data, onError: (_) {});
   }
 
   @override
@@ -1233,10 +1254,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         _activeMainTab = 'Leads';
       }
       _salesLeadGroupFilter = 'campaign';
+      _selectedTelecallerFilterIds.clear();
       if (_selectedMainFollowupSection == 'Site Visit Scheduled') {
         _campaignFollowupSubTab = 'Requirement';
       }
       unawaited(_fetchListingFollowups());
+      unawaited(_fetchRequirementFollowups());
     } else if (RoleGuard.isSales(RoleGuard.currentUser?.role) && _salesLeadGroupFilter == 'campaign') {
       _salesLeadGroupFilter = 'assigned';
     }
@@ -1401,6 +1424,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               }
             } catch (_) {}
           }
+          if (matched == null) {
+            try {
+              matched = await RequirementsService().getRequirementById(openId);
+            } catch (_) {}
+          }
           if (matched != null && mounted) {
             showCRMRequirementDrawer(context, matched);
           }
@@ -1493,6 +1521,9 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     super.didChangeDependencies();
     try {
       final uri = GoRouterState.of(context).uri;
+      // Route parameters apply once per link; later theme or layout changes must not undo the user's tab choice.
+      if (_appliedRouteParamsKey == uri.toString()) return;
+      _appliedRouteParamsKey = uri.toString();
       final tabParam = uri.queryParameters['tab'];
       if (tabParam != null) {
         final tabLower = tabParam.toLowerCase();
@@ -1587,8 +1618,45 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           });
         }
       }
+      _applyRouteSearch(uri);
       _checkAutoOpenRequirement();
     } catch (_) {}
+  }
+
+  String? _appliedRouteSearchKey;
+  String? _appliedRouteParamsKey;
+
+  /// A search link names one lead: put its text in the active tab's search box, and when the link opens
+  /// that lead, clear the filters that could hide it.
+  void _applyRouteSearch(Uri uri) {
+    final search = uri.queryParameters['search']?.trim() ?? '';
+    if (search.isEmpty) return;
+    final openId = uri.queryParameters['openId'] ?? uri.queryParameters['openReqId'] ?? '';
+    final key = '$search|$openId|${uri.queryParameters['t'] ?? ''}';
+    if (_appliedRouteSearchKey == key) return;
+    _appliedRouteSearchKey = key;
+    final wonTab = _activeMainTab == 'Won' || _activeMainTab == 'My Won';
+    setState(() {
+      if (openId.isNotEmpty) {
+        _selectedConfigIds.clear();
+        _selectedCategoryId = null;
+        _selectedSalesFilterId = 'All';
+        _selectedTelecallerFilterIds.clear();
+        _selectedReadiness = 'All';
+        _selectedLeadDateFilter = LeadDateFilterPreset.allTime;
+        _customStartDate = null;
+        _customEndDate = null;
+        if (_activeMainTab == 'Rejected') {
+          _salesRejectedSubTab = 'Requirement';
+          _campaignSalespersonFilter = 'All';
+        }
+      }
+      _currentPage = 1;
+    });
+    final controller = wonTab ? _wonSearchController : _searchController;
+    if (controller.text != search) controller.text = search;
+    _lastComputedFilterKey = null;
+    _recomputeFilteredRequirements();
   }
 
   String _leadActionSignature = '';
@@ -1801,6 +1869,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         onSaved: () {
           _triggerFetch();
           _refreshFollowupsFuture();
+          _requestSalesLeadRefresh();
           if (mounted) setState(() {});
         },
       ),
@@ -1808,6 +1877,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     if (mounted) {
       _triggerFetch();
       _refreshFollowupsFuture();
+      _requestSalesLeadRefresh();
       setState(() {});
     }
   }
@@ -1988,6 +2058,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           requirement: baseReq,
           initialStep: 1,
           updateStatusOnSave: true,
+          campaignRequirementLead: _isCampaignPageRequirementId(req.id),
           onSavedWithDate: (scheduledDate) {
             if (_activeMainTab != 'Follow-ups' && !isReFollowup) {
               final now = DateTime.now();
@@ -2021,6 +2092,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               );
             }
             _triggerFetch();
+            unawaited(_fetchRequirementFollowups());
           },
         ),
       );
@@ -2138,7 +2210,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   bool _sameStoredStatus(String localStatus, String serverStatus) {
     String key(String value) {
       final normalized = value.trim().toLowerCase();
-      if (normalized == 'assigned' || normalized == 'assigned to sales') return 'assigned';
+      if (normalized == 'assigned' || normalized == 'assigned to sales' || normalized == 'allocate to sales') return 'assigned';
       if (normalized == 'site visit' || normalized == 'site visit sche.' || normalized == 'site visit scheduled') {
         return 'site visit';
       }
@@ -2417,14 +2489,19 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               ),
               const SizedBox(height: CRMSpacing.l),
 
-              if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected') ...[
+              if (widget.campaignMode && _isCampaignLeadAdmin) ...[
+                _buildCampaignPageAdminFilters(),
+                const SizedBox(height: CRMSpacing.m),
+              ],
+              if (_activeMainTab == 'Leads' || _activeMainTab == 'Leads Added by Me' || _activeMainTab == 'Rejected' || _activeMainTab == 'Assign to Me') ...[
                 if (widget.campaignMode) ...[
                   _buildCampaignPageLeadTypeSelector(currentUser),
                   const SizedBox(height: CRMSpacing.m),
                 ] else if (_activeMainTab == 'Rejected' &&
                     currentUser != null &&
-                    currentUser.role != 'Telecaller') ...[
-                  _buildRejectedLeadTypeSelector(currentUser),
+                    currentUser.role != 'Telecaller' &&
+                    _isCampaignLeadAdmin) ...[
+                  _buildCampaignSalespersonFilter(),
                   const SizedBox(height: CRMSpacing.m),
                 ],
                 if (_activeMainTab == 'Leads' && !widget.campaignMode) ...[
@@ -2681,7 +2758,12 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
             ],
           ),
         ),
-        if (widget.campaignMode && (_activeMainTab == 'Leads' || _activeMainTab == 'Rejected'))
+        if (widget.campaignMode && _isCampaignLeadAdmin)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: _buildCampaignPageAdminFilters(),
+          ),
+        if (widget.campaignMode && (_activeMainTab == 'Leads' || _activeMainTab == 'Rejected' || _activeMainTab == 'Assign to Me'))
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: _buildCampaignPageLeadTypeSelector(currentUser),
@@ -2772,15 +2854,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                     ),
                   ),
-                  if (!widget.campaignMode && _activeMainTab == 'Rejected' && currentUser?.role != 'Telecaller')
+                  if (!widget.campaignMode && _activeMainTab == 'Rejected' && currentUser?.role != 'Telecaller' && _isCampaignLeadAdmin)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                        child: _buildRejectedLeadTypeSelector(currentUser),
+                        child: _buildCampaignSalespersonFilter(),
                       ),
                     ),
                   if ((_activeMainTab == 'Leads' && _salesLeadGroupFilter == 'campaign' && _salesCampaignSubTab == 'Property Listing') ||
-                      (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing'))
+                      (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing') ||
+                      (_activeMainTab == 'Assign to Me' && _salesAssignToMeSubTab == 'Property Listing'))
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
@@ -3483,7 +3566,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    Icon(Icons.person_add_alt_1_outlined, size: 13, color: Colors.blueGrey.shade600),
+                    Icon(_isDirectSalesAllocatedLead(req) ? Icons.auto_mode_rounded : Icons.person_add_alt_1_outlined, size: 13, color: Colors.blueGrey.shade600),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
@@ -3970,8 +4053,10 @@ _recomputeFilteredRequirements();
                         ),
                       ],
                     ),
-                    const SizedBox(height: CRMSpacing.s),
-                    _buildTelecallerFilterDropdown(isMobile: isMobile),
+                    if (!widget.campaignMode) ...[
+                      const SizedBox(height: CRMSpacing.s),
+                      _buildTelecallerFilterDropdown(isMobile: isMobile),
+                    ],
                     const SizedBox(height: CRMSpacing.s),
                     CRMButton(
                       label: "Clear Filters",
@@ -4040,7 +4125,7 @@ _recomputeFilteredRequirements();
                         },
                       ),
                     _buildSalesFilterDropdown(isMobile: isMobile),
-                    _buildTelecallerFilterDropdown(isMobile: isMobile),
+                    if (!widget.campaignMode) _buildTelecallerFilterDropdown(isMobile: isMobile),
                     CRMButton(
                       label: "Clear Filters",
                       variant: CRMButtonVariant.outline,
@@ -4162,7 +4247,7 @@ _recomputeFilteredRequirements();
       selectedCategoryId: _selectedCategoryId,
       selectedConfigIds: effectiveConfigIds,
       selectedStatus: _selectedStatus,
-      salesLeadGroupFilter: campaignLeadsTab ? 'all' : _salesLeadGroupFilter,
+      salesLeadGroupFilter: _salesLeadGroupFilter,
       selectedSalesFilterId: _selectedSalesFilterId,
       selectedTelecallerFilterIds: _selectedTelecallerFilterIds.toSet(),
       selectedReadiness: _selectedReadiness,
@@ -4174,12 +4259,14 @@ _recomputeFilteredRequirements();
       customEndDate: _customEndDate,
       knownUsers: allKnownUsers,
       metadata: _metadata,
+      campaignMode: widget.campaignMode,
     );
     if (!widget.campaignMode) return counted.length;
     return counted
         .where((vm) => campaignLeadsTab
             ? _isShownCampaignRequirement(vm.requirement)
             : _isCampaignPageRequirement(vm.requirement))
+        .where((vm) => _campaignLeadMatchesSalesperson(vm.requirement))
         .length;
   }
 
@@ -4468,6 +4555,9 @@ _recomputeFilteredRequirements();
   }
 
   Widget _buildTelecallerFilterDropdown({required bool isMobile}) {
+    if (widget.campaignMode) {
+      return const SizedBox.shrink();
+    }
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     if (currentUser == null || !TeamUserVisibility.canUseFilter(currentUser.role)) {
@@ -4619,7 +4709,7 @@ _recomputeFilteredRequirements();
           ),
         ),
       const DropdownMenuItem(value: 'New', child: Text('New')),
-      const DropdownMenuItem(value: 'Assigned', child: Text('Assigned to Sales')),
+      const DropdownMenuItem(value: 'Assigned', child: Text('Allocate to Sales')),
       const DropdownMenuItem(value: 'Not Started', child: Text('Not Started')),
       const DropdownMenuItem(value: 'Follow-up', child: Text('Follow-up')),
       const DropdownMenuItem(value: 'Re-Followup', child: Text('Re-Followup')),
@@ -4700,13 +4790,39 @@ _recomputeFilteredRequirements();
     return null;
   }
 
+  bool _isDirectSalesAllocatedLead(RequirementModel req) {
+    if (req.isDirectSalesAllocated) return true;
+    final meta = req.metaCustomFields;
+    if (meta != null && (meta['direct_sales_allocated'] == true || meta['is_direct_sales_allocated'] == true || meta['handled_by_sales'] == true)) {
+      return true;
+    }
+    if (widget.campaignMode && req.assignedTo != null && req.assignedTo!.isNotEmpty) return true;
+    return false;
+  }
+
   String _getAddedByColumnName(RequirementModel req) {
-    return _getReassignedByName(req) ?? _getAddedByName(req);
+    final transferrerName = _getRecentSalesTransferrerName(req);
+    if (transferrerName != null && transferrerName.isNotEmpty) {
+      return 'Transferred by: $transferrerName';
+    }
+    if (_isDirectSalesAllocatedLead(req)) return 'Auto Allocate to Sales';
+    final reassigned = _getReassignedByName(req);
+    if (reassigned != null && !reassigned.toLowerCase().contains('admin')) {
+      return reassigned;
+    }
+    return _getAddedByName(req);
   }
 
   String _getAddedByDisplayLine(RequirementModel req) {
+    final transferrerName = _getRecentSalesTransferrerName(req);
+    if (transferrerName != null && transferrerName.isNotEmpty) {
+      return 'Transferred by: $transferrerName';
+    }
+    if (_isDirectSalesAllocatedLead(req)) return 'Auto Allocate to Sales';
     final reassigned = _getReassignedByName(req);
-    if (reassigned != null) return 'Re-Assigned By: $reassigned';
+    if (reassigned != null && !reassigned.toLowerCase().contains('admin')) {
+      return 'Re-Assigned By: $reassigned';
+    }
     return 'Added by: ${_getAddedByName(req)}';
   }
 
@@ -4779,7 +4895,7 @@ _recomputeFilteredRequirements();
 
   bool _isLeadAssignedToSales(RequirementModel req) {
     final s = req.status.trim().toLowerCase();
-    if (s == 'assigned' || s == 'assigned to sales') return true;
+    if (s == 'assigned' || s == 'assigned to sales' || s == 'allocate to sales') return true;
     final transfer = req.metaCustomFields?['_transfer'];
     if (transfer is Map && transfer['assigned_to'] != null && transfer['assigned_to'].toString().trim().isNotEmpty) {
       return true;
@@ -5857,12 +5973,65 @@ _recomputeFilteredRequirements();
     );
   }
 
+  /// Campaign Leads page for Admin and Super Admin: whose leads are shown.
+  Widget _buildCampaignPageAdminFilters() {
+    if (!widget.campaignMode || !_isCampaignLeadAdmin) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 16,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (_isCampaignPageSuperAdmin) _buildCampaignAdminFilter(),
+        _buildCampaignSalespersonFilter(),
+      ],
+    );
+  }
+
+  Widget _buildCampaignAdminFilter() {
+    final labels = <String, String>{..._campaignAdminLabels};
+    for (final user in _getAllKnownUsers()) {
+      if (user.roleName != 'Admin' || labels.containsKey(user.id)) continue;
+      final org = (user.organizationName ?? '').trim();
+      labels[user.id] = org.isEmpty || org == user.fullName ? user.fullName : '${user.fullName} ($org)';
+    }
+    final entries = labels.entries.toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    final value = labels.containsKey(_campaignAdminFilter) ? _campaignAdminFilter : 'All';
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: value,
+        isDense: true,
+        items: [
+          const DropdownMenuItem(value: 'All', child: Text('All Admins')),
+          for (final entry in entries)
+            DropdownMenuItem(value: entry.key, child: Text(entry.value, overflow: TextOverflow.ellipsis)),
+        ],
+        onChanged: (next) {
+          setState(() {
+            _campaignAdminFilter = next ?? 'All';
+            _campaignSalespersonFilter = 'All';
+            _selectedCampaignLeadIds.clear();
+            _lastComputedFilterKey = null;
+          });
+          _recomputeFilteredRequirements(notify: false);
+        },
+      ),
+    );
+  }
+
+  List<users_model.UserModel> _campaignSalespersonOptions() {
+    final users = _getSalesUsers();
+    if (_campaignAdminFilter == 'All') return users;
+    final holders = _campaignSalesByAdmin[_campaignAdminFilter] ?? const <String>{};
+    return users.where((user) => user.adminId == _campaignAdminFilter || holders.contains(user.id)).toList();
+  }
+
   Widget _buildCampaignSalespersonFilter() {
     if (!_isCampaignLeadAdmin) return const SizedBox.shrink();
     if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
       return const SizedBox.shrink();
     }
-    final users = _getSalesUsers();
+    final users = _campaignSalespersonOptions();
     final known = users.any((user) => user.id == _campaignSalespersonFilter);
     final value = known || _campaignSalespersonFilter == 'All' ? _campaignSalespersonFilter : 'All';
     return Align(
@@ -6256,7 +6425,7 @@ _recomputeFilteredRequirements();
   }
 
   String displayStatusLabel(String status) {
-    if (status == 'Assigned' || status == 'Assigned to Sales') return 'Assigned to Sales';
+    if (status == 'Assigned' || status == 'Assigned to Sales' || status == 'Allocate to Sales') return 'Allocate to Sales';
     if (status == 'Not Started') return 'Not Started';
     if (status == 'New') return 'New';
     if (status.startsWith('Call Attempted') || status.startsWith('Call attempted')) return 'Call Attempted';
@@ -6277,7 +6446,7 @@ _recomputeFilteredRequirements();
     Color? color,
   }) {
     final bool isSelected = currentStatus == value ||
-        ((value == 'Assigned' || value == 'Assigned to Sales') && (currentStatus == 'Assigned' || currentStatus == 'Assigned to Sales')) ||
+        ((value == 'Assigned' || value == 'Assigned to Sales' || value == 'Allocate to Sales') && (currentStatus == 'Assigned' || currentStatus == 'Assigned to Sales' || currentStatus == 'Allocate to Sales')) ||
         (value == 'New' && currentStatus == 'New') ||
         (value == 'Not Started' && currentStatus == 'Not Started') ||
         (value == 'Not Interested' && (currentStatus == 'Not Interested' || currentStatus == 'Dead' || currentStatus == 'Suspended')) ||
@@ -7234,8 +7403,8 @@ _recomputeFilteredRequirements();
     final bool isUnhandledAssigned = _isUnhandledAssignedLead(req, currentUser);
     final String currentStatus = _isLeadRejected(req)
         ? getEffectiveStatus(req)
-        : ((req.status == 'Assigned' || req.status == 'Assigned to Sales')
-            ? 'Assigned to Sales'
+        : ((req.status == 'Assigned' || req.status == 'Assigned to Sales' || req.status == 'Allocate to Sales')
+            ? 'Allocate to Sales'
             : (isUnhandledAssigned ? 'Not Started' : getEffectiveStatus(req)));
     final statusColor = _getStatusColor(currentStatus);
     final bool hasPreviousFollowup = currentStatus == 'Follow-up' ||
@@ -7319,7 +7488,7 @@ _recomputeFilteredRequirements();
           return [
             _buildStatusMenuItem('New', 'New', currentStatus),
             _buildStatusMenuItem('Not Started', 'Not Started', currentStatus),
-            _buildStatusMenuItem('Assigned', 'Assigned to Sales', currentStatus, color: const Color(0xFF2563EB)),
+            _buildStatusMenuItem('Assigned', 'Allocate to Sales', currentStatus, color: const Color(0xFF2563EB)),
             _buildStatusMenuItem(followupValue, followupLabel, currentStatus),
             _buildStatusMenuItem('Interested', 'Interested', currentStatus),
             _buildStatusMenuItem('Site Visit', 'Site Visit Sche.', currentStatus),
@@ -8044,7 +8213,8 @@ _recomputeFilteredRequirements();
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 700;
         if ((_activeMainTab == 'Leads' && _salesLeadGroupFilter == 'campaign' && _salesCampaignSubTab == 'Property Listing') ||
-            (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing' && currentUser?.role != 'Telecaller')) {
+            (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing' && currentUser?.role != 'Telecaller') ||
+            (_activeMainTab == 'Assign to Me' && _salesAssignToMeSubTab == 'Property Listing')) {
           return _buildSalesPropertyListingSpreadsheetView(
             isMobile: isMobile,
             rejectedOnly: _activeMainTab == 'Rejected',
@@ -8084,6 +8254,7 @@ _recomputeFilteredRequirements();
                 const DataColumn(label: Text('Budget Range')),
                 const DataColumn(label: Text('Target Area(s)')),
                 const DataColumn(label: Text('Status')),
+                const DataColumn(label: Text('Transfer')),
                 const DataColumn(label: Text('Matches')),
                 const DataColumn(label: Text('Actions')),
               ],
@@ -8123,6 +8294,18 @@ _recomputeFilteredRequirements();
                                 ),
                               ),
                             ),
+                            if (_activeMainTab == 'Assign to Me' || (widget.campaignMode && _isRequirementLeadTransferredFromOtherSales(req, ''))) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                'By: ${_getRequirementTransferredByName(req)}',
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0284C7),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                             const SizedBox(height: 2),
                             Text(
                               req.clientMobile,
@@ -8160,7 +8343,7 @@ _recomputeFilteredRequirements();
                                         const SizedBox(width: 3),
                                         Flexible(
                                           child: Text(
-                                            'Assigned to Sales: $salesman',
+                                            'Allocate to Sales: $salesman',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(
@@ -8304,6 +8487,9 @@ _recomputeFilteredRequirements();
                     DataCell(_buildTargetAreasCell(req)),
                     DataCell(
                       _buildStatusControlWithNotes(req, currentUser),
+                    ),
+                    DataCell(
+                      _buildRequirementLeadTransferButton(req: req, currentUser: currentUser),
                     ),
 
                     DataCell(
@@ -9617,7 +9803,7 @@ _recomputeFilteredRequirements();
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
+                          Icon(_isDirectSalesAllocatedLead(req) ? Icons.auto_mode_rounded : Icons.person_add_alt_1_outlined, size: 13, color: CRMColors.textMutedOf(context)),
                           const SizedBox(width: 4),
                           Text(
                             _getAddedByDisplayLine(req),
@@ -10104,6 +10290,7 @@ _recomputeFilteredRequirements();
     switch (status) {
       case 'Assigned':
       case 'Assigned to Sales':
+      case 'Allocate to Sales':
         return const Color(0xFF2563EB);
       case 'Won':
         return CRMColors.success;
@@ -10160,7 +10347,7 @@ _recomputeFilteredRequirements();
 
   /// Campaign Leads page tabs. Leads, Follow-ups and Rejected each split into
   /// Property Listing Leads / Requirement Leads; every tab shows campaign leads only.
-  static const _campaignPageTabs = ['Leads', 'Follow-ups', 'My Won', 'Rejected'];
+  static const _campaignPageTabs = ['Leads', 'Follow-ups', 'My Won', 'Rejected', 'Assign to Me'];
 
   bool _isCampaignPageTabSelected(String tab) {
     if (tab == 'My Won') return _activeMainTab == 'My Won' || _activeMainTab == 'Won';
@@ -10170,22 +10357,91 @@ _recomputeFilteredRequirements();
   void _onCampaignPageTabSelected(String tab) {
     setState(() => _selectedCampaignLeadIds.clear());
     _onMainViewTabSelected(tab);
-    if (tab == 'Leads' || tab == 'Rejected' || tab == 'Follow-ups') {
+    if (tab == 'Leads' || tab == 'Rejected' || tab == 'Follow-ups' || tab == 'Assign to Me') {
       unawaited(_fetchSalesPropertyListingLeads());
     }
     if (tab == 'Leads' || tab == 'Follow-ups') {
       unawaited(_fetchListingFollowups());
+      unawaited(_fetchRequirementFollowups());
     }
   }
 
   bool get _isCampaignListingView =>
       widget.campaignMode &&
       ((_activeMainTab == 'Leads' && _salesCampaignSubTab == 'Property Listing') ||
-          (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing'));
+          (_activeMainTab == 'Rejected' && _salesRejectedSubTab == 'Property Listing') ||
+          (_activeMainTab == 'Assign to Me' && _salesAssignToMeSubTab == 'Property Listing'));
 
   /// Follow-ups card showing Property Listing lead follow-ups (no site visits for this lead type).
   bool get _isCampaignListingFollowupsView =>
       widget.campaignMode && _campaignFollowupSubTab == 'Property Listing';
+
+  /// On the Campaign Leads page, Requirement lead follow-ups (not site visits) are read from
+  /// campaign_requirement_lead_followups and shown with the same Today / Due / Future view as the Leads page.
+  bool get _usesCampaignRequirementFollowups =>
+      widget.campaignMode && _selectedMainFollowupSection != 'Site Visit Scheduled';
+
+  int _requirementFollowupsSeq = 0;
+
+  Future<void> _fetchRequirementFollowups() async {
+    if (!widget.campaignMode || !mounted) return;
+    final seq = ++_requirementFollowupsSeq;
+    try {
+      final result = await RequirementLeadFollowupsService.fetch();
+      if (!mounted || seq != _requirementFollowupsSeq) return;
+      setState(() => _requirementFollowups = result.items);
+    } on ListingFollowupsException catch (e) {
+      debugPrint('Campaign requirement follow-ups could not be loaded: ${e.message}');
+    }
+  }
+
+  List<DashboardFollowup> get _campaignRequirementDashboardFollowups => [
+        for (final f in _requirementFollowups)
+          if (f.status != 'Cancelled' && (f.requirementId ?? '').isNotEmpty)
+            DashboardFollowup(
+              id: f.id,
+              clientName: f.customerName ?? '',
+              mobile: f.phone ?? '',
+              followupDate: f.followupDate.toUtc().toIso8601String(),
+              notes: f.remarks,
+              status: f.status,
+              requirementId: f.requirementId,
+              requirementCustomerName: f.customerName,
+              creatorName: f.createdByName,
+              salespersonName: f.salesUserName,
+            ),
+      ];
+
+  ListingLeadFollowup? _pendingCampaignRequirementFollowup(String? requirementId) {
+    if (requirementId == null || requirementId.isEmpty) return null;
+    return _requirementFollowups.firstWhereOrNull((f) => f.isPending && f.requirementId == requirementId);
+  }
+
+  /// Leads page parity: Interested / Rejected from the follow-up row closes the lead's open follow-up.
+  void _completeFollowupAfterStatusChange(DashboardFollowup f, RequirementModel req, String status) {
+    void warn(Object e) {
+      debugPrint('Follow-up could not be marked complete: $e');
+      if (mounted) {
+        AppStatusSnackBar.show(
+          context,
+          message: 'Lead status saved, but the follow-up could not be marked complete.',
+          isSuccess: false,
+        );
+      }
+    }
+
+    if (_usesCampaignRequirementFollowups) {
+      final pending = _pendingCampaignRequirementFollowup(req.id);
+      if (pending == null) return;
+      RequirementLeadFollowupsService.complete(pending.id, outcomeRemarks: status)
+          .then((_) => _fetchRequirementFollowups())
+          .catchError(warn);
+      return;
+    }
+    if (f.id.isNotEmpty && !f.id.startsWith('local_') && !f.id.startsWith('fallback_')) {
+      RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError(warn);
+    }
+  }
 
   int _listingFollowupsSeq = 0;
 
@@ -10201,7 +10457,6 @@ _recomputeFilteredRequirements();
       if (!mounted || seq != _listingFollowupsSeq) return;
       setState(() {
         _listingFollowups = result.items;
-        _listingFollowupCounts = result.counts;
         _listingFollowupsLoaded = true;
       });
     } on ListingFollowupsException catch (e) {
@@ -10218,37 +10473,161 @@ _recomputeFilteredRequirements();
 
   String _formatListingFollowupDate(DateTime d) => DateFormat('dd MMM yyyy, hh:mm a').format(d);
 
-  Future<void> _runListingFollowupAction(
+  /// Non-cancelled follow-ups of one Property Listing lead, newest first.
+  List<ListingLeadFollowup> _listingFollowupHistory(String leadId) =>
+      _listingFollowups.where((f) => f.leadId == leadId && f.status != 'Cancelled').toList()
+        ..sort((a, b) => b.followupDate.compareTo(a.followupDate));
+
+  /// A lead with any earlier follow-up gets Re-Follow-Up as its next action; otherwise Follow-Up.
+  bool _listingLeadNeedsReFollowup(String leadId) => _listingFollowupHistory(leadId).isNotEmpty;
+
+  /// Label for a lead's open follow-up: Follow-Up for the first one, Re-Follow-Up after an earlier one.
+  String? _listingOpenFollowupLabel(String leadId) {
+    final history = _listingFollowupHistory(leadId);
+    if (!history.any((f) => f.isPending)) return null;
+    return history.length > 1 ? 'Re-Follow-Up' : 'Follow-Up';
+  }
+
+  Future<bool> _runListingFollowupAction(
     String busyKey,
     Future<void> Function() action,
     String successMessage,
   ) async {
+    var ok = false;
     setState(() => _listingFollowupBusyIds.add(busyKey));
     try {
       await action();
-      if (!mounted) return;
-      AppStatusSnackBar.show(context, message: successMessage, isSuccess: true);
+      ok = true;
+      if (mounted) AppStatusSnackBar.show(context, message: successMessage, isSuccess: true);
     } on ListingFollowupsException catch (e) {
       if (mounted) AppStatusSnackBar.show(context, message: e.message, isSuccess: false);
     } finally {
       if (mounted) setState(() => _listingFollowupBusyIds.remove(busyKey));
       await _fetchListingFollowups();
     }
+    return ok;
   }
 
-  Future<void> _scheduleListingFollowup(Map<String, dynamic> lead) async {
-    final leadId = lead['id']?.toString() ?? '';
+  /// Follow-Up / Re-Follow-Up on a Property Listing lead. Any open follow-up is completed and the
+  /// new one is linked to it, so earlier follow-ups and remarks stay in the lead's history.
+  Future<void> _scheduleListingFollowup(String leadId, String clientName) async {
     if (leadId.isEmpty) return;
+    final reFollowup = _listingLeadNeedsReFollowup(leadId);
     final result = await _ListingFollowupDialog.show(
       context,
       mode: _ListingFollowupDialogMode.schedule,
-      clientName: _listingValue(lead, 'clientName'),
+      clientName: clientName,
+      title: reFollowup ? 'Re-Follow-Up' : 'Follow-Up',
     );
     if (result == null || result.when == null) return;
-    await _runListingFollowupAction(
+    final when = result.when!;
+    final saved = await _runListingFollowupAction(
       'lead:$leadId',
-      () => ListingLeadFollowupsService.create(leadId: leadId, when: result.when!, remarks: result.remarks),
-      'Follow-up scheduled',
+      () => ListingLeadFollowupsService.create(
+        leadId: leadId,
+        when: when,
+        remarks: result.remarks,
+        supersedePending: true,
+      ),
+      reFollowup ? 'Re-follow-up scheduled' : 'Follow-up scheduled',
+    );
+    // Like a Follow-up scheduled from the Leads page: the Follow-ups section opens on the tab that now holds it.
+    if (saved && mounted && _activeMainTab != 'Follow-ups') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final day = DateTime(when.year, when.month, when.day);
+      setState(() {
+        _campaignFollowupSubTab = 'Property Listing';
+        _selectedMainFollowupSection = 'Follow ups';
+        _selectedFollowupSubTab = day == today ? 'Today' : (day.isBefore(today) ? 'Due' : 'Future');
+        _reqFollowupDateFilter = null;
+        _currentFollowupPage = 1;
+      });
+    }
+  }
+
+  /// Leads page parity: Interested / Rejected closes the lead's open follow-up.
+  Future<void> _completeListingFollowupAfterStatusChange(String leadId, String status) async {
+    final pending = _pendingListingFollowupsByLead[leadId];
+    if (pending == null) return;
+    try {
+      await ListingLeadFollowupsService.complete(pending.id, outcomeRemarks: status);
+    } on ListingFollowupsException catch (e) {
+      if (mounted) {
+        AppStatusSnackBar.show(
+          context,
+          message: 'Lead status saved, but the follow-up could not be marked complete: ${e.message}',
+          isSuccess: false,
+        );
+      }
+    }
+    await _fetchListingFollowups();
+  }
+
+  void _showListingFollowupHistory(String leadId, String clientName) {
+    final history = _listingFollowupHistory(leadId);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Follow-up History'),
+            const SizedBox(height: 2),
+            Text(clientName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF64748B))),
+          ],
+        ),
+        content: SizedBox(
+          width: 460,
+          child: history.isEmpty
+              ? const Text('No follow-ups recorded for this lead yet.')
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: history.length,
+                  separatorBuilder: (_, __) => const Divider(height: 16),
+                  itemBuilder: (_, i) {
+                    final f = history[i];
+                    final color = _listingFollowupColor(f);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.event_rounded, size: 14, color: color),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                _formatListingFollowupDate(f.followupDate),
+                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: color),
+                              ),
+                            ),
+                            Text(f.status, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
+                          ],
+                        ),
+                        if (f.remarks != null) ...[
+                          const SizedBox(height: 4),
+                          Text('Remarks: ${f.remarks}', style: const TextStyle(fontSize: 12)),
+                        ],
+                        if (f.outcomeRemarks != null) ...[
+                          const SizedBox(height: 2),
+                          Text('Outcome: ${f.outcomeRemarks}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                        ],
+                        if ((f.createdByName ?? f.salesUserName) != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'By: ${f.createdByName ?? f.salesUserName}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Close')),
+        ],
+      ),
     );
   }
 
@@ -10273,9 +10652,10 @@ _recomputeFilteredRequirements();
       context,
       mode: _ListingFollowupDialogMode.complete,
       clientName: clientName,
+      title: 'Mark as Interested',
     );
     if (result == null) return;
-    await _runListingFollowupAction(
+    final success = await _runListingFollowupAction(
       f.id,
       () => ListingLeadFollowupsService.complete(
         f.id,
@@ -10283,8 +10663,19 @@ _recomputeFilteredRequirements();
         nextWhen: result.when,
         nextRemarks: result.nextRemarks,
       ),
-      result.when != null ? 'Follow-up completed and next follow-up scheduled' : 'Follow-up completed',
+      result.when != null ? 'Follow-up completed and next follow-up scheduled' : 'Lead marked as Interested',
     );
+    if (success && mounted) {
+      setState(() {
+        for (final item in _salesPropertyListingLeads) {
+          if (item['id']?.toString() == f.leadId) {
+            item['status'] = 'Interested';
+            item['sales_listing_status'] = 'Interested';
+          }
+        }
+      });
+      _requestSalesLeadRefresh();
+    }
   }
 
   Future<void> _cancelListingFollowup(ListingLeadFollowup f, String clientName) async {
@@ -10301,112 +10692,147 @@ _recomputeFilteredRequirements();
     );
   }
 
+  /// Actions for a lead's follow-up row: Re-Follow-Up and History always; Reschedule / Complete / Cancel
+  /// while the follow-up is still open.
   Widget _buildListingFollowupActionsMenu(ListingLeadFollowup f, String clientName, {Widget? child}) {
     return PopupMenuButton<String>(
       tooltip: 'Follow-up actions',
-      enabled: !_listingFollowupBusyIds.contains(f.id),
+      enabled: !_listingFollowupBusyIds.contains(f.id) && !_listingFollowupBusyIds.contains('lead:${f.leadId}'),
       onSelected: (action) {
         switch (action) {
+          case 'refollowup':
+            _scheduleListingFollowup(f.leadId, clientName);
           case 'complete':
             _completeListingFollowup(f, clientName);
           case 'reschedule':
             _rescheduleListingFollowup(f, clientName);
           case 'cancel':
             _cancelListingFollowup(f, clientName);
+          case 'history':
+            _showListingFollowupHistory(f.leadId, clientName);
         }
       },
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: 'complete',
-          child: ListTile(dense: true, leading: Icon(Icons.task_alt_rounded, size: 18), title: Text('Mark Completed')),
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'refollowup',
+          child: ListTile(dense: true, leading: Icon(Icons.replay_rounded, size: 18), title: Text('Re-Follow-Up')),
         ),
-        PopupMenuItem(
-          value: 'reschedule',
-          child: ListTile(dense: true, leading: Icon(Icons.update_rounded, size: 18), title: Text('Reschedule')),
-        ),
-        PopupMenuItem(
-          value: 'cancel',
-          child: ListTile(dense: true, leading: Icon(Icons.event_busy_rounded, size: 18), title: Text('Cancel Follow-up')),
+        if (f.isPending) ...const [
+          PopupMenuItem(
+            value: 'reschedule',
+            child: ListTile(dense: true, leading: Icon(Icons.update_rounded, size: 18), title: Text('Edit Follow-up')),
+          ),
+          PopupMenuItem(
+            value: 'complete',
+            child: ListTile(dense: true, leading: Icon(Icons.thumb_up_alt_rounded, size: 18, color: Color(0xFF10B981)), title: Text('Interested')),
+          ),
+          PopupMenuItem(
+            value: 'cancel',
+            child: ListTile(dense: true, leading: Icon(Icons.event_busy_rounded, size: 18), title: Text('Cancel Follow-up')),
+          ),
+        ],
+        const PopupMenuItem(
+          value: 'history',
+          child: ListTile(dense: true, leading: Icon(Icons.history_rounded, size: 18), title: Text('History')),
         ),
       ],
       child: child,
     );
   }
 
+  /// Same calendar-day rules as the Leads page follow-ups: Today (any status), Due (past and still
+  /// pending), Future (later days). Returns null for a past follow-up that is already closed.
+  String? _listingFollowupBucket(ListingLeadFollowup f) {
+    if (!f.isPending) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = f.followupDate;
+    final day = DateTime(d.year, d.month, d.day);
+    if (day == today) return 'Today';
+    if (day.isBefore(today)) return f.isPending ? 'Due' : null;
+    return 'Future';
+  }
+
   Color _listingFollowupColor(ListingLeadFollowup f) {
     if (f.status == 'Completed') return CRMColors.success;
     if (f.status == 'Cancelled') return const Color(0xFF94A3B8);
-    if (f.isDue) return CRMColors.danger;
-    if (f.isToday) return CRMColors.primaryOf(context);
-    return CRMColors.info;
+    return switch (_listingFollowupBucket(f)) {
+      'Due' => CRMColors.danger,
+      'Today' => CRMColors.primaryOf(context),
+      _ => CRMColors.info,
+    };
   }
 
-  /// Follow-up cell for a Property Listing lead row: next pending follow-up, or a Schedule action.
-  Widget _buildListingFollowupCell(Map<String, dynamic> lead) {
-    final leadId = lead['id']?.toString() ?? '';
-    if (leadId.isEmpty) return _listingTextCell('—');
-    if (_listingFollowupBusyIds.contains('lead:$leadId')) {
-      return const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2));
+  /// One follow-up row per Property Listing lead (like the Leads page): the open follow-up, or the
+  /// latest one when none is open. Rejected leads are left out, as on the Leads page.
+  List<ListingLeadFollowup> get _listingFollowupEntries {
+    final rejected = {
+      for (final l in _salesPropertyListingLeads)
+        if ((l['status']?.toString() ?? '').trim().toLowerCase() == 'rejected') l['id']?.toString() ?? '',
+    };
+    final byLead = <String, ListingLeadFollowup>{};
+    for (final f in _listingFollowups) {
+      if (f.status == 'Cancelled' || rejected.contains(f.leadId)) continue;
+      final current = byLead[f.leadId];
+      if (current == null ||
+          (f.isPending && !current.isPending) ||
+          (f.isPending == current.isPending && f.followupDate.isAfter(current.followupDate))) {
+        byLead[f.leadId] = f;
+      }
     }
-    final pending = _pendingListingFollowupsByLead[leadId];
-    if (pending == null) {
-      return TextButton.icon(
-        onPressed: () => _scheduleListingFollowup(lead),
-        icon: const Icon(Icons.add_alarm_rounded, size: 15),
-        label: const Text('Schedule', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-      );
-    }
-    final color = _listingFollowupColor(pending);
-    final label = pending.isDue ? 'Due' : (pending.isToday ? 'Today' : 'Upcoming');
-    return _buildListingFollowupActionsMenu(
-      pending,
-      _listingValue(lead, 'clientName'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.event_rounded, size: 13, color: color),
-            const SizedBox(width: 4),
-            Text(
-              '$label · ${_formatListingFollowupDate(pending.followupDate)}',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
-            ),
-            Icon(Icons.arrow_drop_down_rounded, size: 16, color: color),
-          ],
-        ),
-      ),
-    );
+    return byLead.values.toList();
   }
 
-  /// Today / Due / Future / All follow-ups for campaign Property Listing leads.
+  /// Property Listing lead follow-ups for each tab, one row per lead, with the Leads page rules:
+  /// salesperson / admin filters on every tab; the date filter only while Future or All clients is open.
+  Map<String, List<ListingLeadFollowup>> _listingFollowupTabs({bool applyDateFilter = true}) {
+    final dateFilter =
+        applyDateFilter && (_selectedFollowupSubTab == 'Future' || _selectedFollowupSubTab == 'AllClients')
+            ? _reqFollowupDateFilter
+            : null;
+    final leadsById = {
+      for (final l in _salesPropertyListingLeads) l['id']?.toString() ?? '': l,
+    };
+    final tabs = <String, List<ListingLeadFollowup>>{'Today': [], 'Due': [], 'Future': [], 'AllClients': []};
+    for (final f in _listingFollowupEntries) {
+      if (_campaignSalespersonFilter != 'All' && f.salesUserId != _campaignSalespersonFilter) continue;
+      if (_campaignAdminFilter != 'All' &&
+          (leadsById[f.leadId]?['adminId'] ?? _campaignAdminByLeadId[f.leadId])?.toString() != _campaignAdminFilter) {
+        continue;
+      }
+      final d = f.followupDate;
+      final onFilterDay = dateFilter == null ||
+          (d.year == dateFilter.year && d.month == dateFilter.month && d.day == dateFilter.day);
+      // Completed follow-ups are listed under All clients only.
+      final bucket = f.isPending ? _listingFollowupBucket(f) : null;
+      if (bucket == 'Today' && onFilterDay) tabs['Today']!.add(f);
+      if (bucket == 'Due') tabs['Due']!.add(f);
+      if (bucket == 'Future' && onFilterDay) tabs['Future']!.add(f);
+      if (onFilterDay) tabs['AllClients']!.add(f);
+    }
+    int byDate(ListingLeadFollowup a, ListingLeadFollowup b) => a.followupDate.compareTo(b.followupDate);
+    tabs['Today']!.sort(byDate);
+    tabs['Future']!.sort(byDate);
+    tabs['Due']!.sort((a, b) => byDate(b, a));
+    tabs['AllClients']!.sort((a, b) => byDate(b, a));
+    return tabs;
+  }
+
+  /// Today / Due / Future / All clients follow-ups for campaign Property Listing leads.
   Widget _buildCampaignListingFollowupsPanel(
     Widget Function(String label, String tabKey, int count, IconData icon) buildPill,
   ) {
-    final counts = _listingFollowupCounts;
-    final dateFilter = _reqFollowupDateFilter;
+    final loading = _listingFollowupsLoading;
+    final loaded = _listingFollowupsLoaded;
+    final error = _listingFollowupsError;
+    const leadKind = 'property listing';
     final query = _listingFollowupSearchController.text.trim().toLowerCase();
     final leadsById = {
       for (final l in _salesPropertyListingLeads) l['id']?.toString() ?? '': l,
     };
+    final tabs = _listingFollowupTabs();
 
-    final items = _listingFollowups.where((f) {
-      final inTab = switch (_selectedFollowupSubTab) {
-        'Due' => f.isDue,
-        'Future' => f.isFuture,
-        'AllClients' => true,
-        _ => f.isToday,
-      };
-      if (!inTab) return false;
-      if (dateFilter != null && (_selectedFollowupSubTab == 'Future' || _selectedFollowupSubTab == 'AllClients')) {
-        final d = f.followupDate;
-        if (d.year != dateFilter.year || d.month != dateFilter.month || d.day != dateFilter.day) return false;
-      }
+    final items = (tabs[_selectedFollowupSubTab] ?? tabs['Today']!).where((f) {
       if (query.isEmpty) return true;
       final lead = leadsById[f.leadId];
       final blob = [
@@ -10426,10 +10852,10 @@ _recomputeFilteredRequirements();
     }).toList();
 
     final emptyText = switch (_selectedFollowupSubTab) {
-      'Due' => 'No due follow-ups on your property listing leads.',
-      'Future' => 'No upcoming follow-ups on your property listing leads.',
-      'AllClients' => 'No follow-ups on your property listing leads yet.',
-      _ => 'No follow-ups today on your property listing leads.',
+      'Due' => 'No due follow-ups on your $leadKind leads.',
+      'Future' => 'No upcoming follow-ups on your $leadKind leads.',
+      'AllClients' => 'No follow-ups on your $leadKind leads yet.',
+      _ => 'No follow-ups today on your $leadKind leads.',
     };
 
     return Column(
@@ -10439,13 +10865,13 @@ _recomputeFilteredRequirements();
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              buildPill("Today's Follow-ups", 'Today', counts.today, Icons.today_rounded),
+              buildPill("Today's Follow-ups", 'Today', tabs['Today']!.length, Icons.today_rounded),
               const SizedBox(width: CRMSpacing.s),
-              buildPill('Due Follow-ups', 'Due', counts.due, Icons.warning_amber_rounded),
+              buildPill('Due Follow-ups', 'Due', tabs['Due']!.length, Icons.warning_amber_rounded),
               const SizedBox(width: CRMSpacing.s),
-              buildPill('Future Follow-ups', 'Future', counts.future, Icons.next_plan_rounded),
+              buildPill('Future Follow-ups', 'Future', tabs['Future']!.length, Icons.next_plan_rounded),
               const SizedBox(width: CRMSpacing.s),
-              buildPill('All clients follow ups', 'AllClients', counts.all, Icons.people_alt_rounded),
+              buildPill('All clients follow ups', 'AllClients', tabs['AllClients']!.length, Icons.people_alt_rounded),
             ],
           ),
         ),
@@ -10481,17 +10907,17 @@ _recomputeFilteredRequirements();
           ),
         ),
         const SizedBox(height: CRMSpacing.m),
-        if (_listingFollowupsLoading && !_listingFollowupsLoaded)
+        if (loading && !loaded)
           const Padding(
             padding: EdgeInsets.all(32),
             child: Center(child: CircularProgressIndicator()),
           )
-        else if (_listingFollowupsError != null && !_listingFollowupsLoaded)
+        else if (error != null && !loaded)
           Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                Text(_listingFollowupsError!, textAlign: TextAlign.center),
+                Text(error, textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: _fetchListingFollowups,
@@ -10528,43 +10954,44 @@ _recomputeFilteredRequirements();
       if (lead != null) _listingValue(lead, 'propertyLocation'),
       if (lead != null) _listingValue(lead, 'campaignName'),
     ].where((v) => v != '—' && v.trim().isNotEmpty).join(' • ');
-    final statusLabel = f.isPending ? (f.isDue ? 'Due' : (f.isToday ? 'Today' : 'Upcoming')) : f.status;
-    final busy = _listingFollowupBusyIds.contains(f.id);
+    final bucket = _listingFollowupBucket(f);
+    final statusLabel = f.isPending
+        ? '${_listingOpenFollowupLabel(f.leadId) ?? 'Follow-Up'} · ${bucket == 'Due' ? 'Due' : (bucket == 'Today' ? 'Today' : 'Upcoming')}'
+        : f.status;
+    final busy = _listingFollowupBusyIds.contains(f.id) || _listingFollowupBusyIds.contains('lead:${f.leadId}');
 
+    // Flutter cannot paint a rounded border whose sides differ in colour, so the accent is an inner left border.
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border(
-          left: BorderSide(color: color, width: 3),
-          top: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-          right: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-        ),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  clientName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  overflow: TextOverflow.ellipsis,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(border: Border(left: BorderSide(color: color, width: 3))),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    clientName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(statusLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
                 ),
-                child: Text(statusLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
-              ),
-              if (f.isPending) ...[
                 const SizedBox(width: 4),
                 busy
                     ? const Padding(
@@ -10580,72 +11007,89 @@ _recomputeFilteredRequirements();
                         ),
                       ),
               ],
-            ],
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.event_rounded, size: 14, color: color),
-                  const SizedBox(width: 4),
-                  Text(
-                    _formatListingFollowupDate(f.followupDate),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
-                  ),
-                ],
-              ),
-              if (phone.isNotEmpty)
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    Icon(Icons.event_rounded, size: 14, color: color),
                     const SizedBox(width: 4),
-                    InkWell(
-                      onTap: () => _makePhoneCall(phone),
-                      child: Icon(Icons.phone_outlined, size: 14, color: CRMColors.primaryOf(context)),
-                    ),
-                    const SizedBox(width: 6),
-                    InkWell(
-                      onTap: () => _sendWhatsAppMessage(phone),
-                      child: const Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF25D366)),
+                    Text(
+                      _formatListingFollowupDate(f.followupDate),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
                     ),
                   ],
                 ),
-            ],
-          ),
-          if (details.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(details, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-          ],
-          if (f.remarks != null) ...[
-            const SizedBox(height: 4),
-            Text('Remarks: ${f.remarks}', style: const TextStyle(fontSize: 12)),
-          ],
-          if (f.outcomeRemarks != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              '${f.status == 'Cancelled' ? 'Cancel reason' : 'Outcome'}: ${f.outcomeRemarks}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                if (phone.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => _makePhoneCall(phone),
+                        child: Icon(Icons.phone_outlined, size: 14, color: CRMColors.primaryOf(context)),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () => _sendWhatsAppMessage(phone),
+                        child: const Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF25D366)),
+                      ),
+                    ],
+                  ),
+              ],
             ),
+            if (details.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(details, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+            ],
+            if (f.remarks != null) ...[
+              const SizedBox(height: 4),
+              Text('Remarks: ${f.remarks}', style: const TextStyle(fontSize: 12)),
+            ],
+            if (f.outcomeRemarks != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                '${f.status == 'Cancelled' ? 'Cancel reason' : 'Outcome'}: ${f.outcomeRemarks}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
   int _campaignRequirementLeadCount(UserModel user) {
+    final admin = _isCampaignLeadAdmin;
     return _cachedRequirements
         .where((r) =>
             getListingTypeLabel(r) == _activeListingTab &&
-            _isShownCampaignRequirement(r, user) &&
+            _isShownCampaignRequirement(r, admin ? null : user) &&
+            (!admin || _campaignLeadMatchesSalesperson(r)) &&
             r.status != 'Won' &&
             r.status != 'Closed' &&
-            !_isLeadRejected(r))
+            !_isLeadRejected(r) &&
+            (admin || !_isRequirementLeadTransferredFromOtherSales(r, user.id)))
+        .length;
+  }
+
+  int _campaignRequirementTransferredCount(UserModel user) {
+    final admin = _isCampaignLeadAdmin;
+    return _cachedRequirements
+        .where((r) =>
+            getListingTypeLabel(r) == _activeListingTab &&
+            _isShownCampaignRequirement(r, admin ? null : user) &&
+            (!admin || _campaignLeadMatchesSalesperson(r)) &&
+            r.status != 'Won' &&
+            r.status != 'Closed' &&
+            !_isLeadRejected(r) &&
+            _isRequirementLeadTransferredFromOtherSales(r, user.id))
         .length;
   }
 
@@ -10817,10 +11261,34 @@ _recomputeFilteredRequirements();
   Widget _buildCampaignPageLeadTypeSelector(UserModel? user) {
     if (user == null) return const SizedBox.shrink();
     final isRent = _activeListingTab == 'Rent';
+    final ownerId = !_isCampaignLeadAdmin
+        ? user.id
+        : (_campaignSalespersonFilter == 'All' ? null : _campaignSalespersonFilter);
+    if (_activeMainTab == 'Assign to Me') {
+      return _buildCampaignLeadTypeTabs(
+        selected: _salesAssignToMeSubTab,
+        listingCount: _propertyListingLeadsFor(ownerId: ownerId, rejected: false, transferredOnly: true).length,
+        requirementCount: _campaignRequirementTransferredCount(user),
+        listingSubtitle: 'Owner leads transferred to you by other sales persons',
+        requirementSubtitle: isRent
+            ? 'Tenant leads transferred to you by other sales persons'
+            : 'Buyer leads transferred to you by other sales persons',
+        onSelect: (type) {
+          setState(() {
+            _salesAssignToMeSubTab = type;
+            _selectedCampaignLeadIds.clear();
+            _currentPage = 1;
+          });
+          _lastComputedFilterKey = null;
+          _recomputeFilteredRequirements(notify: false);
+          if (type == 'Property Listing') unawaited(_fetchSalesPropertyListingLeads());
+        },
+      );
+    }
     if (_activeMainTab == 'Rejected') {
       return _buildCampaignLeadTypeTabs(
         selected: _salesRejectedSubTab,
-        listingCount: _propertyListingLeadsFor(ownerId: user.id, rejected: true).length,
+        listingCount: _propertyListingLeadsFor(ownerId: ownerId, rejected: true).length,
         requirementCount: _rejectedRequirementCount(user),
         listingSubtitle: 'Owner leads you marked Rejected',
         requirementSubtitle: isRent ? 'Tenant leads you rejected' : 'Buyer leads you rejected',
@@ -10837,7 +11305,7 @@ _recomputeFilteredRequirements();
     }
     return _buildCampaignLeadTypeTabs(
       selected: _salesCampaignSubTab,
-      listingCount: _propertyListingLeadsFor(ownerId: user.id, rejected: false).length,
+      listingCount: _propertyListingLeadsFor(ownerId: ownerId, rejected: false).length,
       requirementCount: _campaignRequirementLeadCount(user),
       listingSubtitle: 'Owners listing properties for ${isRent ? 'rent' : 'sale'} -> destination: Properties page',
       requirementSubtitle: isRent
@@ -11353,22 +11821,26 @@ _recomputeFilteredRequirements();
     final bool isWonTab = label == 'Won' || label == 'My Won';
     final bool currentIsWon = _activeMainTab == 'Won' || _activeMainTab == 'My Won';
     final isSelected = isWonTab ? currentIsWon : _activeMainTab == label;
-    return GestureDetector(
-      onTap: () => _onMainViewTabSelected(label),
-      child: AnimatedContainer(
-        duration: CRMMotion.fast,
-        curve: CRMMotion.easeInOut,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
-        decoration: BoxDecoration(
-          color: isSelected ? CRMColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-        ),
-        child: Text(
-          label,
-          style: CRMTypography.bodyMedium.copyWith(
-            color: isSelected ? Colors.white : CRMColors.textSecondary,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _onMainViewTabSelected(label),
+        child: AnimatedContainer(
+          duration: CRMMotion.fast,
+          curve: CRMMotion.easeInOut,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
+          decoration: BoxDecoration(
+            color: isSelected ? CRMColors.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
+          ),
+          child: Text(
+            label,
+            style: CRMTypography.bodyMedium.copyWith(
+              color: isSelected ? Colors.white : CRMColors.textSecondary,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -11634,9 +12106,28 @@ _recomputeFilteredRequirements();
                             final isoUtcString = combined.toUtc().toIso8601String();
 
                             final newNotes = notesController.text.trim();
+                            final campaignRequirement = _usesCampaignRequirementFollowups;
 
-                            // Try remote patch if valid server ID (non-local)
-                            if (!followup.id.startsWith('local_') && !followup.id.startsWith('sv_') && followup.id.isNotEmpty) {
+                            if (campaignRequirement) {
+                              final reqId = followup.requirementId ?? '';
+                              final pending = _pendingCampaignRequirementFollowup(reqId);
+                              try {
+                                if (pending != null) {
+                                  await RequirementLeadFollowupsService.reschedule(pending.id, when: combined, remarks: newNotes);
+                                } else {
+                                  await RequirementLeadFollowupsService.create(
+                                    requirementId: reqId,
+                                    when: combined,
+                                    remarks: newNotes,
+                                    supersedePending: true,
+                                  );
+                                }
+                              } on ListingFollowupsException catch (e) {
+                                throw Exception(e.message);
+                              }
+                              unawaited(_fetchRequirementFollowups());
+                            } else if (!followup.id.startsWith('local_') && !followup.id.startsWith('sv_') && followup.id.isNotEmpty) {
+                              // Try remote patch if valid server ID (non-local)
                               try {
                                 await RequirementsRepository().patchFollowup(
                                   followup.id,
@@ -11652,36 +12143,38 @@ _recomputeFilteredRequirements();
 
                             // Update local memory cache & persistent database
                             try {
-                              for (final fl in FollowupLocalRepository.inMemory.values) {
-                                if ((followup.requirementId != null && followup.requirementId!.isNotEmpty && fl.requirementId == followup.requirementId) ||
-                                    (fl.clientName.isNotEmpty && fl.clientName.trim().toLowerCase() == followup.clientName.trim().toLowerCase()) ||
-                                    fl.id == followup.id) {
-                                  fl.followupDate = combined;
-                                  fl.notes = newNotes;
+                              if (!campaignRequirement) {
+                                for (final fl in FollowupLocalRepository.inMemory.values) {
+                                  if ((followup.requirementId != null && followup.requirementId!.isNotEmpty && fl.requirementId == followup.requirementId) ||
+                                      (fl.clientName.isNotEmpty && fl.clientName.trim().toLowerCase() == followup.clientName.trim().toLowerCase()) ||
+                                      fl.id == followup.id) {
+                                    fl.followupDate = combined;
+                                    fl.notes = newNotes;
+                                  }
                                 }
-                              }
 
-                              final localItem = FollowupLocalRepository.inMemory[followup.id];
-                              if (localItem != null) {
-                                localItem.followupDate = combined;
-                                localItem.notes = newNotes;
-                                await RepositoryCoordinator().followupLocal.saveFollowups([localItem]);
-                              } else {
-                                final authState = context.read<AuthBloc>().state;
-                                final currentUser = authState is Authenticated ? authState.user : null;
+                                final localItem = FollowupLocalRepository.inMemory[followup.id];
+                                if (localItem != null) {
+                                  localItem.followupDate = combined;
+                                  localItem.notes = newNotes;
+                                  await RepositoryCoordinator().followupLocal.saveFollowups([localItem]);
+                                } else {
+                                  final authState = context.read<AuthBloc>().state;
+                                  final currentUser = authState is Authenticated ? authState.user : null;
 
-                                final newLocal = FollowupLocal()
-                                  ..id = followup.id.isNotEmpty ? followup.id : 'local_${DateTime.now().millisecondsSinceEpoch}'
-                                  ..requirementId = followup.requirementId ?? ''
-                                  ..clientName = followup.clientName
-                                  ..mobile = followup.mobile
-                                  ..followupDate = combined
-                                  ..notes = newNotes
-                                  ..status = followup.status.isNotEmpty ? followup.status : (_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit Scheduled' : 'Pending')
-                                  ..createdBy = followup.creatorName ?? currentUser?.fullName ?? 'Propkart Admin'
-                                  ..createdAt = DateTime.now();
+                                  final newLocal = FollowupLocal()
+                                    ..id = followup.id.isNotEmpty ? followup.id : 'local_${DateTime.now().millisecondsSinceEpoch}'
+                                    ..requirementId = followup.requirementId ?? ''
+                                    ..clientName = followup.clientName
+                                    ..mobile = followup.mobile
+                                    ..followupDate = combined
+                                    ..notes = newNotes
+                                    ..status = followup.status.isNotEmpty ? followup.status : (_selectedMainFollowupSection == 'Site Visit Scheduled' ? 'Site Visit Scheduled' : 'Pending')
+                                    ..createdBy = followup.creatorName ?? currentUser?.fullName ?? 'Propkart Admin'
+                                    ..createdAt = DateTime.now();
 
-                                await RepositoryCoordinator().followupLocal.saveFollowups([newLocal]);
+                                  await RepositoryCoordinator().followupLocal.saveFollowups([newLocal]);
+                                }
                               }
 
                               // Update requirement local nextFollowupDate
@@ -11751,6 +12244,7 @@ _recomputeFilteredRequirements();
           initialStep: initialStep,
           isSiteVisit: isSiteVisitMode,
           updateStatusOnSave: true,
+          campaignRequirementLead: !isSiteVisitMode && _isCampaignPageRequirementId(req.id),
           onSaved: () {
             if (isReFollowup) {
               NotificationCenter.addNotification(
@@ -11762,6 +12256,7 @@ _recomputeFilteredRequirements();
               );
             }
             _triggerFetch();
+            if (!isSiteVisitMode) unawaited(_fetchRequirementFollowups());
             if (mounted) {
               setState(() {
                 _refreshFollowupsFuture();
@@ -11782,7 +12277,10 @@ _recomputeFilteredRequirements();
           ),
         );
       },
-    );
+    ).then((_) {
+      // Follow-ups completed from the dialog's history list are not covered by onSaved.
+      if (mounted && widget.campaignMode && !isSiteVisitMode) unawaited(_fetchRequirementFollowups());
+    });
   }
 
   Widget _buildFollowupStatusActionCell(DashboardFollowup f, RequirementModel? reqModel) {
@@ -11841,7 +12339,7 @@ _recomputeFilteredRequirements();
       final isAdminOrSuperAdmin = currentUser != null &&
           (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
 
-      if (!isAdminOrSuperAdmin || !_can(_followupSectionActionKey('delete'))) {
+      if (!isAdminOrSuperAdmin || _usesCampaignRequirementFollowups || !_can(_followupSectionActionKey('delete'))) {
         return historyBtn;
       }
 
@@ -11876,18 +12374,7 @@ _recomputeFilteredRequirements();
           _openFollowupStepper(req, 'Re-Followup');
         } else if (status == 'Interested') {
           _changeStatus(req, 'Interested');
-          if (f.id.isNotEmpty && !f.id.startsWith('local_') && !f.id.startsWith('fallback_')) {
-            RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError((e) {
-              debugPrint('Follow-up could not be marked complete: $e');
-              if (mounted) {
-                AppStatusSnackBar.show(
-                  context,
-                  message: 'Lead status saved, but the follow-up could not be marked complete.',
-                  isSuccess: false,
-                );
-              }
-            });
-          }
+          _completeFollowupAfterStatusChange(f, req, 'Interested');
           _refreshFollowupsFuture();
           if (mounted) setState(() {});
         } else if (status.startsWith('Rejected')) {
@@ -11897,18 +12384,7 @@ _recomputeFilteredRequirements();
             _showRejectionRemarkDialog(context, req, 'Other');
           } else {
             _changeStatus(req, status);
-            if (f.id.isNotEmpty && !f.id.startsWith('local_') && !f.id.startsWith('fallback_')) {
-              RequirementsRepository().updateFollowup(f.id, {'status': 'Completed'}).catchError((e) {
-              debugPrint('Follow-up could not be marked complete: $e');
-              if (mounted) {
-                AppStatusSnackBar.show(
-                  context,
-                  message: 'Lead status saved, but the follow-up could not be marked complete.',
-                  isSuccess: false,
-                );
-              }
-            });
-            }
+            _completeFollowupAfterStatusChange(f, req, status);
             _refreshFollowupsFuture();
             if (mounted) setState(() {});
           }
@@ -12261,55 +12737,6 @@ _recomputeFilteredRequirements();
     }
   }
 
-  Widget _buildFollowupListingToggle() {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: CRMColors.backgroundOf(context),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: CRMColors.borderOf(context).withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildFollowupListingChip('Rent'),
-          _buildFollowupListingChip('Re-Sale'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFollowupListingChip(String type) {
-    final isSelected = _activeListingTab == type;
-    final accent = type == 'Rent' ? CRMColors.rentAccent : CRMColors.resaleAccent;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _activeListingTab = type;
-        });
-        _refreshFollowupsFuture();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected ? accent : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          type,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected
-                ? CRMColors.onAtmosphereAccent(type == 'Rent')
-                : CRMColors.textSecondaryOf(context),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildFollowupsView() {
     final bool isMobile = MediaQuery.of(context).size.width < 600;
     final dateStr = _reqFollowupDateFilter != null
@@ -12374,27 +12801,12 @@ _recomputeFilteredRequirements();
           ? 'Site Visit Management'
           : 'Follow-ups Management',
       subtitle: 'Scheduled client communications and appointments',
-      headerAction: isMobile
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildFollowupListingToggle(),
-                const SizedBox(width: CRMSpacing.m),
-                dateFilterWidget,
-              ],
-            ),
+      headerAction: isMobile ? null : dateFilterWidget,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (isMobile) ...[
-            Row(
-              children: [
-                Expanded(child: _buildFollowupListingToggle()),
-                const SizedBox(width: 8),
-                dateFilterWidget,
-              ],
-            ),
+            Align(alignment: Alignment.centerRight, child: dateFilterWidget),
             const SizedBox(height: CRMSpacing.m),
           ],
           // Mode Toggle Buttons: "Follow ups" & "Site Visit Scheduled"
@@ -12460,6 +12872,7 @@ _recomputeFilteredRequirements();
                       setState(() {
                         _selectedMainFollowupSection = 'Site Visit Scheduled';
                         _currentFollowupPage = 1;
+                        if (widget.campaignMode) _refreshFollowupsFuture(force: true);
                       });
                     },
                     child: AnimatedContainer(
@@ -12503,6 +12916,7 @@ _recomputeFilteredRequirements();
           ),
           FutureBuilder<List<dynamic>>(
             future: _followupsFuture,
+            initialData: _lastFollowupsData,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return const Padding(
@@ -12515,33 +12929,39 @@ _recomputeFilteredRequirements();
               }
 
               final dashboardData = snapshot.data?[0] as DashboardData?;
-              final reqsList = _withLocalRequirementOverrides(
+              final campaignRequirementStore = _usesCampaignRequirementFollowups;
+              final allReqs = _withLocalRequirementOverrides(
                 snapshot.data?[1] as List<RequirementModel>? ?? [],
               );
+              final reqsList = campaignRequirementStore
+                  ? allReqs.where(_isCampaignPageRequirement).toList()
+                  : allReqs;
               final authState = context.read<AuthBloc>().state;
               final currentUser = authState is Authenticated ? authState.user : null;
 
-              final serverFollowups = dashboardData?.followups ?? [];
-              final localFollowups = FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
-              final followups = [
-                ...localFollowups,
-                ...serverFollowups,
-              ];
+              final serverFollowups = campaignRequirementStore
+                  ? _campaignRequirementDashboardFollowups
+                  : (dashboardData?.followups ?? <DashboardFollowup>[]);
+              final localFollowups = campaignRequirementStore
+                  ? <DashboardFollowup>[]
+                  : FollowupLocalRepository.inMemory.values.map((fl) => fl.toModel()).toList();
 
-              final syncResult = FollowupSyncEngine.categorizeFollowups(
-                serverFollowups: serverFollowups,
-                localFollowups: localFollowups,
-                reqsList: reqsList,
-                siteVisits: dashboardData?.siteVisits,
-                isSiteVisitSection: _selectedMainFollowupSection == 'Site Visit Scheduled',
-                targetListingType: _activeListingTab,
-                currentUser: currentUser,
-                users: _getAllKnownUsers(),
-                customDateFilter: (_selectedFollowupSubTab == 'Future' || _selectedFollowupSubTab == 'AllClients')
-                    ? _reqFollowupDateFilter
-                    : null,
-                selectedSalesperson: _selectedSalespersonFilter,
-              );
+              CategorizedFollowupsResult categorize(DateTime? customDateFilter) => FollowupSyncEngine.categorizeFollowups(
+                    serverFollowups: serverFollowups,
+                    localFollowups: localFollowups,
+                    reqsList: reqsList,
+                    siteVisits: dashboardData?.siteVisits,
+                    isSiteVisitSection: _selectedMainFollowupSection == 'Site Visit Scheduled',
+                    targetListingType: _activeListingTab,
+                    currentUser: currentUser,
+                    users: _getAllKnownUsers(),
+                    customDateFilter: customDateFilter,
+                    selectedSalesperson: _selectedSalespersonFilter,
+                  );
+              final followupDateFilter = (_selectedFollowupSubTab == 'Future' || _selectedFollowupSubTab == 'AllClients')
+                  ? _reqFollowupDateFilter
+                  : null;
+              final syncResult = categorize(followupDateFilter);
 
               final followupToReqMap = syncResult.followupToReqMap;
               final todayFollowups = _scopeCampaignFollowups(syncResult.today, followupToReqMap);
@@ -12550,20 +12970,8 @@ _recomputeFilteredRequirements();
               final allClientsFollowups = _scopeCampaignFollowups(syncResult.allClients, followupToReqMap);
               final distinctSalespersons = syncResult.distinctSalespersons;
 
-              final windowNow = DateTime.now();
-              String? windowOf(DashboardFollowup item) => followupQuickWindow(
-                dateRaw: item.followupDate,
-                status: item.status,
-                now: windowNow,
-              );
-              final dueTodayCount = allClientsFollowups.where((item) => windowOf(item) == 'today').length;
-              final overdueCount = allClientsFollowups.where((item) => windowOf(item) == 'overdue').length;
-              final next7Count = allClientsFollowups.where((item) => windowOf(item) == 'next7').length;
-
               List<DashboardFollowup> selectedList;
-              if (_followupQuickWindow != null) {
-                selectedList = allClientsFollowups.where((item) => windowOf(item) == _followupQuickWindow).toList();
-              } else if (_selectedFollowupSubTab == 'Due') {
+              if (_selectedFollowupSubTab == 'Due') {
                 selectedList = dueFollowups;
               } else if (_selectedFollowupSubTab == 'Future') {
                 selectedList = futureFollowups;
@@ -12602,6 +13010,7 @@ _recomputeFilteredRequirements();
                   (currentUser.role == 'Admin' || currentUser.role == 'Super Admin');
               final bool showSelectColumn = _selectedFollowupSubTab == 'AllClients' &&
                   isAdminOrSuperAdmin &&
+                  !campaignRequirementStore &&
                   _can(_followupSectionActionKey('select'));
 
               final pageItems = (startIndex < totalCount)
@@ -12689,21 +13098,23 @@ _recomputeFilteredRequirements();
               final futureLabel = isSiteVisitTab ? "Future Site Visit Scheduled" : "Future Follow-ups";
               final allLabel = isSiteVisitTab ? "All Site Visit Scheduled" : "All clients follow ups";
 
-              final List<DashboardFollowup> rawSelectedFollowups;
-              if (_selectedFollowupSubTab == 'Due') {
-                rawSelectedFollowups = syncResult.due;
-              } else if (_selectedFollowupSubTab == 'Future') {
-                rawSelectedFollowups = syncResult.future;
-              } else if (_selectedFollowupSubTab == 'AllClients') {
-                rawSelectedFollowups = syncResult.allClients;
-              } else {
-                rawSelectedFollowups = syncResult.today;
+              // Each lead-type badge matches the actual count in its respective All Client Leads tab.
+              int campaignFollowupTotal(String leadType) {
+                if (leadType == 'Property Listing') {
+                  final tabs = _listingFollowupTabs();
+                  return tabs['AllClients']?.length ?? 0;
+                }
+                return _scopeCampaignFollowups(
+                  syncResult.allClients,
+                  followupToReqMap,
+                  leadType: 'Requirement',
+                ).length;
               }
 
               Widget campaignLeadTypeTabs() => _buildCampaignLeadTypeTabs(
                     selected: _campaignFollowupSubTab,
-                    listingCount: _listingFollowupCounts.forTab(_selectedFollowupSubTab),
-                    requirementCount: _campaignFollowupsOfType(rawSelectedFollowups, followupToReqMap, 'Requirement').length,
+                    listingCount: campaignFollowupTotal('Property Listing'),
+                    requirementCount: campaignFollowupTotal('Requirement'),
                     listingSubtitle: 'Follow-ups on your property listing leads',
                     requirementSubtitle: isSiteVisitTab
                         ? 'Site visits on your requirement leads'
@@ -12716,6 +13127,7 @@ _recomputeFilteredRequirements();
                         _selectedFollowupClientKeys.clear();
                       });
                       if (type == 'Property Listing') unawaited(_fetchListingFollowups());
+                      if (type == 'Requirement') unawaited(_fetchRequirementFollowups());
                     },
                   );
 
@@ -12750,45 +13162,6 @@ _recomputeFilteredRequirements();
                         buildSubTabPill(allLabel, "AllClients", allClientsFollowups.length, Icons.people_alt_rounded),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: CRMSpacing.s),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilterChip(
-                        label: Text('Due today ($dueTodayCount)'),
-                        selected: _followupQuickWindow == 'today',
-                        onSelected: (selected) => setState(() {
-                          _followupQuickWindow = selected ? 'today' : null;
-                          _currentFollowupPage = 1;
-                        }),
-                      ),
-                      FilterChip(
-                        label: Text('Overdue ($overdueCount)'),
-                        selected: _followupQuickWindow == 'overdue',
-                        onSelected: (selected) => setState(() {
-                          _followupQuickWindow = selected ? 'overdue' : null;
-                          _currentFollowupPage = 1;
-                        }),
-                      ),
-                      FilterChip(
-                        label: Text('Next 7 days ($next7Count)'),
-                        selected: _followupQuickWindow == 'next7',
-                        onSelected: (selected) => setState(() {
-                          _followupQuickWindow = selected ? 'next7' : null;
-                          _currentFollowupPage = 1;
-                        }),
-                      ),
-                      if (_followupQuickWindow != null)
-                        ActionChip(
-                          label: const Text('Clear'),
-                          onPressed: () => setState(() {
-                            _followupQuickWindow = null;
-                            _currentFollowupPage = 1;
-                          }),
-                        ),
-                    ],
                   ),
                   const SizedBox(height: CRMSpacing.m),
                   Builder(
@@ -13379,6 +13752,7 @@ _recomputeFilteredRequirements();
   }
 
   void _showSharePropertiesDialog(RequirementModel req) {
+    final searchController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) {
@@ -14316,6 +14690,368 @@ _recomputeFilteredRequirements();
     showCRMRequirementDrawer(context, req);
   }
 
+
+  Widget _buildCampaignLeadTransferButton({
+    required Map<String, dynamic> lead,
+    required UserModel? currentUser,
+  }) {
+    final leadId = lead['id']?.toString() ?? '';
+    final currentAssigneeId = lead['assignedTo']?.toString() ?? '';
+    final salesUsers = _getSalesUsers();
+    final availableSalesUsers = salesUsers
+        .where((u) => u.id != currentAssigneeId && (currentUser == null || u.id != currentUser.id))
+        .toList();
+
+    return PopupMenuButton<String>(
+      tooltip: 'Transfer Lead to another Salesperson',
+      enabled: availableSalesUsers.isNotEmpty && leadId.isNotEmpty,
+      onSelected: (targetUserId) async {
+        final targetUser = salesUsers.firstWhereOrNull((u) => u.id == targetUserId);
+        if (targetUser == null) return;
+        await _executeLeadTransfer(
+          leadId: leadId,
+          targetUser: targetUser,
+          clientName: lead['clientName']?.toString() ?? 'Lead',
+        );
+      },
+      itemBuilder: (context) => [
+        for (final s in availableSalesUsers)
+          PopupMenuItem<String>(
+            value: s.id,
+            child: Row(
+              children: [
+                const Icon(Icons.person_outline_rounded, size: 16, color: Color(0xFF0284C7)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    s.fullName.trim().isNotEmpty ? s.fullName : s.email,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0284C7),
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.swap_horiz_rounded, size: 14, color: Colors.white),
+            SizedBox(width: 4),
+            Text(
+              'Transfer',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 14, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequirementLeadTransferButton({
+    required RequirementModel req,
+    required UserModel? currentUser,
+  }) {
+    final leadId = req.id;
+    final currentAssigneeId = req.assignedTo ?? '';
+    final salesUsers = _getSalesUsers();
+    final availableSalesUsers = salesUsers
+        .where((u) => u.id != currentAssigneeId && (currentUser == null || u.id != currentUser.id))
+        .toList();
+
+    return PopupMenuButton<String>(
+      tooltip: 'Transfer Lead to another Salesperson',
+      enabled: availableSalesUsers.isNotEmpty && leadId.isNotEmpty,
+      onSelected: (targetUserId) async {
+        final targetUser = salesUsers.firstWhereOrNull((u) => u.id == targetUserId);
+        if (targetUser == null) return;
+        await _executeLeadTransfer(
+          leadId: leadId,
+          targetUser: targetUser,
+          clientName: req.clientName,
+        );
+      },
+      itemBuilder: (context) => [
+        for (final s in availableSalesUsers)
+          PopupMenuItem<String>(
+            value: s.id,
+            child: Row(
+              children: [
+                const Icon(Icons.person_outline_rounded, size: 16, color: Color(0xFF0284C7)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    s.fullName.trim().isNotEmpty ? s.fullName : s.email,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0284C7),
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.swap_horiz_rounded, size: 14, color: Colors.white),
+            SizedBox(width: 4),
+            Text(
+              'Transfer',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 14, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _executeLeadTransfer({
+    required String leadId,
+    required users_model.UserModel targetUser,
+    required String clientName,
+  }) async {
+    try {
+      await RequirementsRepository().transferCampaignLead(
+        leadId: leadId,
+        toSalesUserId: targetUser.id,
+        reason: 'Transferred via Campaign Leads',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$clientName transferred to ${targetUser.fullName.isNotEmpty ? targetUser.fullName : targetUser.email}.'),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+      unawaited(_fetchSalesPropertyListingLeads());
+      context.read<RequirementsBloc>().add(FetchRequirementsEvent());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to transfer lead: $e'),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
+
+    String? _getRecentSalesTransferrerName(RequirementModel req) {
+    final meta = req.metaCustomFields;
+    if (meta == null) return null;
+
+    final senderId = meta['transferred_by']?.toString().trim() ??
+        (meta['_transfer'] is Map ? (meta['_transfer'] as Map)['transferred_by']?.toString().trim() : null) ??
+        (meta['transferred_from_sales'] == true ? meta['reassigned_by']?.toString().trim() : null);
+
+    final senderName = meta['transferred_by_name']?.toString().trim() ??
+        (meta['_transfer'] is Map ? (meta['_transfer'] as Map)['transferred_by_name']?.toString().trim() : null) ??
+        (meta['transferred_from_sales'] == true ? meta['reassigned_by_name']?.toString().trim() : null);
+
+    if (senderId != null && senderId.isNotEmpty) {
+      final allKnown = _getAllKnownUsers();
+      final senderUser = allKnown.firstWhereOrNull((u) => u.id == senderId);
+      if (senderUser != null) {
+        if (senderUser.roleName.toLowerCase().contains('admin')) {
+          return senderUser.fullName.trim().isNotEmpty ? senderUser.fullName.trim() : 'Propkart Admin';
+        }
+        if (senderUser.roleName.toLowerCase().contains('sales')) {
+          return senderUser.fullName;
+        }
+      }
+      final salesUser = _getSalesUsers().firstWhereOrNull((u) => u.id == senderId);
+      if (salesUser != null && salesUser.fullName.trim().isNotEmpty) {
+        return salesUser.fullName;
+      }
+    }
+
+    if (senderName != null &&
+        senderName.isNotEmpty &&
+        senderName.toLowerCase() != 'null' &&
+        senderName.toLowerCase() != 'salesperson') {
+      if (senderName.toLowerCase().contains('admin')) {
+        return senderName.trim().isNotEmpty ? senderName.trim() : 'Propkart Admin';
+      }
+      return senderName;
+    }
+
+    return null;
+  }
+
+  String? _getLeadRecentSalesTransferrerName(Map<String, dynamic> lead) {
+    final rawJson = lead['rawJson'] is Map ? lead['rawJson'] as Map : null;
+    final metaTransfer = rawJson != null && rawJson['_transfer'] is Map ? rawJson['_transfer'] as Map : null;
+
+    final senderId = lead['transferredBy']?.toString().trim() ??
+        rawJson?['transferred_by']?.toString().trim() ??
+        metaTransfer?['transferred_by']?.toString().trim() ??
+        ((rawJson?['transferred_from_sales'] == true || rawJson?['campaign_lead_transferred'] == true)
+            ? (lead['reassignedBy']?.toString().trim() ?? rawJson?['reassigned_by']?.toString().trim())
+            : null);
+
+    final senderName = lead['transferredByName']?.toString().trim() ??
+        rawJson?['transferred_by_name']?.toString().trim() ??
+        metaTransfer?['transferred_by_name']?.toString().trim() ??
+        ((rawJson?['transferred_from_sales'] == true || rawJson?['campaign_lead_transferred'] == true)
+            ? (lead['reassignedByName']?.toString().trim() ?? rawJson?['reassigned_by_name']?.toString().trim())
+            : null);
+
+    if (senderId != null && senderId.isNotEmpty) {
+      final allKnown = _getAllKnownUsers();
+      final senderUser = allKnown.firstWhereOrNull((u) => u.id == senderId);
+      if (senderUser != null) {
+        if (senderUser.roleName.toLowerCase().contains('admin')) {
+          return senderUser.fullName.trim().isNotEmpty ? senderUser.fullName.trim() : 'Propkart Admin';
+        }
+        if (senderUser.roleName.toLowerCase().contains('sales')) {
+          return senderUser.fullName;
+        }
+      }
+      final salesUser = _getSalesUsers().firstWhereOrNull((u) => u.id == senderId);
+      if (salesUser != null && salesUser.fullName.trim().isNotEmpty) {
+        return salesUser.fullName;
+      }
+    }
+
+    if (senderName != null &&
+        senderName.isNotEmpty &&
+        senderName.toLowerCase() != 'null' &&
+        senderName.toLowerCase() != 'salesperson') {
+      if (senderName.toLowerCase().contains('admin')) {
+        return senderName.trim().isNotEmpty ? senderName.trim() : 'Propkart Admin';
+      }
+      return senderName;
+    }
+
+    return null;
+  }
+
+  String _getLeadTransferredByName(Map<String, dynamic> lead) {
+    final transferrer = _getLeadRecentSalesTransferrerName(lead);
+    if (transferrer != null && transferrer.isNotEmpty) return transferrer;
+    final rawJson = lead['rawJson'] is Map ? lead['rawJson'] as Map : null;
+    final senderName = lead['transferredByName']?.toString().trim() ??
+        rawJson?['transferred_by_name']?.toString().trim() ??
+        '';
+    if (senderName.toLowerCase().contains('admin')) return 'Propkart Admin';
+    return 'Salesperson';
+  }
+
+  String _getRequirementTransferredByName(RequirementModel req) {
+    final transferrer = _getRecentSalesTransferrerName(req);
+    if (transferrer != null && transferrer.isNotEmpty) return transferrer;
+    final meta = req.metaCustomFields;
+    final senderName = meta?['transferred_by_name']?.toString().trim() ?? '';
+    if (senderName.toLowerCase().contains('admin')) return 'Propkart Admin';
+    return 'Salesperson';
+  }
+
+  Widget _buildTransferredByCell(String name) {
+    final displayName = name.isNotEmpty ? name : 'Salesperson';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.swap_horiz_rounded, size: 13, color: Color(0xFF0284C7)),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: Text(
+              displayName,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0284C7),
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _isListingLeadTransferredFromOtherSales(Map<String, dynamic> lead, String currentUserId) {
+    final transferrer = _getLeadRecentSalesTransferrerName(lead);
+    if (transferrer == null || transferrer.isEmpty) return false;
+
+    final rawJson = lead['rawJson'] is Map ? lead['rawJson'] as Map : null;
+    final metaTransfer = rawJson != null && rawJson['_transfer'] is Map ? rawJson['_transfer'] as Map : null;
+    final senderId = lead['transferredBy']?.toString().trim() ??
+        rawJson?['transferred_by']?.toString().trim() ??
+        metaTransfer?['transferred_by']?.toString().trim() ??
+        lead['reassignedBy']?.toString().trim() ??
+        rawJson?['reassigned_by']?.toString().trim() ??
+        '';
+
+    if (currentUserId.isNotEmpty && senderId == currentUserId) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isRequirementLeadTransferredFromOtherSales(RequirementModel r, String currentUserId) {
+    final transferrer = _getRecentSalesTransferrerName(r);
+    if (transferrer == null || transferrer.isEmpty) return false;
+
+    final meta = r.metaCustomFields;
+    final metaTransfer = meta != null && meta['_transfer'] is Map ? meta['_transfer'] as Map : null;
+    final senderId = meta?['transferred_by']?.toString().trim() ??
+        metaTransfer?['transferred_by']?.toString().trim() ??
+        meta?['reassigned_by']?.toString().trim() ??
+        '';
+
+    if (currentUserId.isNotEmpty && senderId == currentUserId) {
+      return false;
+    }
+    return true;
+  }
+
   bool _isShownCampaignRequirement(RequirementModel r, [dynamic user]) {
     if (!_salesDirectLeadsLoaded || !_directRequirementIds.contains(r.id)) return false;
     if (_directPropertyListingIds.contains(r.id)) return false;
@@ -14334,10 +15070,24 @@ _recomputeFilteredRequirements();
 
   List<DashboardFollowup> _scopeCampaignFollowups(
     List<DashboardFollowup> items,
-    Map<String, RequirementModel> followupToReqMap,
-  ) {
-    if (!widget.campaignMode) return items;
-    return _campaignFollowupsOfType(items, followupToReqMap, _campaignFollowupSubTab);
+    Map<String, RequirementModel> followupToReqMap, {
+    String? leadType,
+  }) {
+    if (!widget.campaignMode) {
+      // Campaign lead follow-ups (Property Listing and Requirement) belong to the Campaign Leads page only.
+      if (_selectedMainFollowupSection == 'Site Visit Scheduled') return items;
+      return items.where((f) {
+        final id = followupToReqMap[f.id]?.id ?? f.requirementId;
+        return !_isCampaignPageRequirementId(id) && !(id != null && _directPropertyListingIds.contains(id));
+      }).toList();
+    }
+    final scoped = _campaignFollowupsOfType(items, followupToReqMap, leadType ?? _campaignFollowupSubTab);
+    if (!_isCampaignLeadAdmin) return scoped;
+    final unfiltered = _campaignAdminFilter == 'All' && _campaignSalespersonFilter == 'All';
+    return scoped.where((f) {
+      final requirement = followupToReqMap[f.id];
+      return requirement == null ? unfiltered : _campaignLeadMatchesSalesperson(requirement);
+    }).toList();
   }
 
   bool get _isCampaignLeadAdmin {
@@ -14350,7 +15100,35 @@ _recomputeFilteredRequirements();
     return true;
   }
 
+  bool get _isCampaignPageSuperAdmin =>
+      widget.campaignMode && RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role);
+
+  void _rememberCampaignAdmins(List<dynamic> rows) {
+    _campaignAdminByLeadId.clear();
+    _campaignSalesByAdmin.clear();
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final adminId = raw['adminId']?.toString() ?? '';
+      if (adminId.isEmpty) continue;
+      for (final key in [raw['id'], raw['legacyRequirementId']]) {
+        final id = key?.toString() ?? '';
+        if (id.isNotEmpty) _campaignAdminByLeadId[id] = adminId;
+      }
+      final salesId = raw['assignedTo']?.toString() ?? '';
+      if (salesId.isNotEmpty) _campaignSalesByAdmin.putIfAbsent(adminId, () => {}).add(salesId);
+      final name = raw['adminName']?.toString().trim() ?? '';
+      final org = raw['organizationName']?.toString().trim() ?? '';
+      if (name.isNotEmpty) _campaignAdminLabels[adminId] = org.isEmpty || org == name ? name : '$name ($org)';
+    }
+  }
+
+  String _campaignAdminLabel(Object? adminId) {
+    final id = adminId?.toString() ?? '';
+    return _campaignAdminLabels[id] ?? '—';
+  }
+
   bool _campaignLeadMatchesSalesperson(RequirementModel requirement) {
+    if (_campaignAdminFilter != 'All' && _campaignAdminByLeadId[requirement.id] != _campaignAdminFilter) return false;
     if (!_isCampaignLeadAdmin || _campaignSalespersonFilter == 'All') return true;
     final selected = _getSalesUsers().firstWhereOrNull((user) => user.id == _campaignSalespersonFilter);
     if (selected == null) return false;
@@ -14360,13 +15138,18 @@ _recomputeFilteredRequirements();
   List<Map<String, dynamic>> _propertyListingLeadsFor({
     String? ownerId,
     required bool rejected,
+    bool transferredOnly = false,
   }) {
     return _salesPropertyListingLeads.where((lead) {
       final status = (lead['status'] ?? 'None').toString().trim().toLowerCase();
       final isRejected = status == 'rejected';
       if (rejected != isRejected) return false;
       if (!_campaignLeadMatchesListingTab(lead)) return false;
+      if (_campaignAdminFilter != 'All' && lead['adminId']?.toString() != _campaignAdminFilter) return false;
       if (ownerId != null && ownerId.isNotEmpty && lead['assignedTo']?.toString() != ownerId) return false;
+      final isTransferred = _isListingLeadTransferredFromOtherSales(lead, ownerId ?? '');
+      if (transferredOnly && !isTransferred) return false;
+      if (!transferredOnly && !rejected && isTransferred && !_isCampaignLeadAdmin) return false;
       return true;
     }).toList();
   }
@@ -14385,7 +15168,12 @@ _recomputeFilteredRequirements();
     } else if (_campaignSalespersonFilter != 'All') {
       ownerId = _campaignSalespersonFilter;
     }
-    return _propertyListingLeadsFor(ownerId: ownerId, rejected: rejectedOnly);
+    final isAssignToMe = _activeMainTab == 'Assign to Me';
+    return _propertyListingLeadsFor(
+      ownerId: ownerId,
+      rejected: rejectedOnly,
+      transferredOnly: isAssignToMe,
+    );
   }
 
   List<Map<String, dynamic>> _displayedCampaignLeads({required bool rejectedOnly}) {
@@ -14425,7 +15213,7 @@ _recomputeFilteredRequirements();
       if (user?.role == 'Sales') {
         return _isUserAssignee(r, user) || _isUserCreator(r, user);
       }
-      if (_campaignSalespersonFilter != 'All') {
+      if (_campaignSalespersonFilter != 'All' || _campaignAdminFilter != 'All') {
         return _campaignLeadMatchesSalesperson(r);
       }
       if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
@@ -14435,57 +15223,6 @@ _recomputeFilteredRequirements();
       }
       return true;
     }).length;
-  }
-
-  Widget _buildRejectedLeadTypeSelector(UserModel? user) {
-    String? rejectedOwnerId;
-    if (user?.role == 'Sales') {
-      rejectedOwnerId = user?.id;
-    } else if (_selectedUserFilterId != 'All' && _selectedUserFilterId.isNotEmpty) {
-      rejectedOwnerId = _selectedUserFilterId;
-    } else if (_campaignSalespersonFilter != 'All') {
-      rejectedOwnerId = _campaignSalespersonFilter;
-    }
-    final listingCount = _propertyListingLeadsFor(
-      ownerId: rejectedOwnerId,
-      rejected: true,
-    ).length;
-    final requirementCount = _rejectedRequirementCount(user);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-      children: [
-        _buildCampaignSubTabChip(
-          label: 'Property Listing Leads',
-          count: listingCount,
-          isSelected: _salesRejectedSubTab == 'Property Listing',
-          icon: Icons.holiday_village_outlined,
-          onTap: () {
-            setState(() => _salesRejectedSubTab = 'Property Listing');
-            _lastComputedFilterKey = null;
-          },
-        ),
-        const SizedBox(width: 8),
-        _buildCampaignSubTabChip(
-          label: 'Requirement Leads',
-          count: requirementCount,
-          isSelected: _salesRejectedSubTab == 'Requirement',
-          icon: Icons.person_search_outlined,
-          onTap: () {
-            setState(() => _salesRejectedSubTab = 'Requirement');
-            _lastComputedFilterKey = null;
-            _recomputeFilteredRequirements(notify: false);
-          },
-        ),
-      ],
-        ),
-        if (_isCampaignLeadAdmin && _salesRejectedSubTab == 'Requirement') ...[
-          const SizedBox(height: 8),
-          _buildCampaignSalespersonFilter(),
-        ],
-      ],
-    );
   }
 
   void _watchSalesLeadPipeline() {
@@ -14538,10 +15275,12 @@ _recomputeFilteredRequirements();
       final res = await RequirementsRepository().getSalesPropertyListingLeads(
         userId: userId,
         orgWide: effectiveOrgWide,
+        allAdmins: _isCampaignPageSuperAdmin,
       );
       if (res['success'] == true && mounted) {
         final list = res['propertyListingLeads'] as List<dynamic>? ?? [];
         final reqList = res['requirementLeads'] as List<dynamic>? ?? [];
+        _rememberCampaignAdmins([...list, ...reqList]);
         final listingIds = <String>{};
         final mapped = list.map((e) {
           final lead = Map<String, dynamic>.from(e as Map);
@@ -14764,6 +15503,9 @@ _recomputeFilteredRequirements();
         leadId: leadId,
         status: newStatus,
       );
+      if (res['success'] == true && widget.campaignMode && (newStatus == 'Interested' || newStatus == 'Rejected')) {
+        unawaited(_completeListingFollowupAfterStatusChange(leadId, newStatus));
+      }
       if (res['success'] == true && mounted) {
         setState(() {
           for (final item in _salesPropertyListingLeads) {
@@ -14909,16 +15651,26 @@ _recomputeFilteredRequirements();
 
   Widget _buildSalesPropertyListingStatusDropdown(Map<String, dynamic> lead) {
     final leadId = lead['id']?.toString() ?? '';
-    final isUpdating = _salesUpdatingStatusLeads[leadId] == true;
+    final isUpdating = _salesUpdatingStatusLeads[leadId] == true || _listingFollowupBusyIds.contains('lead:$leadId');
     final currentStatus = (lead['status']?.toString() ?? 'None').trim().toLowerCase();
-    final displayStatus = currentStatus == 'interested'
+    final savedStatus = currentStatus == 'interested' || currentStatus == 'complete' || currentStatus == 'completed'
         ? 'Interested'
         : currentStatus == 'rejected'
             ? 'Rejected'
             : 'None';
+    // Follow-Up / Re-Follow-Up come from the lead's follow-up records; the saved listing status stays None/Interested/Rejected.
+    final withFollowup = widget.campaignMode && leadId.isNotEmpty && savedStatus != 'Rejected';
+    final openFollowup = withFollowup ? _listingOpenFollowupLabel(leadId) : null;
+    final nextFollowupAction = withFollowup
+        ? (_listingLeadNeedsReFollowup(leadId) ? 'Re-Follow-Up' : 'Follow-Up')
+        : null;
+    final displayStatus = openFollowup ?? savedStatus;
+    final isFollowup = openFollowup != null;
     final isInterested = displayStatus == 'Interested';
     final isRejected = displayStatus == 'Rejected';
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    const followupColor = Color(0xFFF59E0B);
+    final pendingFollowup = isFollowup ? _pendingListingFollowupsByLead[leadId] : null;
 
     if (isUpdating) {
       return Container(
@@ -14933,7 +15685,15 @@ _recomputeFilteredRequirements();
       );
     }
 
-    return Container(
+    DropdownMenuItem<String> followupItem(String label) => DropdownMenuItem(
+          value: label,
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: followupColor),
+          ),
+        );
+
+    final dropdown = Container(
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
@@ -14941,14 +15701,18 @@ _recomputeFilteredRequirements();
             ? const Color(0xFFEF4444).withValues(alpha: 0.15)
             : isInterested
                 ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                : isFollowup
+                    ? followupColor.withValues(alpha: 0.15)
+                    : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: isRejected
               ? const Color(0xFFEF4444)
               : isInterested
                   ? const Color(0xFF10B981)
-                  : (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                  : isFollowup
+                      ? followupColor
+                      : (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
         ),
       ),
       child: DropdownButtonHideUnderline(
@@ -14962,45 +15726,60 @@ _recomputeFilteredRequirements();
                 ? const Color(0xFFEF4444)
                 : isInterested
                     ? const Color(0xFF10B981)
-                    : (isDark ? Colors.white70 : Colors.black87),
+                    : isFollowup
+                        ? followupColor
+                        : (isDark ? Colors.white70 : Colors.black87),
           ),
           dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
           style: TextStyle(
             fontSize: 11.5,
-            fontWeight: (isInterested || isRejected) ? FontWeight.bold : FontWeight.w600,
+            fontWeight: (isInterested || isRejected || isFollowup) ? FontWeight.bold : FontWeight.w600,
             color: isRejected
                 ? const Color(0xFFEF4444)
                 : isInterested
                     ? const Color(0xFF10B981)
-                    : (isDark ? Colors.white : Colors.black87),
+                    : isFollowup
+                        ? followupColor
+                        : (isDark ? Colors.white : Colors.black87),
           ),
-          items: const [
-            DropdownMenuItem(
+          items: [
+            const DropdownMenuItem(
               value: 'None',
               child: Text('None', style: TextStyle(fontSize: 11.5)),
             ),
-            DropdownMenuItem(
+            const DropdownMenuItem(
               value: 'Interested',
               child: Text(
                 'Interested',
                 style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
               ),
             ),
-            DropdownMenuItem(
+            const DropdownMenuItem(
               value: 'Rejected',
               child: Text(
                 'Rejected',
                 style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFEF4444)),
               ),
             ),
+            if (openFollowup != null && openFollowup != nextFollowupAction) followupItem(openFollowup),
+            if (nextFollowupAction != null) followupItem(nextFollowupAction),
           ],
           onChanged: (newVal) {
-            if (newVal != null && newVal != displayStatus && leadId.isNotEmpty) {
+            if (newVal == null || leadId.isEmpty) return;
+            if (newVal == nextFollowupAction) {
+              _scheduleListingFollowup(leadId, _listingValue(lead, 'clientName'));
+            } else if (newVal != displayStatus && newVal != openFollowup) {
               _updateSalesPropertyListingStatus(leadId, newVal);
             }
           },
         ),
       ),
+    );
+
+    if (pendingFollowup == null) return dropdown;
+    return Tooltip(
+      message: 'Follow-up on ${_formatListingFollowupDate(pendingFollowup.followupDate)}',
+      child: dropdown,
     );
   }
 
@@ -15042,8 +15821,12 @@ _recomputeFilteredRequirements();
 
   Widget _buildSalesPropertyListingSpreadsheetView({required bool isMobile, bool rejectedOnly = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    UserModel? currentUser;
+    try {
+      final authState = context.read<AuthBloc>().state;
+      if (authState is Authenticated) currentUser = authState.user;
+    } catch (_) {}
     final rows = _displayedCampaignLeads(rejectedOnly: rejectedOnly);
-    final showFollowup = widget.campaignMode && !rejectedOnly;
     final rowIds = rows.map((lead) => lead['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
     final selectedCount = rowIds.where(_selectedCampaignLeadIds.contains).length;
     final allSelected = rowIds.isNotEmpty && selectedCount == rowIds.length;
@@ -15182,7 +15965,7 @@ _recomputeFilteredRequirements();
         children: [
           toolbar,
           for (int i = 0; i < rows.length; i++)
-            _buildSalesPropertyListingMobileCard(rows[i], i + 1, isDark, showFollowup: showFollowup),
+            _buildSalesPropertyListingMobileCard(rows[i], i + 1, isDark),
         ],
       );
     }
@@ -15215,10 +15998,11 @@ _recomputeFilteredRequirements();
               const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               const DataColumn(label: Text('Source', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               const DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-              if (showFollowup)
-                const DataColumn(label: Text('Follow-up', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              const DataColumn(label: Text('Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               if (_isCampaignLeadAdmin)
                 const DataColumn(label: Text('Salesperson', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              if (_isCampaignPageSuperAdmin)
+                const DataColumn(label: Text('Admin', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               const DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               DataColumn(label: Text('Phone Number', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               DataColumn(label: Text('Received On', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
@@ -15282,19 +16066,38 @@ _recomputeFilteredRequirements();
                       ? _listingTextCell('—')
                       : _buildSalesSourceBadge(source)),
                   DataCell(_buildSalesPropertyListingStatusDropdown(lead)),
-                  if (showFollowup) DataCell(_buildListingFollowupCell(lead)),
+                  DataCell(_buildCampaignLeadTransferButton(lead: lead, currentUser: currentUser)),
                   if (_isCampaignLeadAdmin) DataCell(_listingTextCell(salespersonName, weight: FontWeight.w600)),
+                  if (_isCampaignPageSuperAdmin) DataCell(_listingTextCell(_campaignAdminLabel(lead['adminId']), weight: FontWeight.w600)),
                   DataCell(
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 160),
-                      child: Text(
-                        clientName,
-                        style: TextStyle(
-                          fontWeight: clientName == '—' ? FontWeight.w500 : FontWeight.bold,
-                          fontSize: 12.5,
-                          color: clientName == '—' ? const Color(0xFF94A3B8) : null,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            clientName,
+                            style: TextStyle(
+                              fontWeight: clientName == '—' ? FontWeight.w500 : FontWeight.bold,
+                              fontSize: 12.5,
+                              color: clientName == '—' ? const Color(0xFF94A3B8) : null,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (_activeMainTab == 'Assign to Me' || _isListingLeadTransferredFromOtherSales(lead, '')) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'By: ${_getLeadTransferredByName(lead)}',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0284C7),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -15390,9 +16193,8 @@ _recomputeFilteredRequirements();
   Widget _buildSalesPropertyListingMobileCard(
     Map<String, dynamic> lead,
     int index,
-    bool isDark, {
-    bool showFollowup = false,
-  }) {
+    bool isDark,
+  ) {
     final source = lead['source']?.toString() ?? lead['rawSource']?.toString() ?? '';
     final clientName = _listingValue(lead, 'clientName');
     final phone = lead['phone']?.toString().trim() ?? '';
@@ -15436,12 +16238,28 @@ _recomputeFilteredRequirements();
                 Text('#$index', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                 const SizedBox(width: 8),
                 source.trim().isEmpty ? _listingTextCell('—') : _buildSalesSourceBadge(source),
+                if (_activeMainTab == 'Assign to Me' || _isListingLeadTransferredFromOtherSales(lead, '')) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'By: ${_getLeadTransferredByName(lead)}',
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 if (_isCampaignLeadAdmin)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Text(
-                      _listingValue(lead, 'assignedToName'),
+                      _isCampaignPageSuperAdmin
+                          ? '${_listingValue(lead, 'assignedToName')} · ${_campaignAdminLabel(lead['adminId'])}'
+                          : _listingValue(lead, 'assignedToName'),
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                     ),
                   ),
@@ -15483,15 +16301,6 @@ _recomputeFilteredRequirements();
               'Received: ${_formatLeadReceivedDate(receivedOn)} (${_formatLeadTimeAgo(receivedOn)})',
               style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
             ),
-            if (showFollowup) ...[
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  const Text('Follow-up: ', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                  Flexible(child: _buildListingFollowupCell(lead)),
-                ],
-              ),
-            ],
           ],
         ),
       ),
@@ -15509,6 +16318,10 @@ class RequirementStepperDialog extends StatefulWidget {
   final bool isSiteVisit;
   final void Function(DateTime scheduledDate)? onSavedWithDate;
 
+  /// Campaign Requirement lead: follow-ups are stored in the Campaign Leads follow-up table,
+  /// not in the Leads page follow-ups.
+  final bool campaignRequirementLead;
+
   const RequirementStepperDialog({
     super.key,
     required this.requirement,
@@ -15517,6 +16330,7 @@ class RequirementStepperDialog extends StatefulWidget {
     this.onSavedWithDate,
     this.updateStatusOnSave = false,
     this.isSiteVisit = false,
+    this.campaignRequirementLead = false,
   });
 
   @override
@@ -15648,43 +16462,56 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
         RepositoryCoordinator().refreshDashboard();
         RepositoryCoordinator().refreshRequirements();
       } else {
-        await requirementsRepository.postFollowup({
-          'client_name': widget.requirement.clientName,
-          'mobile': widget.requirement.clientMobile,
-          'notes': remarks,
-          'followup_date': isoDateStr,
-          'requirement_id': widget.requirement.id,
-        });
+        if (widget.campaignRequirementLead) {
+          try {
+            await RequirementLeadFollowupsService.create(
+              requirementId: widget.requirement.id,
+              when: scheduledDateTime,
+              remarks: remarks,
+              supersedePending: true,
+            );
+          } on ListingFollowupsException catch (e) {
+            throw Exception(e.message);
+          }
+        } else {
+          await requirementsRepository.postFollowup({
+            'client_name': widget.requirement.clientName,
+            'mobile': widget.requirement.clientMobile,
+            'notes': remarks,
+            'followup_date': isoDateStr,
+            'requirement_id': widget.requirement.id,
+          });
 
-        _localAddedFollowups.add({
-          'id': 'local_${DateTime.now().millisecondsSinceEpoch}',
-          'requirement_id': widget.requirement.id,
-          'client_name': widget.requirement.clientName,
-          'mobile': widget.requirement.clientMobile,
-          'followup_date': isoDateStr,
-          'notes': remarks,
-          'status': 'Pending',
-          'creator_name': 'Propkart Admin',
-        });
+          _localAddedFollowups.add({
+            'id': 'local_${DateTime.now().millisecondsSinceEpoch}',
+            'requirement_id': widget.requirement.id,
+            'client_name': widget.requirement.clientName,
+            'mobile': widget.requirement.clientMobile,
+            'followup_date': isoDateStr,
+            'notes': remarks,
+            'status': 'Pending',
+            'creator_name': 'Propkart Admin',
+          });
 
-        try {
-          final authState = context.read<AuthBloc>().state;
-          final currentUser = authState is Authenticated ? authState.user : null;
+          try {
+            final authState = context.read<AuthBloc>().state;
+            final currentUser = authState is Authenticated ? authState.user : null;
 
-          final newFollowupLocal = FollowupLocal()
-            ..id = 'local_${DateTime.now().millisecondsSinceEpoch}'
-            ..requirementId = widget.requirement.id
-            ..clientName = widget.requirement.clientName
-            ..mobile = widget.requirement.clientMobile
-            ..followupDate = scheduledDateTime
-            ..notes = remarks
-            ..status = 'Pending'
-            ..createdBy = currentUser?.fullName ?? 'Propkart Admin'
-            ..createdAt = DateTime.now();
+            final newFollowupLocal = FollowupLocal()
+              ..id = 'local_${DateTime.now().millisecondsSinceEpoch}'
+              ..requirementId = widget.requirement.id
+              ..clientName = widget.requirement.clientName
+              ..mobile = widget.requirement.clientMobile
+              ..followupDate = scheduledDateTime
+              ..notes = remarks
+              ..status = 'Pending'
+              ..createdBy = currentUser?.fullName ?? 'Propkart Admin'
+              ..createdAt = DateTime.now();
 
-          await RepositoryCoordinator().followupLocal.saveFollowups([newFollowupLocal]);
-        } catch (e) {
-          debugPrint('⚠️ Local followup save error: $e');
+            await RepositoryCoordinator().followupLocal.saveFollowups([newFollowupLocal]);
+          } catch (e) {
+            debugPrint('⚠️ Local followup save error: $e');
+          }
         }
 
         final authState = context.read<AuthBloc>().state;
@@ -15826,6 +16653,23 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
       for (final loc in localFollowups) {
         final exists = result.any((r) => r['notes'] == loc['notes'] && r['followup_date'] == loc['followup_date']);
         if (!exists) result.add(loc);
+      }
+    } else if (widget.campaignRequirementLead) {
+      try {
+        final data = await RequirementLeadFollowupsService.fetch(requirementId: widget.requirement.id);
+        for (final f in data.items) {
+          if (f.status == 'Cancelled') continue;
+          result.add({
+            'id': f.id,
+            'source': 'campaign_requirement',
+            'followup_date': f.followupDate.toIso8601String(),
+            'notes': f.remarks ?? f.outcomeRemarks ?? 'Follow-up',
+            'status': f.status,
+            'creator_name': f.createdByName ?? f.salesUserName ?? 'Sales Executive',
+          });
+        }
+      } on ListingFollowupsException catch (e) {
+        debugPrint('⚠️ Error fetching campaign requirement follow-ups: ${e.message}');
       }
     } else {
       // Regular Follow-ups mode
@@ -16030,7 +16874,9 @@ class _RequirementStepperDialogState extends State<RequirementStepperDialog> {
                                     _completedFollowupIds.add(itemId);
                                   });
                                   try {
-                                    if (itemId.isNotEmpty && !itemId.startsWith('local_') && !itemId.startsWith('fallback_')) {
+                                    if (f['source'] == 'campaign_requirement') {
+                                      await RequirementLeadFollowupsService.complete(itemId);
+                                    } else if (itemId.isNotEmpty && !itemId.startsWith('local_') && !itemId.startsWith('fallback_')) {
                                       await RequirementsRepository().updateFollowup(itemId, {'status': 'Completed'});
                                     }
                                   } catch (e) {
@@ -17312,7 +18158,7 @@ String getEffectiveStatus(RequirementModel req) {
 }
 
 String displayStatusLabel(String status) {
-  if (status == 'Assigned' || status == 'Assigned to Sales') return 'Assigned to Sales';
+  if (status == 'Assigned' || status == 'Assigned to Sales' || status == 'Allocate to Sales') return 'Allocate to Sales';
   if (status == 'Not Started') return 'Not Started';
   if (status == 'New') return 'New';
   if (status == 'Not Interested') return 'Not Interested';
@@ -18141,7 +18987,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
         ? req.assigneeName!.trim()
         : (transferSalesman?.isNotEmpty == true ? transferSalesman! : 'Unassigned');
     final isAssignedToSales = req.status.trim().toLowerCase() == 'assigned' ||
-        req.status.trim().toLowerCase() == 'assigned to sales' ||
+        req.status.trim().toLowerCase() == 'assigned to sales' || req.status.trim().toLowerCase() == 'allocate to sales' ||
         (transfer is Map && transfer['assigned_to'] != null && transfer['assigned_to'].toString().trim().isNotEmpty);
     final parsedFu = _parseFollowupDateTime(req.nextFollowupDate);
     final followup = parsedFu != null
@@ -18161,7 +19007,7 @@ class _CRMRequirementDetailDrawerState extends State<_CRMRequirementDetailDrawer
         _buildDetailRow("Rejection Note", req.rejectionRemark!.trim(), Icons.note_alt_outlined),
       if (isManuallyAddedByCurrentUser)
         _buildDetailRow("Lead Type", "Manually Added", Icons.person_add_alt_1_rounded),
-      _buildDetailRow(isAssignedToSales ? "Assigned to Sales" : "Assigned To", effectiveAssignee, Icons.person_outline_rounded),
+      _buildDetailRow(isAssignedToSales ? "Allocate to Sales" : "Assigned To", effectiveAssignee, Icons.person_outline_rounded),
       _buildDetailRow("Follow-up", followup, Icons.event_rounded),
     ];
   }
@@ -19586,12 +20432,14 @@ class _ListingFollowupDialog extends StatefulWidget {
   final String clientName;
   final DateTime? initialWhen;
   final String? initialRemarks;
+  final String? title;
 
   const _ListingFollowupDialog({
     required this.mode,
     required this.clientName,
     this.initialWhen,
     this.initialRemarks,
+    this.title,
   });
 
   static Future<_ListingFollowupDialogResult?> show(
@@ -19600,6 +20448,7 @@ class _ListingFollowupDialog extends StatefulWidget {
     required String clientName,
     DateTime? initialWhen,
     String? initialRemarks,
+    String? title,
   }) {
     return showDialog<_ListingFollowupDialogResult>(
       context: context,
@@ -19608,6 +20457,7 @@ class _ListingFollowupDialog extends StatefulWidget {
         clientName: clientName,
         initialWhen: initialWhen,
         initialRemarks: initialRemarks,
+        title: title,
       ),
     );
   }
@@ -19697,12 +20547,13 @@ class _ListingFollowupDialogState extends State<_ListingFollowupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final (title, action) = switch (widget.mode) {
+    final (defaultTitle, action) = switch (widget.mode) {
       _ListingFollowupDialogMode.schedule => ('Schedule Follow-up', 'Schedule'),
       _ListingFollowupDialogMode.reschedule => ('Reschedule Follow-up', 'Reschedule'),
-      _ListingFollowupDialogMode.complete => ('Complete Follow-up', 'Mark Completed'),
+      _ListingFollowupDialogMode.complete => ('Mark as Interested', 'Mark Interested'),
       _ListingFollowupDialogMode.cancel => ('Cancel Follow-up', 'Cancel Follow-up'),
     };
+    final title = widget.title ?? defaultTitle;
     final remarksLabel = switch (widget.mode) {
       _ListingFollowupDialogMode.complete => 'Outcome / conversation notes',
       _ListingFollowupDialogMode.cancel => 'Reason (optional)',

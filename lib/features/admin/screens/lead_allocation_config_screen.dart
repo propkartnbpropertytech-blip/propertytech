@@ -35,6 +35,8 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _salesPoolScrollController = ScrollController();
   final ScrollController _telecallerPoolScrollController = ScrollController();
+  final ScrollController _mobileSalesPoolScrollController = ScrollController();
+  final ScrollController _mobileTelecallerPoolScrollController = ScrollController();
 
   // Static standard property categories for Salesperson
   static const List<Map<String, dynamic>> _salesPropertyCategories = [
@@ -73,6 +75,10 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
   @override
   void dispose() {
     _searchController.dispose();
+    _salesPoolScrollController.dispose();
+    _telecallerPoolScrollController.dispose();
+    _mobileSalesPoolScrollController.dispose();
+    _mobileTelecallerPoolScrollController.dispose();
     super.dispose();
   }
 
@@ -676,7 +682,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                           const SizedBox(height: 2),
                           Text(
                             role == 'Sales'
-                                ? '$campaignTitle → $categoryName'
+                                ? '$campaignTitle • $categoryName'
                                 : campaignTitle,
                             style: TextStyle(
                               fontSize: 13,
@@ -792,93 +798,36 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-      appBar: isMobile
-          ? AppBar(
-              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-              elevation: 0.5,
-              leading: IconButton(
-                icon: Icon(Icons.arrow_back, color: isDark ? Colors.white : const Color(0xFF0F172A)),
-                onPressed: () => context.pop(),
-              ),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Lead Allocation Configuration',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'Dynamic campaign & property-category lead routing',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Refresh Configuration',
-                  onPressed: _loadConfig,
-                ),
-                const SizedBox(width: 8),
-              ],
-            )
-          : null,
+      appBar: null,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? _buildErrorView()
-              : isMobile
-                  ? RefreshIndicator(
-                      onRefresh: _loadConfig,
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 20,
-                        ),
-                        children: [
-                          _buildDualRoleTogglesCard(isDark, true),
-                          const SizedBox(height: 24),
-                          if (_targetRole == 'Sales')
-                            _buildSalespersonAllocationView(isDark, true, screenWidth)
-                          else if (_targetRole == 'Telecaller')
-                            _buildTelecallerAllocationView(isDark, true, screenWidth)
-                          else
-                            _buildBothOffView(isDark),
-                          const SizedBox(height: 48),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
+              : RefreshIndicator(
                       onRefresh: _loadConfig,
                       child: CustomScrollView(
                         slivers: [
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                              padding: EdgeInsets.fromLTRB(
+                                isMobile ? 16 : 24,
+                                isMobile ? 12 : 20,
+                                isMobile ? 16 : 24,
+                                0,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildDesktopHeader(isDark),
-                                  const SizedBox(height: 20),
-                                  _buildDualRoleTogglesCard(isDark, false),
-                                  const SizedBox(height: 24),
+                                  _buildHeader(isDark, isMobile),
+                                  SizedBox(height: isMobile ? 16 : 20),
+                                  _buildDualRoleTogglesCard(isDark, isMobile),
+                                  SizedBox(height: isMobile ? 16 : 24),
                                   if (_targetRole == 'Sales') ...[
-                                    _buildSalespersonSectionHeader(isDark, false),
-                                    const SizedBox(height: 12),
+                                    _buildSalespersonSectionHeader(isDark, isMobile),
+                                    SizedBox(height: isMobile ? 8 : 12),
                                   ] else if (_targetRole == 'Telecaller') ...[
-                                    _buildTelecallerSectionHeader(isDark, false),
-                                    const SizedBox(height: 12),
+                                    _buildTelecallerSectionHeader(isDark, isMobile),
+                                    SizedBox(height: isMobile ? 8 : 12),
                                   ],
                                 ],
                               ),
@@ -889,7 +838,8 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                               pinned: true,
                               delegate: _StickyPoolHeaderDelegate(
                                 isDark: isDark,
-                                height: 104.0,
+                                isMobile: isMobile,
+                                height: 120.0,
                                 child: _buildUserDraggablePool(
                                   users: _salespersons,
                                   role: 'Sales',
@@ -901,12 +851,17 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                             ),
                             SliverToBoxAdapter(
                               child: Padding(
-                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+                                padding: EdgeInsets.fromLTRB(
+                                  isMobile ? 16 : 24,
+                                  isMobile ? 12 : 16,
+                                  isMobile ? 16 : 24,
+                                  48,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     _buildSearchField(isDark),
-                                    const SizedBox(height: 20),
+                                    SizedBox(height: isMobile ? 16 : 20),
                                     _buildSalespersonCampaignsList(isDark, screenWidth),
                                   ],
                                 ),
@@ -917,7 +872,8 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                               pinned: true,
                               delegate: _StickyPoolHeaderDelegate(
                                 isDark: isDark,
-                                height: 104.0,
+                                isMobile: isMobile,
+                                height: 120.0,
                                 child: _buildUserDraggablePool(
                                   users: _telecallers,
                                   role: 'Telecaller',
@@ -929,12 +885,17 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                             ),
                             SliverToBoxAdapter(
                               child: Padding(
-                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+                                padding: EdgeInsets.fromLTRB(
+                                  isMobile ? 16 : 24,
+                                  isMobile ? 12 : 16,
+                                  isMobile ? 16 : 24,
+                                  48,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     _buildSearchField(isDark),
-                                    const SizedBox(height: 20),
+                                    SizedBox(height: isMobile ? 16 : 20),
                                     _buildTelecallerCampaignsList(isDark, screenWidth),
                                   ],
                                 ),
@@ -943,7 +904,12 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                           ] else
                             SliverToBoxAdapter(
                               child: Padding(
-                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+                                padding: EdgeInsets.fromLTRB(
+                                  isMobile ? 16 : 24,
+                                  16,
+                                  isMobile ? 16 : 24,
+                                  48,
+                                ),
                                 child: _buildBothOffView(isDark),
                               ),
                             ),
@@ -953,7 +919,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     );
   }
 
-  Widget _buildDesktopHeader(bool isDark) {
+  Widget _buildHeader(bool isDark, bool isMobile) {
     return Row(
       children: [
         IconButton(
@@ -964,7 +930,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
           tooltip: 'Back to Lead Allocation',
           onPressed: () => context.pop(),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: isMobile ? 4 : 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -972,7 +938,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
               Text(
                 'Lead Allocation Configuration',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: isMobile ? 16 : 18,
                   fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : const Color(0xFF0F172A),
                 ),
@@ -982,7 +948,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
               Text(
                 'Dynamic campaign & property-category lead routing',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: isMobile ? 11 : 12,
                   color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                 ),
                 maxLines: 1,
@@ -1440,27 +1406,6 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     );
   }
 
-  Widget _buildSalespersonAllocationView(bool isDark, bool isMobile, double screenWidth) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSalespersonSectionHeader(isDark, isMobile),
-        const SizedBox(height: 16),
-        _buildUserDraggablePool(
-          users: _salespersons,
-          role: 'Sales',
-          isDark: isDark,
-          accentColor: const Color(0xFF10B981),
-          isSticky: false,
-        ),
-        const SizedBox(height: 20),
-        _buildSearchField(isDark),
-        const SizedBox(height: 20),
-        _buildSalespersonCampaignsList(isDark, screenWidth),
-      ],
-    );
-  }
-
   // -------------------------------------------------------------
   // 4. TELECALLER ALLOCATION VIEW & COMPONENTS
   // -------------------------------------------------------------
@@ -1551,27 +1496,6 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     );
   }
 
-  Widget _buildTelecallerAllocationView(bool isDark, bool isMobile, double screenWidth) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildTelecallerSectionHeader(isDark, isMobile),
-        const SizedBox(height: 16),
-        _buildUserDraggablePool(
-          users: _telecallers,
-          role: 'Telecaller',
-          isDark: isDark,
-          accentColor: const Color(0xFF3B82F6),
-          isSticky: false,
-        ),
-        const SizedBox(height: 20),
-        _buildSearchField(isDark),
-        const SizedBox(height: 20),
-        _buildTelecallerCampaignsList(isDark, screenWidth),
-      ],
-    );
-  }
-
   // -------------------------------------------------------------
   // USER DRAGGABLE POOL TRAY
   // -------------------------------------------------------------
@@ -1582,183 +1506,142 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     required Color accentColor,
     bool isSticky = false,
   }) {
-    if (isSticky) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
-                const SizedBox(width: 8),
-                Text(
-                  role == 'Sales'
-                      ? 'Available Salespersons (Drag to assign)'
-                      : 'Available Telecallers (Drag to assign)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF0F172A),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  'Hold & drag into any drop zone below',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                InkWell(
-                  onTap: () {
-                    final ctrl = role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController;
-                    if (ctrl.hasClients) {
-                      ctrl.animateTo(
-                        (ctrl.offset - 220).clamp(0.0, ctrl.position.maxScrollExtent),
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                      );
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(
-                      Icons.chevron_left,
-                      size: 16,
-                      color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                InkWell(
-                  onTap: () {
-                    final ctrl = role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController;
-                    if (ctrl.hasClients) {
-                      ctrl.animateTo(
-                        (ctrl.offset + 220).clamp(0.0, ctrl.position.maxScrollExtent),
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                      );
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(
-                      Icons.chevron_right,
-                      size: 16,
-                      color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (users.isEmpty)
-              SizedBox(
-                height: 38,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'No active users found for this role.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                  ),
-                ),
-              )
-            else
-              SizedBox(
-                height: 40,
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(context).copyWith(
-                    scrollbars: false,
-                    dragDevices: {
-                      PointerDeviceKind.touch,
-                      PointerDeviceKind.mouse,
-                      PointerDeviceKind.trackpad,
-                    },
-                  ),
-                  child: SingleChildScrollView(
-                    controller: role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController,
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: users.map((u) {
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 10),
-                          child: _buildDraggableUserChip(u, role, isDark, accentColor),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
+    final scrollCtrl = isMobile
+        ? (role == 'Sales' ? _mobileSalesPoolScrollController : _mobileTelecallerPoolScrollController)
+        : (role == 'Sales' ? _salesPoolScrollController : _telecallerPoolScrollController);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 16,
+        vertical: isMobile ? 6 : 8,
+      ),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
         ),
+        boxShadow: isSticky
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           LayoutBuilder(
             builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 480;
+              final isNarrow = constraints.maxWidth < 520;
               if (isNarrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                return Row(
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
+                    Icon(Icons.touch_app_outlined, size: 16, color: accentColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
                             role == 'Sales'
                                 ? 'Available Salespersons (Drag to assign)'
                                 : 'Available Telecallers (Drag to assign)',
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: 12.5,
                               fontWeight: FontWeight.bold,
                               color: isDark ? Colors.white : const Color(0xFF0F172A),
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Hold & drag into any drop zone below',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        '${users.length}',
+                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: accentColor),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      onTap: () {
+                        if (scrollCtrl.hasClients) {
+                          scrollCtrl.animateTo(
+                            (scrollCtrl.offset - 180).clamp(0.0, scrollCtrl.position.maxScrollExtent),
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeInOut,
+                          );
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0),
                           ),
                         ),
-                      ],
+                        child: Icon(
+                          Icons.chevron_left,
+                          size: 16,
+                          color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Hold & drag into any drop zone below',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () {
+                        if (scrollCtrl.hasClients) {
+                          scrollCtrl.animateTo(
+                            (scrollCtrl.offset + 180).clamp(0.0, scrollCtrl.position.maxScrollExtent),
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeInOut,
+                          );
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                        ),
                       ),
                     ),
                   ],
@@ -1786,11 +1669,67 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                       color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  InkWell(
+                    onTap: () {
+                      if (scrollCtrl.hasClients) {
+                        scrollCtrl.animateTo(
+                          (scrollCtrl.offset - 220).clamp(0.0, scrollCtrl.position.maxScrollExtent),
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.chevron_left,
+                        size: 16,
+                        color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () {
+                      if (scrollCtrl.hasClients) {
+                        scrollCtrl.animateTo(
+                          (scrollCtrl.offset + 220).clamp(0.0, scrollCtrl.position.maxScrollExtent),
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: isDark ? Colors.grey.shade300 : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
                 ],
               );
             },
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isMobile ? 6 : 8),
           if (users.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1800,12 +1739,31 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
               ),
             )
           else
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: users.map((u) {
-                return _buildDraggableUserChip(u, role, isDark, accentColor);
-              }).toList(),
+            SizedBox(
+              height: 44,
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  scrollbars: false,
+                  dragDevices: {
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.mouse,
+                    PointerDeviceKind.trackpad,
+                  },
+                ),
+                child: SingleChildScrollView(
+                  controller: scrollCtrl,
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: users.map((u) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: _buildDraggableUserChip(u, role, isDark, accentColor),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
             ),
         ],
       ),
@@ -2099,9 +2057,13 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                                 style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF3B82F6)),
                               ),
                             ),
-                          Text(
-                            provider.isNotEmpty ? 'Source: $provider' : 'Marketing Campaign',
-                            style: TextStyle(fontSize: 11, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                          Flexible(
+                            child: Text(
+                              provider.isNotEmpty ? 'Source: $provider' : 'Marketing Campaign',
+                              style: TextStyle(fontSize: 11, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
@@ -2724,11 +2686,13 @@ class _StickyPoolHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
   final double height;
   final bool isDark;
+  final bool isMobile;
 
   _StickyPoolHeaderDelegate({
     required this.child,
     required this.height,
     required this.isDark,
+    this.isMobile = false,
   });
 
   @override
@@ -2743,7 +2707,12 @@ class _StickyPoolHeaderDelegate extends SliverPersistentHeaderDelegate {
     return SizedBox.expand(
       child: Container(
         color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-        padding: const EdgeInsets.fromLTRB(24, 6, 24, 6),
+        padding: EdgeInsets.fromLTRB(
+          isMobile ? 16 : 24,
+          isMobile ? 3 : 6,
+          isMobile ? 16 : 24,
+          isMobile ? 4 : 6,
+        ),
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),

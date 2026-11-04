@@ -253,7 +253,11 @@ class AppRouter {
               final search = state.uri.queryParameters['search'];
               return crmFadeSlidePage(
                 key: state.pageKey,
-                child: CampaignLeadsScreen(initialView: view, initialSearch: search),
+                child: CampaignLeadsScreen(
+                  initialView: view,
+                  initialSearch: search,
+                  initialSection: state.uri.queryParameters['section'],
+                ),
               );
             },
           ),
@@ -463,6 +467,7 @@ class AppRouter {
                   lockSource: source,
                   initialView: view,
                   initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+                  initialSection: state.uri.queryParameters['section'],
                 ),
               );
             },
@@ -480,9 +485,11 @@ class AppRouter {
             path: '/campaign/housing',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const CampaignLeadsScreen(
+              child: CampaignLeadsScreen(
                 portalTabId: 'housing',
                 lockSource: 'Housing.com',
+                initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+                initialSection: state.uri.queryParameters['section'],
               ),
             ),
           ),
@@ -490,7 +497,11 @@ class AppRouter {
             path: '/campaign/meta',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const CampaignLeadsScreen(lockSource: 'Meta Ads'),
+              child: CampaignLeadsScreen(
+                lockSource: 'Meta Ads',
+                initialSearch: state.uri.queryParameters['search'] ?? state.uri.queryParameters['q'],
+                initialSection: state.uri.queryParameters['section'],
+              ),
             ),
           ),
           GoRoute(
@@ -505,11 +516,12 @@ class AppRouter {
             path: '/my-campaign-leads',
             redirect: (context, state) {
               final role = RoleGuard.currentUser?.role ?? '';
-              if (!RoleGuard.isSales(role)) return '/requirements';
+              final isAdminRole = RoleGuard.isAdmin(role) || RoleGuard.isSuperAdmin(role);
+              if (!RoleGuard.isSales(role) && !isAdminRole) return '/requirements';
               if (!RoleGuard.canViewPage(role, '/requirements')) {
                 return RoleGuard.getFirstAllowedRoute(role);
               }
-              if (!RoleGuard.canAction('page.my_campaign_leads')) return '/requirements';
+              if (!isAdminRole && !RoleGuard.canAction('page.my_campaign_leads')) return '/requirements';
               return null;
             },
             pageBuilder: (context, state) {
@@ -657,7 +669,12 @@ class AppRouter {
             path: '/bin',
             pageBuilder: (context, state) => crmFadeSlidePage(
               key: state.pageKey,
-              child: const RecycleBinScreen(),
+              child: RecycleBinScreen(
+                initialTab: state.uri.queryParameters['tab'],
+                initialListing: state.uri.queryParameters['listing'],
+                initialSearch: state.uri.queryParameters['search'],
+                linkStamp: state.uri.queryParameters['t'],
+              ),
             ),
           ),
           GoRoute(

@@ -29,7 +29,15 @@ import '../../users/repository/users_repository.dart';
 import '../../users/models/user_model.dart' as user_settings_model;
 
 class RecycleBinScreen extends StatefulWidget {
-  const RecycleBinScreen({super.key});
+  /// Set by a search link: 'properties' or 'requirements'.
+  final String? initialTab;
+  /// Set by a search link: 'rent' or 'resale'.
+  final String? initialListing;
+  final String? initialSearch;
+  /// Changes on every search link, so opening the same record twice still applies it.
+  final String? linkStamp;
+
+  const RecycleBinScreen({super.key, this.initialTab, this.initialListing, this.initialSearch, this.linkStamp});
 
   @override
   State<RecycleBinScreen> createState() => _RecycleBinScreenState();
@@ -169,7 +177,45 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       }
     });
     _loadAutoDeleteDays();
+    _applySearchLink();
     _fetchBinData();
+  }
+
+  @override
+  void didUpdateWidget(covariant RecycleBinScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final changed = widget.linkStamp != oldWidget.linkStamp ||
+        widget.initialSearch != oldWidget.initialSearch ||
+        widget.initialTab != oldWidget.initialTab ||
+        widget.initialListing != oldWidget.initialListing;
+    if (!changed) return;
+    var applied = false;
+    setState(() => applied = _applySearchLink());
+    if (applied) _fetchBinData();
+  }
+
+  /// Opens the tab and listing that hold the linked record and searches down to it.
+  bool _applySearchLink() {
+    final tab = widget.initialTab?.trim().toLowerCase() ?? '';
+    final search = widget.initialSearch?.trim() ?? '';
+    if (tab.isEmpty && search.isEmpty) return false;
+    final listing = widget.initialListing?.trim().toLowerCase() ?? '';
+    final listingTab = listing == 'rent' ? 'Rent' : listing == 'resale' ? 'Re-sale' : null;
+    if (tab == 'properties') {
+      _selectedTab = 'Properties';
+      if (listingTab != null) _propertiesSubTab = listingTab;
+    } else if (tab == 'requirements') {
+      _selectedTab = 'Requirements';
+      _requirementsSubTab = 'Bin';
+      if (listingTab != null) _requirementsListingSubTab = listingTab;
+    }
+    if (search.isNotEmpty) {
+      _searchController.text = search;
+      _searchQuery = search.toLowerCase();
+    }
+    _currentPropertiesPage = 1;
+    _currentRequirementsPage = 1;
+    return true;
   }
 
   @override

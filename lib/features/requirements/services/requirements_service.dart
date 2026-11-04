@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_constants.dart';
 import '../../../core/api/api_exception.dart';
+import '../models/requirement_model.dart';
 
 /// Page/tab a lead was moved to the Recycle Bin from (`requirements.deleted_from`).
 class RecycleBinSource {
@@ -166,6 +167,22 @@ class RequirementsService {
       throw ApiException.fromDioException(e);
     } catch (e) {
       throw ApiException(message: e.toString());
+    }
+  }
+
+  /// One active requirement the caller may open, or null when it is missing or out of their scope.
+  Future<RequirementModel?> getRequirementById(String id) async {
+    try {
+      final response = await _apiClient.get('/requirements/$id');
+      final body = response.data;
+      final data = body is Map ? body['data'] : null;
+      final requirement = data is Map ? data['requirement'] : null;
+      if (requirement is Map) return RequirementModel.fromJson(Map<String, dynamic>.from(requirement));
+      return null;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 403 || status == 404) return null;
+      throw ApiException.fromDioException(e);
     }
   }
 
@@ -441,11 +458,15 @@ class RequirementsService {
   Future<Map<String, dynamic>> getSalesPropertyListingLeads({
     String? userId,
     bool orgWide = false,
+    bool allAdmins = false,
   }) async {
     try {
       final query = <String, dynamic>{
         if (userId != null && userId.isNotEmpty) 'userId': userId,
-        if (orgWide && (userId == null || userId.isEmpty)) 'scope': 'org',
+        if (allAdmins)
+          'scope': 'all'
+        else if (orgWide && (userId == null || userId.isEmpty))
+          'scope': 'org',
       };
       final res = await _apiClient.get(
         ApiConstants.allocationSalesLeads,
@@ -488,6 +509,30 @@ class RequirementsService {
       final res = await _apiClient.patch(
         ApiConstants.allocationSalesLeadStatus(leadId),
         {'status': status},
+      );
+      return res.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> transferCampaignLead({
+    required String leadId,
+    required String toSalesUserId,
+    String? reason,
+  }) async {
+    try {
+      final res = await _apiClient.post(
+        '/sales/transfer-campaign-lead',
+        {
+          'leadId': leadId,
+          'toSalesUserId': toSalesUserId,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        },
       );
       return res.data is Map<String, dynamic>
           ? Map<String, dynamic>.from(res.data as Map)

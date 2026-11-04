@@ -556,13 +556,28 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                                                   ),
                                                 ),
                                                 const SizedBox(height: 2),
-                                                Text(
-                                                  '${t['directAllocatedLeads'] ?? t['allocatedLeads'] ?? t['totalAssigned'] ?? workload}',
-                                                  style: TextStyle(
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: CRMColors.primary,
-                                                  ),
+                                                Row(
+                                                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                                                  textBaseline: TextBaseline.alphabetic,
+                                                  children: [
+                                                    Text(
+                                                      '${t['directAllocatedLeads'] ?? t['allocatedLeads'] ?? t['totalAssigned'] ?? workload}',
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: CRMColors.primary,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      '(${t['propertyListingCount'] ?? 0} Listing • ${t['requirementCount'] ?? 0} Req)',
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Color(0xFF64748B),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ],
                                             ),
@@ -1649,13 +1664,28 @@ class _LeadAllocationMonitorViewState extends State<_LeadAllocationMonitorView>
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              '${t['directAllocatedLeads'] ?? t['allocatedLeads'] ?? t['totalAssigned'] ?? workload}',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: CRMColors.primary,
-                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.baseline,
+                              textBaseline: TextBaseline.alphabetic,
+                              children: [
+                                Text(
+                                  '${t['directAllocatedLeads'] ?? t['allocatedLeads'] ?? t['totalAssigned'] ?? workload}',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: CRMColors.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '(${t['propertyListingCount'] ?? 0} Listing • ${t['requirementCount'] ?? 0} Req)',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

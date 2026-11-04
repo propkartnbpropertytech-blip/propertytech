@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
+import '../ai_search_suggestions.dart';
 
 class AiSearchResult {
   final Map<String, dynamic> data;
@@ -14,7 +15,7 @@ class AiSearchResult {
   });
 
   bool get hasRows {
-    const keys = ['properties', 'requirements', 'owners', 'clients', 'leads'];
+    const keys = ['properties', 'requirements', 'owners', 'clients', 'leads', 'employees'];
     return keys.any((key) {
       final rows = data[key];
       return rows is List && rows.isNotEmpty;
@@ -67,6 +68,72 @@ class AiSearchService {
           offline: _isOffline(error) || _isOffline(fallback),
         );
       }
+    }
+  }
+
+  /// Suggestions while typing: own history, popular terms, pages, places, top records.
+  Future<({AiSuggestions suggestions, bool failed, bool offline})> suggest(String query) async {
+    try {
+      final response = await _apiClient.get('/search/suggest', queryParameters: {'q': query});
+      return (suggestions: AiSuggestions.fromJson(_dataOf(response.data)), failed: false, offline: false);
+    } catch (error) {
+      return (suggestions: AiSuggestions.empty, failed: true, offline: _isOffline(error));
+    }
+  }
+
+  /// Saves a committed search to the caller's own history. Never blocks navigation.
+  Future<void> record({
+    required String query,
+    String source = 'typed',
+    int? resultCount,
+    String? selectionType,
+    String? selectionId,
+    String? selectionRoute,
+  }) async {
+    if (query.trim().isEmpty) return;
+    try {
+      await _apiClient.post('/search/history', {
+        'query': query.trim(),
+        'source': source,
+        'result_count': ?resultCount,
+        if (selectionType != null)
+          'selection': {
+            'type': selectionType,
+            'id': ?selectionId,
+            'route': ?selectionRoute,
+          },
+      });
+    } catch (_) {}
+  }
+
+  Future<AiSearchHistoryPage?> history({int page = 1, int limit = 20, String? filter}) async {
+    try {
+      final response = await _apiClient.get('/search/history', queryParameters: {
+        'page': page,
+        'limit': limit,
+        if (filter != null && filter.trim().isNotEmpty) 'q': filter.trim(),
+      });
+      return AiSearchHistoryPage.fromJson(_dataOf(response.data));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> removeHistory(String id) async {
+    try {
+      await _apiClient.delete('/search/history/$id');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> clearHistory() async {
+    try {
+      await _apiClient.delete('/search/history');
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -20,6 +20,15 @@ class DashboardRepository {
   static DateTime? _lastRefreshAt;
   static const _minRefreshInterval = Duration(seconds: 45);
 
+  /// GET /reports/overall needs the Reports page control and `reports.read`, which only admin roles hold.
+  static bool _canReadOverallReport() {
+    final user = RoleGuard.currentUser;
+    if (user == null || RoleGuard.isSuperAdmin(user.role)) return true;
+    final role = user.role.toLowerCase();
+    final readsReports = user.permissions.contains('reports.read') || role == 'admin' || role == 'broker';
+    return readsReports && RoleGuard.canViewReports(user.role);
+  }
+
   Future<DashboardData> getDashboardData({
     bool backgroundRefresh = true,
     bool forceRefresh = false,
@@ -45,7 +54,9 @@ class DashboardRepository {
     if (forceRefresh || cachedData == null) {
       try {
         final response = await _dashboardService.getDashboardData();
-        final authReport = await _dashboardService.getAuthoritativeReportMetrics();
+        final authReport = _canReadOverallReport()
+            ? await _dashboardService.getAuthoritativeReportMetrics()
+            : const <String, dynamic>{};
 
         DashboardData freshData = DashboardData.fromJson(response);
         if (freshData.leadsLocations.isNotEmpty) {

@@ -196,6 +196,17 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
     Emitter<RequirementsState> emit,
   ) async {
     try {
+      if (state is RequirementsLoaded) {
+        final current = state as RequirementsLoaded;
+        final optimisticList = current.requirements.map((r) {
+          return r.id == event.requirement.id ? event.requirement : r;
+        }).toList();
+        final exists = current.requirements.any((r) => r.id == event.requirement.id);
+        emit(RequirementsLoaded(
+          requirements: exists ? optimisticList : [...current.requirements, event.requirement],
+        ));
+      }
+
       final RequirementModel updated;
       if (event.patch != null) {
         await requirementsRepository.updateRequirementFields(event.requirement.id, event.patch!);

@@ -40,14 +40,18 @@ class LeadReassignRequested extends LeadAllocationMonitorEvent {
   final String toTelecallerId;
   final String reason;
   final bool overrideEligibility;
+  final bool toSales;
+  final String? assigneeName;
   const LeadReassignRequested({
     required this.leadId,
     required this.toTelecallerId,
     required this.reason,
     this.overrideEligibility = false,
+    this.toSales = false,
+    this.assigneeName,
   });
   @override
-  List<Object?> get props => [leadId, toTelecallerId, reason, overrideEligibility];
+  List<Object?> get props => [leadId, toTelecallerId, reason, overrideEligibility, toSales, assigneeName];
 }
 
 class AllocateOldLeadsRequested extends LeadAllocationMonitorEvent {
@@ -125,18 +129,34 @@ class LeadAllocationMonitorBloc
     });
     on<LeadReassignRequested>((event, emit) async {
       try {
-        await DioClient.dio.post(
-          ApiConstants.adminReassignLead,
-          data: {
-            'leadId': event.leadId,
-            'toTelecallerId': event.toTelecallerId,
-            'reason': event.reason,
-            'overrideEligibility': event.overrideEligibility,
-          },
-        );
+        if (event.toSales) {
+          await DioClient.dio.post(
+            ApiConstants.adminReassignLeadSales,
+            data: {
+              'leadId': event.leadId,
+              'toSalesUserId': event.toTelecallerId,
+              'reason': event.reason,
+            },
+          );
+        } else {
+          await DioClient.dio.post(
+            ApiConstants.adminReassignLead,
+            data: {
+              'leadId': event.leadId,
+              'toTelecallerId': event.toTelecallerId,
+              'reason': event.reason,
+              'overrideEligibility': event.overrideEligibility,
+            },
+          );
+        }
+        final name = event.assigneeName?.trim() ?? '';
+        emit(LeadAllocationMonitorState(
+          info: name.isEmpty ? 'Lead reassigned successfully.' : 'Lead reassigned to $name.',
+          data: state.data,
+        ));
         add(LeadAllocationMonitorRequested());
       } catch (e) {
-        emit(LeadAllocationMonitorState(error: e.toString(), data: state.data, loading: false));
+        emit(LeadAllocationMonitorState(error: _reassignError(e), data: state.data, loading: false));
       }
     });
     on<AllocateOldLeadsRequested>((event, emit) async {
@@ -204,6 +224,26 @@ class LeadAllocationMonitorBloc
         emit(LeadAllocationMonitorState(error: e.toString(), data: state.data, loading: false));
       }
     });
+  }
+
+  static String _reassignError(Object e) => 'Reassign failed: ${_serverMessage(e) ?? e}';
+
+  static String? _serverMessage(Object e) {
+    if (e is DioException) {
+      final body = e.response?.data;
+      if (body is Map && body['message'] != null) return body['message'].toString();
+    }
+    return null;
+  }
+
+  /// Current owner role of the lead plus the same-role users it can be moved to.
+  static Future<Map<String, dynamic>> loadReassignOptions(String leadId) async {
+    try {
+      final res = await DioClient.dio.get(ApiConstants.adminReassignLeadOptions(leadId));
+      return Map<String, dynamic>.from(res.data['data'] ?? {});
+    } catch (e) {
+      throw Exception(_serverMessage(e) ?? 'Could not load assignees.');
+    }
   }
 
   Future<List<dynamic>> _mergePeerTransfers(List<dynamic> serverHistory) async {

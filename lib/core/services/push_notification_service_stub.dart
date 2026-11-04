@@ -3,6 +3,8 @@ class PushNotificationService {
 
   static Future<void> registerCurrentUser() async {}
 
+  static Future<void> unregisterCurrentUser() async {}
+
   static Future<void> showOsNotification({
     required String title,
     required String body,

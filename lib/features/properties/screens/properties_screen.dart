@@ -96,6 +96,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   String? _selectedPriceSortOrRange;
   double? _minPrice;
   double? _maxPrice;
+  String? _appliedUrlPriceKey;
+  String? _appliedAiLinkKey;
+  List<String> _pendingAiAreaNames = const [];
   int _currentPage = 0;
   int _pageSize = 10;
   bool _myAddedOnly = false;
@@ -2329,7 +2332,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String?>(
-                    value: _selectedPriceSortOrRange,
+                    value: (_selectedPriceSortOrRange == 'l2h' || _selectedPriceSortOrRange == 'h2l') ? _selectedPriceSortOrRange : null,
                     isDense: true,
                     style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context), fontSize: 13),
                     items: const [
@@ -3319,7 +3322,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           PropertyMetadataModel? metadata = state is PropertiesLoaded ? (state.metadata ?? _cachedMetadata) : _cachedMetadata;
           Set<String> bookmarkedIds = state is PropertiesLoaded ? state.bookmarkedIds : _cachedBookmarkedIds;
 
-          final bhkParam = GoRouterState.of(context).uri.queryParameters['bhk'];
+          final aiLink = GoRouterState.of(context).uri.queryParameters['ai'] == '1';
+          if (aiLink) _applyAiSearchLink(GoRouterState.of(context).uri.queryParameters);
+          _resolveAiSearchAreas(metadata);
+
+          final bhkParam = aiLink ? null : GoRouterState.of(context).uri.queryParameters['bhk'];
           if (bhkParam != null && bhkParam.isNotEmpty) {
             if (bhkParam == '1' || bhkParam == '2' || bhkParam == '3' || bhkParam == '4') {
               _activeBhkFilter = '$bhkParam BHK';
@@ -3328,8 +3335,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             }
           }
 
-          final searchQuery = GoRouterState.of(context).uri.queryParameters['search'] ??
-              GoRouterState.of(context).uri.queryParameters['q'];
+          final searchQuery = aiLink
+              ? null
+              : GoRouterState.of(context).uri.queryParameters['search'] ??
+                  GoRouterState.of(context).uri.queryParameters['q'];
           if (searchQuery != null && searchQuery.isNotEmpty && _searchController.text != searchQuery) {
             _searchController.text = searchQuery;
             final sqLower = searchQuery.toLowerCase();
@@ -3342,12 +3351,25 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             }
           }
 
-          final listingParam = GoRouterState.of(context).uri.queryParameters['listingType'];
+          final listingParam = aiLink ? null : GoRouterState.of(context).uri.queryParameters['listingType'];
           if (listingParam != null && listingParam.isNotEmpty) {
             if (listingParam.toLowerCase() == 'rent' && _activeListingTab != 'Rent') {
               _activeListingTab = 'Rent';
             } else if ((listingParam.toLowerCase().contains('sale') || listingParam.toLowerCase().contains('re-sale')) && _activeListingTab != 'Re-Sale') {
               _activeListingTab = 'Re-Sale';
+            }
+          }
+
+          final routeParams = GoRouterState.of(context).uri.queryParameters;
+          final minPriceParam = double.tryParse(routeParams['minPrice'] ?? '');
+          final maxPriceParam = double.tryParse(routeParams['maxPrice'] ?? '');
+          if (!aiLink && (minPriceParam != null || maxPriceParam != null)) {
+            final priceKey = '$minPriceParam|$maxPriceParam|${routeParams['t']}';
+            if (_appliedUrlPriceKey != priceKey) {
+              _appliedUrlPriceKey = priceKey;
+              _minPrice = minPriceParam != null && minPriceParam > 0 ? minPriceParam : null;
+              _maxPrice = maxPriceParam != null && maxPriceParam > 0 ? maxPriceParam : null;
+              _selectedPriceSortOrRange = (_minPrice != null || _maxPrice != null) ? 'custom' : _selectedPriceSortOrRange;
             }
           }
 
@@ -4751,6 +4773,83 @@ _recomputeFilteredProperties();
     });
     _lastComputedPropertyFilterKey = null;
     _recomputeFilteredProperties();
+  }
+
+  /// An AI Search link carries the whole question, so its filters replace whatever the page showed before.
+  /// Applied once per link, so the user can change any filter afterwards.
+  void _applyAiSearchLink(Map<String, String> params) {
+    final key = Uri(queryParameters: params).query;
+    if (_appliedAiLinkKey == key) return;
+    _appliedAiLinkKey = key;
+
+    final search = (params['search'] ?? '').trim();
+    if (_searchController.text != search) _searchController.text = search;
+
+    final listing = (params['listingType'] ?? '').toLowerCase();
+    if (listing == 'rent' && _activeListingTab != 'Rent') {
+      _activeListingTab = 'Rent';
+    } else if (listing.contains('sale') && _activeListingTab != 'Re-Sale') {
+      _activeListingTab = 'Re-Sale';
+    }
+
+    const categories = ['Residential', 'Commercial', 'Industrial', 'Land & Plot'];
+    final category = params['category'] ?? '';
+    _activeCategoryTab = categories.contains(category) ? category : 'Residential';
+    _selectedCategory = null;
+
+    final bhk = params['bhk'] ?? '';
+    _activeBhkFilter = const {'1', '2', '3', '4'}.contains(bhk) ? '$bhk BHK' : (bhk == '5' ? '5+ BHK' : null);
+
+    final minPrice = double.tryParse(params['minPrice'] ?? '');
+    final maxPrice = double.tryParse(params['maxPrice'] ?? '');
+    _minPrice = minPrice != null && minPrice > 0 ? minPrice : null;
+    _maxPrice = maxPrice != null && maxPrice > 0 ? maxPrice : null;
+    _selectedPriceSortOrRange = (_minPrice != null || _maxPrice != null) ? 'custom' : null;
+    _appliedUrlPriceKey = null;
+
+    final status = params['status'] ?? '';
+    final statuses = _activeListingTab == 'Rent'
+        ? const ['Available', 'Rented Out', 'To Be Available']
+        : const ['Available', 'Sold Out'];
+    _selectedStatusFilter = statuses.contains(status) ? status : null;
+
+    _selectedConfigurations.clear();
+    _selectedAreas.clear();
+    _pendingAiAreaNames = (params['area'] ?? '').split(',').map((a) => a.trim()).where((a) => a.isNotEmpty).toList();
+    _selectedFurnishingFilter = null;
+    _imageFilter = null;
+    _noImagesOnly = false;
+    _myAddedOnly = false;
+    _archiveTabOnly = false;
+    _selectedPropertyDateFilter = PropertyDateFilterPreset.allTime;
+    _propertyCustomStartDate = null;
+    _propertyCustomEndDate = null;
+    _currentPage = 0;
+    _lastComputedPropertyFilterKey = null;
+  }
+
+  /// Location names from an AI Search link become the Area filter once the area list is loaded, matching
+  /// areas the way AI Search does (name contains the location). A name that matches no area is searched as text.
+  void _resolveAiSearchAreas(PropertyMetadataModel? metadata) {
+    if (_pendingAiAreaNames.isEmpty || metadata == null || metadata.areas.isEmpty) return;
+    final unmatched = <String>[];
+    for (final name in _pendingAiAreaNames) {
+      final wanted = name.toLowerCase();
+      final ids = metadata.areas.where((a) => a.name.toLowerCase().contains(wanted)).map((a) => a.id);
+      if (ids.isEmpty) {
+        unmatched.add(name);
+      } else {
+        for (final id in ids) {
+          if (!_selectedAreas.contains(id)) _selectedAreas.add(id);
+        }
+      }
+    }
+    _pendingAiAreaNames = const [];
+    if (unmatched.isNotEmpty) {
+      final search = [...unmatched, _searchController.text.trim()].where((s) => s.isNotEmpty).join(' ');
+      if (_searchController.text != search) _searchController.text = search;
+    }
+    _lastComputedPropertyFilterKey = null;
   }
 
   Future<void> _showCustomPriceRangeDialog() async {

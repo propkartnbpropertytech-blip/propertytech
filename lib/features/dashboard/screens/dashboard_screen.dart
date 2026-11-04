@@ -1493,7 +1493,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           onTap: () async {
             await KpiDrilldownDialogs.showLeadsDrilldown(
               context,
-              params: kpiFilters,
+              params: kpiFilters.copyWith(dateFilter: 'All'),
               initialStage: 'CNR',
             );
             if (mounted) {

@@ -297,6 +297,12 @@ class MobileNavConfig {
             route: '/admin/lead-allocation',
           ),
           MobileMoreEntry(
+            id: 'campaign_leads',
+            label: 'Campaign Leads',
+            icon: Icons.campaign_outlined,
+            route: '/my-campaign-leads',
+          ),
+          MobileMoreEntry(
             id: 'callbacks',
             label: 'Callbacks',
             icon: Icons.event_outlined,

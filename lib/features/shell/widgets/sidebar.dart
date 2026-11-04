@@ -172,9 +172,10 @@ class _ModernSidebarState extends State<ModernSidebar> {
                         isActive: currentPath.startsWith('/requirements'),
                         badgeCount: leadsBadgeCount > 0 ? leadsBadgeCount : null,
                       ),
-                    if (RoleGuard.isSales(widget.userRole) &&
-                        RoleGuard.canViewPage(widget.userRole, '/requirements') &&
-                        RoleGuard.canAction('page.my_campaign_leads'))
+                    if (RoleGuard.canViewPage(widget.userRole, '/requirements') &&
+                        ((RoleGuard.isSales(widget.userRole) && RoleGuard.canAction('page.my_campaign_leads')) ||
+                         RoleGuard.isAdmin(widget.userRole) ||
+                         RoleGuard.isSuperAdmin(widget.userRole)))
                       _buildNavItem(
                         context,
                         title: 'Campaign Leads',

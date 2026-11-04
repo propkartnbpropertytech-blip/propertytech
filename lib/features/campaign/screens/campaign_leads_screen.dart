@@ -44,7 +44,9 @@ class CampaignLeadsScreen extends StatefulWidget {
   final String? portalTabId;
   final String? initialView;
   final String? initialSearch;
-  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.portalTabId, this.initialView, this.initialSearch});
+  /// 'Requirement' or 'Property Listing': the section a search link opens on.
+  final String? initialSection;
+  const CampaignLeadsScreen({super.key, this.initialSource, this.lockSource, this.portalTabId, this.initialView, this.initialSearch, this.initialSection});
 
   @override
   State<CampaignLeadsScreen> createState() => _CampaignLeadsScreenState();
@@ -153,6 +155,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (incomingSearch.isNotEmpty) {
       _searchQuery = incomingSearch.toLowerCase();
       _searchController.text = incomingSearch;
+      _showSearchedLead();
     }
     _service.addListener(_onServiceUpdate);
     _service.watchCampaignUi();
@@ -284,6 +287,33 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         );
       }
     }
+    final incomingSearch = widget.initialSearch?.trim() ?? '';
+    if (incomingSearch.isNotEmpty &&
+        (incomingSearch != (oldWidget.initialSearch?.trim() ?? '') || widget.initialSection != oldWidget.initialSection)) {
+      setState(() {
+        _searchQuery = incomingSearch.toLowerCase();
+        _searchController.text = incomingSearch;
+        _currentPage = 1;
+        _showSearchedLead();
+      });
+    }
+  }
+
+  /// A search link names one lead: look across every date, on the lead's own section.
+  void _showSearchedLead() {
+    _selectedDateFilter = CampaignDateFilter.allTime;
+    final section = widget.initialSection?.trim() ?? '';
+    if (section == 'Requirement' || section == 'Property Listing') {
+      _selectedSection = section;
+      if (widget.initialView == null || widget.initialView!.isEmpty) _viewMode = 'active';
+    }
+    _cachedFilteredLeads = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<CampaignLeadsBloc>().add(
+        const SetCampaignDateFilterEvent(filter: CampaignDateFilter.allTime),
+      );
+    });
   }
 
   Future<void> _bootstrapLockedSource() async {
@@ -4737,7 +4767,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                             ),
                                           ),
                                           Text(
-                                            'Assign to sales',
+                                            'Allocate to sales',
                                             style: TextStyle(fontSize: 10, color: CRMColors.textSecondaryOf(ctx)),
                                           ),
                                         ],

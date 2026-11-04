@@ -15,6 +15,14 @@ class AppNotifierService {
   static const String _kWelcomeShownKey = 'propkart_welcome_notification_sent';
   static OverlayEntry? _currentToastEntry;
   static Timer? _dismissTimer;
+  static final Set<String> _osShownIds = <String>{};
+
+  /// Server notification already shown by a push, so the panel poll must not show it again.
+  static void markOsShown(String? id) {
+    if (id != null && id.isNotEmpty) _osShownIds.add(id);
+  }
+
+  static bool wasOsShown(String? id) => id != null && _osShownIds.contains(id);
 
   /// Request browser notification permission on platforms that support it (Web)
   /// and automatically dispatch the welcome notification when granted.
