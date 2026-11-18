@@ -5167,9 +5167,41 @@ _recomputeFilteredRequirements();
     return user != null && user.role == 'Sales';
   }
 
-  void _submitLeadAssignment(RequirementModel req, String? newSalesmanId, String? newSalesmanName) {
+  Future<void> _submitLeadAssignment(RequirementModel req, String? newSalesmanId, String? newSalesmanName) async {
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
+    final cleanAssigneeId = (newSalesmanId != null && newSalesmanId.trim().isNotEmpty && newSalesmanId.trim().toLowerCase() != 'null')
+        ? newSalesmanId.trim()
+        : null;
+
+    // Route Sales-to-Sales transfers through the authoritative atomic transfer API
+    // so requirements, leads, integration_leads, pending followups, history, and KPI caches
+    // are updated in a single PostgreSQL transaction (without sending a 35-field PUT payload).
+    if (cleanAssigneeId != null &&
+        currentUser != null &&
+        currentUser.role == 'Sales' &&
+        cleanAssigneeId != currentUser.id) {
+      final targetUser = _getSalesUsers().firstWhereOrNull((u) => u.id == cleanAssigneeId);
+      final targetName = (newSalesmanName != null && newSalesmanName.trim().isNotEmpty)
+          ? newSalesmanName.trim()
+          : (targetUser?.fullName.trim().isNotEmpty == true ? targetUser!.fullName.trim() : 'Salesperson');
+      await _executeLeadTransfer(
+        leadId: req.id,
+        targetUser: targetUser ??
+            users_model.UserModel(
+              id: cleanAssigneeId,
+              roleId: '',
+              fullName: targetName,
+              email: '',
+              roleName: 'Sales',
+              isActive: true,
+            ),
+        clientName: req.clientName,
+        reason: 'Transferred by ${currentUser.fullName}',
+      );
+      return;
+    }
+
     final Map<String, dynamic> nextCustomFields = Map<String, dynamic>.from(req.metaCustomFields ?? {});
     final now = DateTime.now();
     final nowIso = now.toIso8601String();
@@ -5194,28 +5226,7 @@ _recomputeFilteredRequirements();
       nextCustomFields['_transfer'] = nextTransfer;
     }
 
-    final cleanAssigneeId = (newSalesmanId != null && newSalesmanId.trim().isNotEmpty && newSalesmanId.trim().toLowerCase() != 'null')
-        ? newSalesmanId.trim()
-        : null;
-
-    final bool isSalesActor = currentUser?.role == 'Sales';
     final bool isAdminActor = currentUser?.role == 'Admin' || currentUser?.role == 'Super Admin';
-
-    // Salesperson-to-Salesperson lead transfer updates requirements, leads & integration_leads atomically
-    if (isSalesActor &&
-        cleanAssigneeId != null &&
-        cleanAssigneeId != req.assignedTo) {
-      final targetUser = _getSalesUsers().firstWhereOrNull((u) => u.id == cleanAssigneeId);
-      if (targetUser != null) {
-        unawaited(_executeLeadTransfer(
-          leadId: req.id,
-          targetUser: targetUser,
-          clientName: req.clientName,
-        ));
-        return;
-      }
-    }
-
     if (isAdminActor) {
       nextCustomFields['assigned_by'] = currentUser!.id;
       nextCustomFields['assigned_by_name'] = currentUser.fullName;
@@ -15670,18 +15681,34 @@ _recomputeFilteredRequirements();
     );
   }
 
+  final Set<String> _transferringLeadIds = <String>{};
+
   Future<void> _executeLeadTransfer({
     required String leadId,
     required users_model.UserModel targetUser,
     required String clientName,
+    String? reason,
   }) async {
+    if (leadId.isEmpty || _transferringLeadIds.contains(leadId)) return;
+    _transferringLeadIds.add(leadId);
     try {
       await RequirementsRepository().transferCampaignLead(
         leadId: leadId,
         toSalesUserId: targetUser.id,
-        reason: 'Transferred via Campaign Leads',
+        reason: (reason != null && reason.trim().isNotEmpty)
+            ? reason.trim()
+            : (widget.campaignMode ? 'Transferred via Campaign Leads' : 'Transferred via Leads'),
       );
       if (!mounted) return;
+      final roleName = RoleGuard.currentUser?.role ?? '';
+      if (roleName != 'Admin' && roleName != 'Super Admin') {
+        setState(() {
+          _salesPropertyListingLeads.removeWhere(
+            (l) => l['id']?.toString() == leadId || l['legacyRequirementId']?.toString() == leadId,
+          );
+          _lastComputedFilterKey = null;
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('$clientName transferred to ${targetUser.fullName.isNotEmpty ? targetUser.fullName : targetUser.email}.'),
@@ -15690,23 +15717,28 @@ _recomputeFilteredRequirements();
       );
       if (!_isCampaignLeadAdmin) {
         setState(() {
-          _salesPropertyListingLeads.removeWhere((l) => l['id']?.toString() == leadId);
           _directRequirementIds.remove(leadId);
           _selectedCampaignLeadIds.remove(leadId);
           _lastComputedFilterKey = null;
         });
       }
-      unawaited(_fetchSalesPropertyListingLeads());
-      context.read<RequirementsBloc>().add(FetchRequirementsEvent(refreshFromServer: true));
+      unawaited(_fetchSalesPropertyListingLeads(
+        userId: _salesLeadFetchUserId,
+        orgWide: _salesLeadFetchOrgWide,
+      ));
+      context.read<RequirementsBloc>().add(FetchRequirementsEvent(forceRefresh: true));
       RepositoryCoordinator().refreshDashboard();
     } catch (e) {
       if (!mounted) return;
+      final errText = e is ApiException ? e.message : e.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to transfer lead: $e'),
+          content: Text('Failed to transfer lead: $errText'),
           backgroundColor: const Color(0xFFEF4444),
         ),
       );
+    } finally {
+      _transferringLeadIds.remove(leadId);
     }
   }
 

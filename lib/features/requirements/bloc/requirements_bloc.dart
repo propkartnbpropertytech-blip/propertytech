@@ -16,6 +16,7 @@ class FetchRequirementsEvent extends RequirementsEvent {
   final String? listingTypeId;
   final bool? campaignMode;
   final bool refreshFromServer;
+  final bool forceRefresh;
   FetchRequirementsEvent({
     this.search,
     this.configurationId,
@@ -24,6 +25,7 @@ class FetchRequirementsEvent extends RequirementsEvent {
     this.listingTypeId,
     this.campaignMode,
     this.refreshFromServer = true,
+    this.forceRefresh = false,
   });
 }
 
@@ -155,6 +157,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         listingTypeId: event.listingTypeId,
         campaignMode: event.campaignMode,
         refreshFromServer: event.refreshFromServer,
+        forceRefresh: event.forceRefresh,
       );
       emit(RequirementsLoaded(requirements: list, isSilentRefreshing: false));
     } catch (e) {

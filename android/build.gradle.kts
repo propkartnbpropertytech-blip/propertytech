@@ -61,10 +61,26 @@ tasks.register<Delete>("clean") {
 }
 
 subprojects {
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        compilerOptions {
-            languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_8)
-            apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_8)
+    val enforceMinKotlinVersion = {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                val minVersion = org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0
+                val currentLang = languageVersion.orNull
+                if (currentLang != null && currentLang < minVersion) {
+                    languageVersion.set(minVersion)
+                }
+                val currentApi = apiVersion.orNull
+                if (currentApi != null && currentApi < minVersion) {
+                    apiVersion.set(minVersion)
+                }
+            }
+        }
+    }
+    if (state.executed) {
+        enforceMinKotlinVersion()
+    } else {
+        afterEvaluate {
+            enforceMinKotlinVersion()
         }
     }
 }

@@ -1,0 +1,17 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.nbpropertytech.propkart",
+      "sha256_cert_fingerprints": [
+        "4D:55:BF:81:71:08:40:8B:F5:CF:AC:CF:9E:B9:6A:05:18:E3:CC:63:33:79:EB:CA:13:09:7A:35:C8:30:05:8D",
+        "1F:F0:50:7C:13:8B:DD:0B:59:88:94:76:B3:9F:FC:C0:FE:CF:D9:0E:3E:B1:93:E9:32:59:DD:5D:9F:01:F4:74",
+        "9A:41:E7:CF:C0:76:8F:DD:C3:23:5C:FF:DD:38:E8:F5:69:07:44:13:A8:3A:B8:1A:08:F5:A9:9E:CB:FD:A3:FF"
+      ]
+    }
+  }
+]
