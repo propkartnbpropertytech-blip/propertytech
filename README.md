@@ -14,8 +14,8 @@
 
   <p>
     <a href="https://propkart.nbpropertytech.com"><img src="https://img.shields.io/badge/Live_App-propkart.nbpropertytech.com-159B73?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live app" /></a>
-    <img src="https://img.shields.io/badge/Version-1.1.2-10B981?style=for-the-badge&logo=flutter&logoColor=white" alt="Version 1.1.2" />
-    <img src="https://img.shields.io/badge/Build-4-14213D?style=for-the-badge" alt="Build 4" />
+    <img src="https://img.shields.io/badge/Version-1.1.3-10B981?style=for-the-badge&logo=flutter&logoColor=white" alt="Version 1.1.3" />
+    <img src="https://img.shields.io/badge/Build-5-14213D?style=for-the-badge" alt="Build 5" />
   </p>
 
   <p>
@@ -392,8 +392,8 @@ Launcher icons are generated from `assets/branding/app_icon.png` via `flutter_la
 | Field | Value |
 | --- | --- |
 | App | **PropKart** |
-| Version | **1.1.2** |
-| Build | **4** |
+| Version | **1.1.3** |
+| Build | **5** |
 | Package | `propkart` |
 | Tagline | The Future of Property Management |
 
