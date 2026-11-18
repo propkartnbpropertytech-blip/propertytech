@@ -1787,7 +1787,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     final userId = user['id']?.toString() ?? '';
     final name = user['name']?.toString() ?? 'User';
     final workload = (user['currentWorkload'] as num?)?.toInt() ?? 0;
-    final isAllocEnabled = user['isAllocatedEnabled'] != false && user['status'] != 'INACTIVE';
+    final isAllocEnabled = user['isAllocatedEnabled'] != false;
     final isPending = _pendingActionIds.contains(userId);
     final canDrag = !isPending;
 
@@ -1915,12 +1915,51 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
             ),
           ],
           if (isSales) ...[
+            const SizedBox(width: 6),
+            Builder(
+              builder: (_) {
+                final liveStatus = (user['status'] ?? 'ACTIVE').toString().toUpperCase();
+                final isOnline = liveStatus == 'ACTIVE' && isAllocEnabled;
+                final isLoggedOut = liveStatus == 'LOGGED_OUT';
+                final isOnBreak = liveStatus == 'BREAK';
+                final statusLabel = isOnline
+                    ? 'Online'
+                    : (isLoggedOut ? 'Logged Out' : (isOnBreak ? 'Break' : 'Paused'));
+                final statusColor = isOnline
+                    ? const Color(0xFF10B981)
+                    : (isLoggedOut
+                        ? const Color(0xFFF59E0B)
+                        : (isOnBreak ? const Color(0xFF3B82F6) : const Color(0xFF64748B)));
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: isDark ? 0.2 : 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        statusLabel,
+                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: statusColor),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             const SizedBox(width: 8),
             // Individual ON/OFF Toggle switch next to Salesperson's name
             Tooltip(
               message: isAllocEnabled
-                  ? 'Allocation ACTIVE (Click to turn OFF for $name)'
-                  : 'Allocation OFF (Click to turn ON for $name)',
+                  ? 'Admin Allocation ON (Click to pause $name)'
+                  : 'Admin Allocation OFF (Click to enable $name)',
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2188,7 +2227,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     return DragTarget<Map<String, dynamic>>(
       onWillAcceptWithDetails: (details) {
         final u = details.data;
-        return (u['isAllocatedEnabled'] != false && u['status'] != 'INACTIVE');
+        return u['isAllocatedEnabled'] != false;
       },
       onAcceptWithDetails: (details) {
         _assignUserToCategory(

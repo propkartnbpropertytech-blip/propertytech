@@ -16,7 +16,10 @@ class RoleGuard {
   static bool isTelecaller(String? role) =>
       (role ?? '').toLowerCase() == 'telecaller';
 
-  static bool isSales(String? role) => (role ?? '').toLowerCase() == 'sales';
+  static bool isSales(String? role) {
+    final r = (role ?? '').toLowerCase();
+    return r == 'sales' || r == 'salesperson';
+  }
 
   /// Sales and telecaller sessions own an allocation availability row.
   /// Logout has to close that row or the person stays eligible.

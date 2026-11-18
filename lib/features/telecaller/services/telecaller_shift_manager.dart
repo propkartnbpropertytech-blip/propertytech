@@ -29,6 +29,8 @@ class TelecallerShiftManager {
   final ValueNotifier<DateTime?> manualOffStartedAtNotifier = ValueNotifier<DateTime?>(null);
 
   String? _userId;
+  String? _initializedRole;
+  bool _isInitializing = false;
   Timer? _inactivityTimer;
   Timer? _shiftCheckTimer;
   Timer? _heartbeatTimer;
@@ -265,55 +267,67 @@ class TelecallerShiftManager {
   }
 
   Future<void> init(String userId, {String? role}) async {
-    _userId = userId;
-    final isSales = role != null && (role.toLowerCase() == 'sales' || role.toLowerCase() == 'salesperson');
-
-    // Immediately restore cached state in 0ms before network request to prevent flicker on refresh
-    await _restoreLocalState();
-
-    if (!isSales) {
-      await _checkShiftLockout();
-    } else {
-      isShiftLockedOutNotifier.value = false;
-      isOnInactivityBreakNotifier.value = false;
+    final normalizedRole = (role ?? '').trim().toLowerCase();
+    if (_userId == userId &&
+        _initializedRole == normalizedRole &&
+        (isInitializedNotifier.value || _isInitializing)) {
+      return;
     }
+    _isInitializing = true;
+    _userId = userId;
+    _initializedRole = normalizedRole;
+    final isSales = normalizedRole == 'sales' || normalizedRole == 'salesperson';
 
     try {
-      final data = isSales ? await _repository.getAvailability() : await _repository.dashboard();
-      _updateFromApiResponse(data);
-    } catch (e) {
-      debugPrint('[TelecallerShiftManager] Availability fetch error: $e');
-    }
+      // Immediately restore cached state in 0ms before network request to prevent flicker on refresh
+      await _restoreLocalState();
 
-    if (isActive) {
-      _startHeartbeat();
-    } else {
-      _stopHeartbeat();
-    }
+      if (!isSales) {
+        await _checkShiftLockout();
+      } else {
+        isShiftLockedOutNotifier.value = false;
+        isOnInactivityBreakNotifier.value = false;
+      }
 
-    if (!isSales && !isShiftLockedOutNotifier.value && !isOnInactivityBreakNotifier.value) {
-      _resetInactivityTimer();
-    }
+      try {
+        final data = isSales ? await _repository.getAvailability() : await _repository.dashboard();
+        _updateFromApiResponse(data);
+      } catch (e) {
+        debugPrint('[TelecallerShiftManager] Availability fetch error: $e');
+      }
 
-    _lastSeenWindowStart = getCurrentWindowStartIst();
-    if (!isSales) {
-      _scheduleDailyResetTimer();
-    }
+      if (isActive) {
+        _startHeartbeat();
+      } else {
+        _stopHeartbeat();
+      }
 
-    _shiftCheckTimer?.cancel();
-    if (!isSales) {
-      _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-        _checkDailyWindowRollover();
-        _checkShiftLockout();
-        _checkAvailabilityStatus();
-      });
-    } else {
-      _shiftCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        _checkAvailabilityStatus();
-      });
-    }
+      if (!isSales && !isShiftLockedOutNotifier.value && !isOnInactivityBreakNotifier.value) {
+        _resetInactivityTimer();
+      }
 
-    isInitializedNotifier.value = true;
+      _lastSeenWindowStart = getCurrentWindowStartIst();
+      if (!isSales) {
+        _scheduleDailyResetTimer();
+      }
+
+      _shiftCheckTimer?.cancel();
+      if (!isSales) {
+        _shiftCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+          _checkDailyWindowRollover();
+          _checkShiftLockout();
+          _checkAvailabilityStatus();
+        });
+      } else {
+        _shiftCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+          _checkAvailabilityStatus();
+        });
+      }
+
+      isInitializedNotifier.value = true;
+    } finally {
+      _isInitializing = false;
+    }
   }
 
   bool _isAvailabilityCheckInProgress = false;
@@ -327,6 +341,11 @@ class TelecallerShiftManager {
       final status = (res['availability_status'] ?? res['availability'] ?? '').toString().toUpperCase();
       if (status.isNotEmpty && status != currentStatusNotifier.value && !isOnInactivityBreakNotifier.value) {
         currentStatusNotifier.value = status;
+      }
+      if (isActive && _heartbeatTimer == null) {
+        _startHeartbeat();
+      } else if (!isActive && _heartbeatTimer != null) {
+        _stopHeartbeat();
       }
       await _persistLocalState();
     } catch (_) {
@@ -407,9 +426,13 @@ class TelecallerShiftManager {
     _stopHeartbeat();
     _inactivityTimer?.cancel();
     _shiftCheckTimer?.cancel();
-    try {
-      await _repository.setAvailability('LOGGED_OUT', isManual: isManualOffNotifier.value);
-    } catch (_) {}
+    // Sales availability logout is handled authoritatively by backend /auth/logout
+    // (POST /sales/availability is Admin-only and returns 403 for Salespersons).
+    if (!RoleGuard.isSales(RoleGuard.currentUser?.role)) {
+      try {
+        await _repository.setAvailability('LOGGED_OUT', isManual: isManualOffNotifier.value);
+      } catch (_) {}
+    }
     await _persistLocalState();
   }
 
@@ -587,6 +610,8 @@ class TelecallerShiftManager {
     _stopManualOffCountdown();
     _stopHeartbeat();
     _userId = null;
+    _initializedRole = null;
+    _isInitializing = false;
     isInitializedNotifier.value = false;
     currentStatusNotifier.value = 'INACTIVE';
     isShiftLockedOutNotifier.value = false;

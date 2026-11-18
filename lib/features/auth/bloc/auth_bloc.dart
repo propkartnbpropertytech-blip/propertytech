@@ -247,7 +247,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       RoleGuard.currentUser = user;
       AppLogger.i('User ${user.email} (${user.role}) logged in successfully');
 
-      if (!RoleGuard.isTelecaller(user.role)) {
+      if (!RoleGuard.endsAllocationShift(user.role)) {
         TelecallerShiftManager.instance.dispose();
         TelecallerHeartbeatService.instance.stop();
       }
@@ -290,7 +290,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       RoleGuard.currentUser = user;
       AppLogger.i('User ${user.email} (${user.role}) logged in successfully via 2FA');
 
-      if (!RoleGuard.isTelecaller(user.role)) {
+      if (!RoleGuard.endsAllocationShift(user.role)) {
         TelecallerShiftManager.instance.dispose();
         TelecallerHeartbeatService.instance.stop();
       }
@@ -362,6 +362,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       }
     } catch (_) {}
     RoleGuard.currentUser = null;
+    try {
+      await _authRepository.logout().timeout(const Duration(seconds: 3));
+    } catch (_) {}
     try {
       await SessionCleanup.clearLocalSession(clearToken: true);
     } catch (_) {}
