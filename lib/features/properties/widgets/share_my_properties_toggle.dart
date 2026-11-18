@@ -73,7 +73,7 @@ class _ShareMyPropertiesToggleState extends State<ShareMyPropertiesToggle> {
             children: [
               if (widget.isRent)
                 SwitchListTile(
-                  title: const Text(_rentLabel, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  title: const Text('Share with Your Inventory to Other Admins', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                   value: _sharing.shareRent,
                   onChanged: _sharing.savingAdminShare ? null : (v) => _update(sheetContext, rent: v),
                 )
@@ -134,20 +134,19 @@ class _ShareMyPropertiesToggleState extends State<ShareMyPropertiesToggle> {
             children: [
               Icon(Icons.share_outlined, size: 16, color: CRMColors.textSecondaryOf(context)),
               const SizedBox(width: 8),
-              Text('Share with Other Admins:', style: labelStyle),
+              Text(
+                isRent
+                    ? 'Share with Your Inventory to Other Admins'
+                    : 'Share with Your Inventory to Other Admins: Resale',
+                style: labelStyle,
+              ),
               const SizedBox(width: 8),
               Tooltip(
-                message: isRent ? _rentLabel : _resaleLabel,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(isRent ? 'Rent' : 'Resale', style: labelStyle),
-                    _switch(
-                      context,
-                      shared,
-                      (v) => isRent ? _update(context, rent: v) : _update(context, resale: v),
-                    ),
-                  ],
+                message: isRent ? 'Share with Your Inventory to Other Admins' : _resaleLabel,
+                child: _switch(
+                  context,
+                  shared,
+                  (v) => isRent ? _update(context, rent: v) : _update(context, resale: v),
                 ),
               ),
             ],

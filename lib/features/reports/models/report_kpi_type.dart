@@ -82,7 +82,7 @@ enum ReportKpiType {
 
       // Other / Compat
       case ReportKpiType.salesUsers:
-        return 'Sales Users';
+        return 'Salespersons';
       case ReportKpiType.leadsContacted:
         return 'Leads Contacted';
       case ReportKpiType.leadsAssignedToSales:
@@ -219,7 +219,7 @@ enum ReportKpiType {
         return const Color(0xFFDC2626);
 
       case ReportKpiType.salesUsers:
-        return const Color(0xFF475569);
+        return const Color(0xFF6366F1);
       case ReportKpiType.leadsContacted:
         return const Color(0xFF0284C7);
       case ReportKpiType.leadsAssignedToSales:

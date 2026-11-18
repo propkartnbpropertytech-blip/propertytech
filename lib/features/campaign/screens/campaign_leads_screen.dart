@@ -3690,7 +3690,9 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         ? lead.notInterestedByName!
         : (lead.statusUpdatedByName?.trim().isNotEmpty == true
             ? lead.statusUpdatedByName!
-            : (lead.assignedTelecallerName?.trim().isNotEmpty == true ? lead.assignedTelecallerName! : 'Telecaller'));
+            : (lead.assignedTelecallerName?.trim().isNotEmpty == true
+                ? lead.assignedTelecallerName!
+                : (lead.isTelecallerAdmin ? 'Admin' : 'Telecaller')));
 
     final markedAtText = lead.notInterestedAt != null
         ? DateFormat('d MMM yyyy, h:mm a').format(lead.notInterestedAt!.toLocal())
@@ -4159,36 +4161,43 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
           if (!isPropertyListing) const SizedBox(width: 6),
         ] else if (lead.assignedTelecallerName?.isNotEmpty == true) ...[
-          Tooltip(
-            message: 'Allocated to ${isSalesAllocationMode ? "Sales" : "Telecaller"}: ${isSalesAllocationMode ? (lead.assignedToName ?? lead.assignedTelecallerName) : lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.support_agent_rounded, size: 14, color: Color(0xFF0284C7)),
-                  const SizedBox(width: 4),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 110),
-                    child: Text(
-                      lead.assignedTelecallerName!,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF0284C7),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
+          Builder(
+            builder: (ctx) {
+              final isTcAdmin = (lead.assignedTelecallerName ?? '').toLowerCase().contains('admin') || lead.isTelecallerAdmin;
+              final targetRole = isSalesAllocationMode ? "Sales" : (isTcAdmin ? "Admin" : "Telecaller");
+              final badgeColor = isTcAdmin ? const Color(0xFF8B5CF6) : const Color(0xFF0284C7);
+              return Tooltip(
+                message: 'Allocated to $targetRole: ${isSalesAllocationMode ? (lead.assignedToName ?? lead.assignedTelecallerName) : lead.assignedTelecallerName}\nStatus: ${lead.allocationStatus ?? "ASSIGNED"}',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: badgeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
                   ),
-                ],
-              ),
-            ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(isTcAdmin ? Icons.admin_panel_settings_rounded : Icons.support_agent_rounded, size: 14, color: badgeColor),
+                      const SizedBox(width: 4),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 110),
+                        child: Text(
+                          lead.assignedTelecallerName!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: badgeColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
           if (!isPropertyListing) const SizedBox(width: 6),
         ],
@@ -9332,29 +9341,35 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
               if (lead.assignedTelecallerName?.isNotEmpty == true) ...[
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.35)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.support_agent_rounded, size: 13, color: Color(0xFF0284C7)),
-                      const SizedBox(width: 4),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 110),
-                        child: Text(
-                          lead.assignedTelecallerName!,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                Builder(
+                  builder: (ctx) {
+                    final isTcAdmin = (lead.assignedTelecallerName ?? '').toLowerCase().contains('admin') || lead.isTelecallerAdmin;
+                    final badgeColor = isTcAdmin ? const Color(0xFF8B5CF6) : const Color(0xFF0284C7);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: badgeColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: badgeColor.withValues(alpha: 0.35)),
                       ),
-                    ],
-                  ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(isTcAdmin ? Icons.admin_panel_settings_rounded : Icons.support_agent_rounded, size: 13, color: badgeColor),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 110),
+                            child: Text(
+                              lead.assignedTelecallerName!,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ],

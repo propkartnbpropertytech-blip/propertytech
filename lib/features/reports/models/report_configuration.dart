@@ -175,9 +175,24 @@ class ReportConfiguration extends Equatable {
     ReportKpiType.siteVisitsDone,
   ];
 
+  static const List<ReportKpiType> salesCampaignKpiTypes = [
+    ReportKpiType.totalLeads,
+    ReportKpiType.propertyListingLeads,
+    ReportKpiType.requirementLeads,
+    ReportKpiType.salesUsers,
+    ReportKpiType.leadsAssignedToSalesPickedUp,
+    ReportKpiType.leadsNotStarted,
+    ReportKpiType.leadsFollowups,
+    ReportKpiType.leadsReFollowups,
+    ReportKpiType.leadsInterested,
+    ReportKpiType.leadsSiteVisitScheduled,
+    ReportKpiType.leadsSiteVisitDone,
+    ReportKpiType.leadsNegotiation,
+    ReportKpiType.leadsRejected,
+  ];
+
   static const List<ReportKpiType> leadsPageKpiTypes = [
     ReportKpiType.leadsNotStarted,
-    ReportKpiType.leadsCallAttempted,
     ReportKpiType.leadsFollowups,
     ReportKpiType.leadsReFollowups,
     ReportKpiType.leadsInterested,
@@ -189,6 +204,7 @@ class ReportConfiguration extends Equatable {
 
   static const List<ReportKpiType> activeKpiTypes = [
     ...campaignKpiTypes,
+    ReportKpiType.salesUsers,
     ...leadsPageKpiTypes,
   ];
 
@@ -197,6 +213,7 @@ class ReportConfiguration extends Equatable {
     ReportKpiType.leadQualificationRate,
     ReportKpiType.siteVisitsScheduled,
     ReportKpiType.callAttempted,
+    ReportKpiType.leadsCallAttempted,
     ReportKpiType.callPickedUp,
     ReportKpiType.callOpen,
     ReportKpiType.lostUnsuccessful,
@@ -248,6 +265,16 @@ class ReportConfiguration extends Equatable {
   List<ReportKpiConfig> get enabledCampaignKpis {
     final campaignSet = campaignKpiTypes.toSet();
     return sortedEnabledKpis.where((k) => campaignSet.contains(k.type)).toList();
+  }
+
+  /// Get enabled Sales Campaign Performance KPIs (when Sales toggle is ON)
+  List<ReportKpiConfig> get enabledSalesCampaignKpis {
+    final salesSet = salesCampaignKpiTypes.toSet();
+    final map = {for (var c in kpiConfigs) c.type: c};
+    return salesCampaignKpiTypes
+        .map((type) => map[type] ?? ReportKpiConfig(type: type, isEnabled: true, order: 0, showCount: true, showPercentage: false))
+        .where((k) => k.isEnabled && salesSet.contains(k.type))
+        .toList();
   }
 
   /// Get enabled Leads Page KPIs

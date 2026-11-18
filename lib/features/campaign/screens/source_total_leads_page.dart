@@ -681,29 +681,39 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                 ),
                 const SizedBox(width: 8),
               ] else if (isAssigned) ...[
-                // Telecaller badge if assigned to telecaller and not yet assigned to sales
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.person_pin_rounded, size: 12, color: Color(0xFF6366F1)),
-                      const SizedBox(width: 4),
-                      Text(
-                        tcName,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF6366F1),
-                        ),
+                // Telecaller / Admin badge if assigned and not yet assigned to sales
+                Builder(
+                  builder: (ctx) {
+                    final isTcAdmin = tcName.toLowerCase().contains('admin') || lead.isTelecallerAdmin;
+                    final badgeColor = isTcAdmin ? const Color(0xFF8B5CF6) : const Color(0xFF6366F1);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: badgeColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
                       ),
-                    ],
-                  ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isTcAdmin ? Icons.admin_panel_settings_rounded : Icons.person_pin_rounded,
+                            size: 12,
+                            color: badgeColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            tcName,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: badgeColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(width: 8),
               ],
@@ -918,7 +928,14 @@ class _SourceTotalLeadsPageState extends State<SourceTotalLeadsPage> {
                             _buildDetailRow('Assigned Salesperson', salesName),
                           ],
                           if (TelecallerAssignedLeadsPage.isLeadAssignedToTelecaller(lead, isSalesMode: widget.isSalesMode)) ...[
-                            _buildDetailRow(widget.isSalesMode ? 'Assigned Salesperson' : 'Assigned Telecaller', tcName),
+                            _buildDetailRow(
+                              widget.isSalesMode
+                                  ? 'Assigned Salesperson'
+                                  : ((tcName.toLowerCase().contains('admin') || lead.isTelecallerAdmin)
+                                      ? 'PropKart Admin'
+                                      : 'Assigned Telecaller'),
+                              tcName,
+                            ),
                           ],
                           if (lead.allocationStatus != null && lead.allocationStatus!.isNotEmpty) ...[
                             _buildDetailRow('Allocation Status', lead.allocationStatus!),

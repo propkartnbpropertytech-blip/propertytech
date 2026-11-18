@@ -255,16 +255,20 @@ extension RequirementLocalExtensions on RequirementLocal {
             }
             return null;
           })(),
+      leadReceivedAt: RequirementLocalRepository.getLeadReceivedAt(id),
+      autoAllocatedAt: RequirementLocalRepository.getAutoAllocatedAt(id),
       leadSource: leadSource,
       referralName: referralName,
       nextFollowupDate: nextFollowupDate,
       rejectionRemark: RequirementLocalRepository.getRejectionRemark(id),
+      isDirectSalesAllocated: RequirementLocalRepository.isDirectSalesAllocated(id),
     );
   }
 }
 
 extension RequirementModelExtensions on RequirementModel {
   RequirementLocal toLocal() {
+    RequirementLocalRepository.rememberDirectSalesAllocated(id, isDirectSalesAllocated);
     if (assignedTelecallerId != null && assignedTelecallerId!.trim().isNotEmpty) {
       RequirementLocalRepository.rememberAssignedTelecallerId(id, assignedTelecallerId);
     }
@@ -273,6 +277,12 @@ extension RequirementModelExtensions on RequirementModel {
     }
     if (salesAssignedAt != null) {
       RequirementLocalRepository.rememberSalesAssignedAt(id, salesAssignedAt);
+    }
+    if (leadReceivedAt != null) {
+      RequirementLocalRepository.rememberLeadReceivedAt(id, leadReceivedAt);
+    }
+    if (autoAllocatedAt != null) {
+      RequirementLocalRepository.rememberAutoAllocatedAt(id, autoAllocatedAt);
     }
     return RequirementLocal()
       ..id = id

@@ -38,6 +38,7 @@ class RequirementsService {
     String? salesUserId,
     String? createdBy,
     String? assignedTo,
+    bool? campaignMode,
     int? page,
     int? limit,
   }) async {
@@ -72,6 +73,9 @@ class RequirementsService {
       }
       if (assignedTo != null && assignedTo.isNotEmpty) {
         queryParameters['assignedTo'] = assignedTo;
+      }
+      if (campaignMode != null) {
+        queryParameters['campaignMode'] = campaignMode.toString();
       }
       if (page != null) {
         queryParameters['page'] = page;
@@ -541,6 +545,60 @@ class RequirementsService {
       throw ApiException.fromDioException(e);
     } catch (e) {
       throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<List<Map<String, String>>> getAvailableLeadSources() async {
+    try {
+      final res = await _apiClient.get('/requirements/sources');
+      final body = res.data;
+      if (body is Map && body['data'] is Map && body['data']['sources'] is List) {
+        final rawList = body['data']['sources'] as List;
+        return rawList
+            .whereType<Map>()
+            .map((e) => {
+                  'key': (e['key'] ?? '').toString().trim(),
+                  'label': (e['label'] ?? e['key'] ?? '').toString().trim(),
+                })
+            .where((e) => e['key']!.isNotEmpty)
+            .toList();
+      }
+      return const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<Map<String, dynamic>> getTouchedLeads() async {
+    try {
+      final res = await _apiClient.get('/requirements/touched-leads');
+      final body = res.data;
+      if (body is Map && body['data'] is Map) {
+        return Map<String, dynamic>.from(body['data'] as Map);
+      }
+      return const {
+        'propertyListingLeads': [],
+        'requirementLeads': [],
+        'summary': {},
+      };
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    } catch (e) {
+      throw ApiException(message: e.toString());
+    }
+  }
+
+  Future<String> getAllocationTargetRole() async {
+    try {
+      final res = await _apiClient.get('/integrations/allocation-mode');
+      final body = res.data;
+      if (body is Map) {
+        final role = (body['targetRole'] ?? body['allocationMode'] ?? '').toString().trim();
+        if (role.isNotEmpty) return role;
+      }
+      return 'Telecaller';
+    } catch (_) {
+      return 'Telecaller';
     }
   }
 

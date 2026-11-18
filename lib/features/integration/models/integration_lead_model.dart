@@ -28,6 +28,8 @@ class IntegrationLeadModel {
   final String? assignedToName;
   final String? assignedTelecallerId;
   final String? assignedTelecallerName;
+  final String? assignedTelecallerRole;
+  final bool isDirectSalesAllocated;
   final String? allocationStatus;
   final bool isOldUntouched;
   final DateTime? telecallerAssignedAt;
@@ -65,6 +67,10 @@ class IntegrationLeadModel {
       campaignStatus == 'Picked Up' ||
       campaignStatus == 'Assigned' ||
       interactedAt != null;
+
+  bool get isTelecallerAdmin =>
+      (assignedTelecallerRole != null && assignedTelecallerRole!.toLowerCase().contains('admin')) ||
+      (assignedTelecallerName != null && assignedTelecallerName!.toLowerCase().contains('admin'));
 
   String get customerName {
     for (final key in [
@@ -118,6 +124,8 @@ class IntegrationLeadModel {
     this.assignedToName,
     this.assignedTelecallerId,
     this.assignedTelecallerName,
+    this.assignedTelecallerRole,
+    this.isDirectSalesAllocated = false,
     this.allocationStatus,
     this.isOldUntouched = false,
     this.telecallerAssignedAt,
@@ -720,6 +728,8 @@ class IntegrationLeadModel {
     String? assignedToName,
     String? assignedTelecallerId,
     String? assignedTelecallerName,
+    String? assignedTelecallerRole,
+    bool? isDirectSalesAllocated,
     String? allocationStatus,
     bool? isOldUntouched,
     DateTime? telecallerAssignedAt,
@@ -785,6 +795,8 @@ class IntegrationLeadModel {
       assignedToName: assignedToName ?? this.assignedToName,
       assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
       assignedTelecallerName: assignedTelecallerName ?? this.assignedTelecallerName,
+      assignedTelecallerRole: assignedTelecallerRole ?? this.assignedTelecallerRole,
+      isDirectSalesAllocated: isDirectSalesAllocated ?? this.isDirectSalesAllocated,
       allocationStatus: allocationStatus ?? this.allocationStatus,
       isOldUntouched: isOldUntouched ?? this.isOldUntouched,
       telecallerAssignedAt: telecallerAssignedAt ?? this.telecallerAssignedAt,
@@ -893,8 +905,17 @@ class IntegrationLeadModel {
     final telecallerNameVal = json['assigned_telecaller_name']?.toString() ??
         json['telecaller']?['full_name']?.toString() ??
         raw['_assigned_telecaller_name']?.toString();
+    final telecallerRoleVal = json['assigned_telecaller_role']?.toString() ??
+        raw['_assigned_telecaller_role']?.toString() ??
+        json['telecaller']?['role']?.toString() ??
+        (telecallerNameVal != null && telecallerNameVal.toLowerCase().contains('admin') ? 'Admin' : null);
     final allocStatusVal = json['allocation_status']?.toString() ??
         raw['_allocation_status']?.toString();
+    final isDirectSalesVal = json['is_direct_sales_allocated'] == true ||
+        raw['is_direct_sales_allocated'] == true ||
+        raw['direct_sales_allocated'] == true ||
+        json['direct_sales_allocated'] == true ||
+        (allocStatusVal == 'ASSIGNED_TO_SALES' && telecallerIdVal == null && (assignedToVal != null || assignedNameVal != null));
     final isOldVal = json['is_old_untouched'] == true ||
         raw['_is_old_untouched'] == true;
     final telecallerAssignedRaw = json['telecaller_assigned_at'] ??
@@ -958,13 +979,17 @@ class IntegrationLeadModel {
     return IntegrationLeadModel(
       id: json['id']?.toString() ?? '',
       source: json['source']?.toString() ?? 'Meta Ads',
-      receivedAt: json['received_at'] != null
-          ? DateTime.tryParse(json['received_at'].toString()) ?? DateTime.now()
-          : (json['created_at'] != null
-              ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
-              : (raw['created_time'] != null
-                  ? DateTime.tryParse(raw['created_time'].toString()) ?? DateTime.now()
-                  : DateTime.now())),
+      receivedAt: () {
+        final rawTs = json['lead_received_at'] ??
+            json['leadReceivedAt'] ??
+            json['created_at'] ??
+            json['received_at'] ??
+            raw['created_time'];
+        if (rawTs != null && rawTs.toString().trim().isNotEmpty) {
+          return DateTime.tryParse(rawTs.toString().trim()) ?? DateTime.now();
+        }
+        return DateTime.now();
+      }(),
       rawJson: raw,
       externalLeadId: json['external_lead_id']?.toString(),
       isDuplicate: json['is_duplicate'] == true,
@@ -1043,6 +1068,8 @@ class IntegrationLeadModel {
       assignedToName: assignedNameVal,
       assignedTelecallerId: telecallerIdVal,
       assignedTelecallerName: telecallerNameVal,
+      assignedTelecallerRole: telecallerRoleVal,
+      isDirectSalesAllocated: isDirectSalesVal,
       allocationStatus: allocStatusVal,
       isOldUntouched: isOldVal,
       telecallerAssignedAt: telecallerAssignedVal,

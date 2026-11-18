@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -5,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../../dashboard/widgets/welcome_header.dart';
 import '../../../core/security/role_guard.dart';
 import '../../dashboard/widgets/stat_card.dart';
@@ -71,11 +73,11 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
 
   // Campaign Leads KPI state
   SalesCampaignKpiData? _campaignKpiData;
-  bool _loadingCampaignKpis = false;
+  StreamSubscription<void>? _requirementsStreamSub;
+  StreamSubscription<void>? _dashboardStreamSub;
 
   Future<void> _loadCampaignKpis() async {
     if (!mounted) return;
-    setState(() => _loadingCampaignKpis = true);
     try {
       final filters = KpiFilterParams(
         businessType: _isRentMode ? 'rent' : 'resale',
@@ -85,12 +87,8 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       if (!mounted) return;
       setState(() {
         _campaignKpiData = data;
-        _loadingCampaignKpis = false;
       });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadingCampaignKpis = false);
-    }
+    } catch (_) {}
   }
 
   @override
@@ -98,10 +96,18 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     super.initState();
     _isRentMode = ThemeManager().isRentMode;
     _loadCampaignKpis();
+    _requirementsStreamSub = RepositoryCoordinator().requirementsStream.listen((_) {
+      _loadCampaignKpis();
+    });
+    _dashboardStreamSub = RepositoryCoordinator().dashboardStream.listen((_) {
+      _loadCampaignKpis();
+    });
   }
 
   @override
   void dispose() {
+    _requirementsStreamSub?.cancel();
+    _dashboardStreamSub?.cancel();
     _noteController.dispose();
     super.dispose();
   }
@@ -312,12 +318,65 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                     '/requirements?tab=follow-ups&section=Follow%20ups&subTab=Today&mode=${_isRentMode ? 'rent' : 'resale'}',
                     accentColor: const Color(0xFF6366F1),
                   ),
+                  _campaignKpiCard(
+                    context,
+                    title: 'Auto Allocate Leads',
+                    value: '${_campaignKpiData?.allocatedTotal ?? 0}',
+                    subtitle: '${_campaignKpiData?.allocatedListing ?? 0} Listing · ${_campaignKpiData?.allocatedRequirement ?? 0} Req',
+                    icon: Icons.assignment_ind_outlined,
+                    accentColor: const Color(0xFF0D9488),
+                    onTap: () {
+                      final filters = KpiFilterParams(
+                        businessType: _isRentMode ? 'rent' : 'resale',
+                        dateFilter: 'all',
+                      );
+                      SalesCampaignLeadsDialog.showAllocated(
+                        context,
+                        filters: filters,
+                        initialData: _campaignKpiData,
+                      );
+                    },
+                  ),
+                  _campaignKpiCard(
+                    context,
+                    title: 'Interested',
+                    value: '${_campaignKpiData?.interested ?? 0}',
+                    subtitle: '${_campaignKpiData?.interestedListing ?? 0} Listing · ${_campaignKpiData?.interestedRequirement ?? 0} Req',
+                    icon: Icons.thumb_up_alt_outlined,
+                    accentColor: const Color(0xFF10B981),
+                    onTap: () {
+                      final filters = KpiFilterParams(
+                        businessType: _isRentMode ? 'rent' : 'resale',
+                        dateFilter: 'all',
+                      );
+                      SalesCampaignLeadsDialog.showInterested(
+                        context,
+                        filters: filters,
+                        initialData: _campaignKpiData,
+                      );
+                    },
+                  ),
+                  _campaignKpiCard(
+                    context,
+                    title: 'Rejected',
+                    value: '${_campaignKpiData?.rejected ?? 0}',
+                    subtitle: '${_campaignKpiData?.rejectedListing ?? 0} Listing · ${_campaignKpiData?.rejectedRequirement ?? 0} Req',
+                    icon: Icons.cancel_outlined,
+                    accentColor: const Color(0xFFEF4444),
+                    onTap: () {
+                      final filters = KpiFilterParams(
+                        businessType: _isRentMode ? 'rent' : 'resale',
+                        dateFilter: 'all',
+                      );
+                      SalesCampaignLeadsDialog.showRejected(
+                        context,
+                        filters: filters,
+                        initialData: _campaignKpiData,
+                      );
+                    },
+                  ),
                 ],
               ),
-              const SizedBox(height: 24),
-
-              // Campaign Leads KPI Section
-              _buildCampaignLeadsSection(context, isWide: true),
               const SizedBox(height: 24),
 
               if (isWide) ...[
@@ -470,6 +529,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
           _notesPage = 1;
           _activityPage = 1;
         });
+        _loadCampaignKpis();
         context.read<SalesDashboardBloc>().add(SalesDashboardRequested());
       },
       body: Column(
@@ -552,12 +612,62 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
                 route: '/requirements?tab=follow-ups&section=Follow%20ups&subTab=Today&mode=${_isRentMode ? 'rent' : 'resale'}',
                 color: const Color(0xFF6366F1),
               ),
+              _buildMobileKpiCard(
+                title: 'Auto Allocate Leads',
+                value: '${_campaignKpiData?.allocatedTotal ?? 0}',
+                icon: Icons.assignment_ind_outlined,
+                route: '/requirements?tab=leads&group=campaign&mode=${_isRentMode ? 'rent' : 'resale'}',
+                color: const Color(0xFF0D9488),
+                onTapOverride: () {
+                  final filters = KpiFilterParams(
+                    businessType: _isRentMode ? 'rent' : 'resale',
+                    dateFilter: 'all',
+                  );
+                  SalesCampaignLeadsDialog.showAllocated(
+                    context,
+                    filters: filters,
+                    initialData: _campaignKpiData,
+                  );
+                },
+              ),
+              _buildMobileKpiCard(
+                title: 'Interested',
+                value: '${_campaignKpiData?.interested ?? 0}',
+                icon: Icons.thumb_up_alt_outlined,
+                route: '/requirements?tab=leads&group=campaign&mode=${_isRentMode ? 'rent' : 'resale'}',
+                color: const Color(0xFF10B981),
+                onTapOverride: () {
+                  final filters = KpiFilterParams(
+                    businessType: _isRentMode ? 'rent' : 'resale',
+                    dateFilter: 'all',
+                  );
+                  SalesCampaignLeadsDialog.showInterested(
+                    context,
+                    filters: filters,
+                    initialData: _campaignKpiData,
+                  );
+                },
+              ),
+              _buildMobileKpiCard(
+                title: 'Rejected',
+                value: '${_campaignKpiData?.rejected ?? 0}',
+                icon: Icons.cancel_outlined,
+                route: '/requirements?tab=rejected&mode=${_isRentMode ? 'rent' : 'resale'}',
+                color: const Color(0xFFEF4444),
+                onTapOverride: () {
+                  final filters = KpiFilterParams(
+                    businessType: _isRentMode ? 'rent' : 'resale',
+                    dateFilter: 'all',
+                  );
+                  SalesCampaignLeadsDialog.showRejected(
+                    context,
+                    filters: filters,
+                    initialData: _campaignKpiData,
+                  );
+                },
+              ),
             ],
           ),
-          const SizedBox(height: 20),
-
-          // Campaign Leads KPI Section
-          _buildCampaignLeadsSection(context, isWide: false),
           const SizedBox(height: 20),
 
           // Section 1: My Scheduled
@@ -590,6 +700,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     required IconData icon,
     required String route,
     required Color color,
+    VoidCallback? onTapOverride,
   }) {
     return Semantics(
       button: true,
@@ -597,7 +708,7 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
+          onTap: onTapOverride ?? () {
             ThemeManager().setRentMode(_isRentMode);
             context.go(route);
           },
@@ -2855,162 +2966,6 @@ class _SalesDashboardViewState extends State<_SalesDashboardView> {
     }
   }
 
-
-  // --- CAMPAIGN LEADS KPI SECTION (5 KPIs) ---
-  Widget _buildCampaignLeadsSection(BuildContext context, {required bool isWide}) {
-    final kpis = _campaignKpiData;
-    final filters = KpiFilterParams(
-      businessType: _isRentMode ? 'rent' : 'resale',
-      dateFilter: 'all',
-    );
-
-    final autoAllocateCard = _campaignKpiCard(
-      context,
-      title: 'Auto Allocate Leads',
-      value: '${kpis?.allocatedTotal ?? 0}',
-      subtitle: '${kpis?.allocatedListing ?? 0} Listing · ${kpis?.allocatedRequirement ?? 0} Req',
-      icon: Icons.assignment_ind_outlined,
-      accentColor: const Color(0xFF0D9488),
-      onTap: () {
-        SalesCampaignLeadsDialog.showAllocated(
-          context,
-          filters: filters,
-          initialData: kpis,
-        );
-      },
-    );
-
-    final interestedCard = _campaignKpiCard(
-      context,
-      title: 'Interested',
-      value: '${kpis?.interested ?? 0}',
-      subtitle: '${kpis?.interestedListing ?? 0} Listing · ${kpis?.interestedRequirement ?? 0} Req',
-      icon: Icons.thumb_up_alt_outlined,
-      accentColor: const Color(0xFF10B981),
-      onTap: () {
-        SalesCampaignLeadsDialog.showInterested(
-          context,
-          filters: filters,
-          initialData: kpis,
-        );
-      },
-    );
-
-    final rejectedCard = _campaignKpiCard(
-      context,
-      title: 'Rejected',
-      value: '${kpis?.rejected ?? 0}',
-      subtitle: '${kpis?.rejectedListing ?? 0} Listing · ${kpis?.rejectedRequirement ?? 0} Req',
-      icon: Icons.cancel_outlined,
-      accentColor: const Color(0xFFEF4444),
-      onTap: () {
-        SalesCampaignLeadsDialog.showRejected(
-          context,
-          filters: filters,
-          initialData: kpis,
-        );
-      },
-    );
-
-    final followupsCard = _campaignKpiCard(
-      context,
-      title: 'Follow-Ups',
-      value: '${kpis?.followupsTotal ?? 0}',
-      subtitle: '${kpis?.followupsListing ?? 0} Listing · ${kpis?.followupsRequirement ?? 0} Req',
-      icon: Icons.event_repeat_rounded,
-      accentColor: const Color(0xFF6366F1),
-      onTap: () {
-        SalesCampaignLeadsDialog.showFollowups(
-          context,
-          filters: filters,
-          initialData: kpis,
-        );
-      },
-    );
-
-    final siteVisitSchedCard = _campaignKpiCard(
-      context,
-      title: 'Site Visit Sched',
-      value: '${kpis?.siteVisitsScheduledTotal ?? 0}',
-      subtitle: 'Scheduled Visits',
-      icon: Icons.calendar_month_outlined,
-      accentColor: const Color(0xFFF59E0B),
-      onTap: () {
-        SalesCampaignLeadsDialog.showSiteVisitsScheduled(
-          context,
-          filters: filters,
-          initialData: kpis,
-        );
-      },
-    );
-
-    final isDark = ThemeManager().isDarkMode;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D9488).withValues(alpha: isDark ? 0.25 : 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.campaign_outlined, size: 20, color: Color(0xFF0D9488)),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Campaign Leads',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
-                letterSpacing: -0.2,
-              ),
-            ),
-            if (_loadingCampaignKpis) ...[
-              const SizedBox(width: 10),
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (isWide)
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              autoAllocateCard,
-              interestedCard,
-              rejectedCard,
-              followupsCard,
-              siteVisitSchedCard,
-            ],
-          )
-        else
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: MediaQuery.of(context).size.width < 360 ? 1.15 : 1.3,
-            children: [
-              autoAllocateCard,
-              interestedCard,
-              rejectedCard,
-              followupsCard,
-              siteVisitSchedCard,
-            ],
-          ),
-      ],
-    );
-  }
 
   Widget _campaignKpiCard(
     BuildContext context, {

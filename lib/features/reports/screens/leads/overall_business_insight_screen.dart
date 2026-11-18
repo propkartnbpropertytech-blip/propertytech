@@ -6,6 +6,7 @@
 library;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
@@ -30,6 +31,7 @@ import '../../widgets/leads_page_kpi_drilldowns.dart';
 import '../../widgets/operational_kpi_breakdown_section.dart';
 import '../../../dashboard/bloc/dashboard_bloc.dart';
 import '../../../dashboard/models/kpi_models.dart' hide TelecallerSummaryItem;
+import '../../../integration/services/integration_service.dart';
 
 enum BusinessInsightView {
   main,
@@ -45,6 +47,7 @@ enum BusinessInsightView {
   campaignFollowups,
   notInterestedLeads,
   salesAssignedPickedUp,
+  salespersonsList,
   leadsPageKpi,
 }
 
@@ -354,6 +357,14 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
           onBack: () => setState(() => _currentView = BusinessInsightView.main),
         );
 
+      case BusinessInsightView.salespersonsList:
+        return SalespersonsListView(
+          summary: summary,
+          from: config.dateRange.startDate,
+          to: config.dateRange.endDate,
+          onBack: () => setState(() => _currentView = BusinessInsightView.main),
+        );
+
       case BusinessInsightView.leadsPageKpi:
         return LeadsPageKpiDrilldownView(
           kpiType: _selectedLeadsPageKpi,
@@ -375,7 +386,28 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
 
-    final campaignKpis = config.enabledCampaignKpis;
+    final isSalesOn = (summary.isSalesAllocationEnabled || IntegrationService().lastTargetRole == 'Sales');
+    final isTelecallerOn = (summary.isTelecallerAllocationEnabled || IntegrationService().lastTargetRole == 'Telecaller');
+    final bothTogglesOn = isSalesOn && isTelecallerOn;
+
+    final String sectionTitle;
+    final List<ReportKpiConfig> campaignKpis;
+    final bool showLeadsPageKpisSection = true;
+
+    if (isSalesOn && !isTelecallerOn) {
+      sectionTitle = 'Campaign Leads Performance';
+      campaignKpis = config.enabledSalesCampaignKpis;
+    } else if (isTelecallerOn && !isSalesOn) {
+      sectionTitle = 'Campaign Performance KPIs';
+      campaignKpis = config.enabledCampaignKpis;
+    } else if (bothTogglesOn) {
+      sectionTitle = 'Campaign Performance KPIs';
+      campaignKpis = config.enabledCampaignKpis;
+    } else {
+      sectionTitle = 'Campaign Performance KPIs';
+      campaignKpis = config.enabledCampaignKpis;
+    }
+
     final leadsPageKpis = config.enabledLeadsPageKpis;
 
     return Column(
@@ -493,162 +525,309 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
 
         // ====================================================================
         // SECTION 1: CAMPAIGN KPIS (Top Row / Section)
+        // Respects Configure Page Toggles (Sales, Telecaller, or Both)
         // ====================================================================
-        AdminActionGate(
-          actionKey: 'page.reports.campaign_kpis',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            const Icon(Icons.campaign_rounded, size: 20, color: Color(0xFF1877F2)),
-            const Text(
-              'Campaign Performance KPIs',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.2,
-              ),
+        if (bothTogglesOn) ...[
+          // Telecaller Performance KPIs
+          AdminActionGate(
+            actionKey: 'page.reports.campaign_kpis',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    const Icon(Icons.campaign_rounded, size: 20, color: Color(0xFF1877F2)),
+                    const Text(
+                      'Campaign Performance KPIs',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1877F2).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${config.enabledCampaignKpis.length} Active',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1877F2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = CRMBreakpoints.kpiColumns(context);
+                    final spacing = 12.0;
+                    final cardWidth = (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: config.enabledCampaignKpis.map((kpiConfig) {
+                        return SizedBox(
+                          width: cardWidth,
+                          child: KpiCardWidget(
+                            config: kpiConfig,
+                            value: reportData.kpiValues[kpiConfig.type],
+                            showToggles: false,
+                            onExpand: () => _handleCampaignKpiClick(kpiConfig.type, reportData, config),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: CRMSpacing.xl),
+                const Divider(height: 1),
+                const SizedBox(height: CRMSpacing.l),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1877F2).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${campaignKpis.length} Active',
-                style: const TextStyle(
-                  fontSize: 11,
+          ),
+          // Sales Campaign Performance KPIs
+          AdminActionGate(
+            actionKey: 'page.reports.campaign_kpis',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    const Icon(Icons.campaign_rounded, size: 20, color: Color(0xFF6366F1)),
+                    const Text(
+                      'Campaign Leads Performance',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${config.enabledSalesCampaignKpis.length} Active',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF6366F1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = CRMBreakpoints.kpiColumns(context);
+                    final spacing = 12.0;
+                    final cardWidth = (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: config.enabledSalesCampaignKpis.map((kpiConfig) {
+                        return SizedBox(
+                          width: cardWidth,
+                          child: KpiCardWidget(
+                            config: kpiConfig,
+                            value: reportData.campaignPipelineValues.containsKey(kpiConfig.type)
+                                ? reportData.campaignPipelineValues[kpiConfig.type]
+                                : reportData.kpiValues[kpiConfig.type],
+                            titleOverride: kpiConfig.type == ReportKpiType.leadsAssignedToSalesPickedUp
+                                ? 'Lead Allocated to Direct Sales'
+                                : null,
+                            showToggles: false,
+                            onExpand: () => _handleCampaignKpiClick(kpiConfig.type, reportData, config),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: CRMSpacing.xl),
+                const Divider(height: 1),
+                const SizedBox(height: CRMSpacing.l),
+              ],
+            ),
+          ),
+        ] else
+          AdminActionGate(
+            actionKey: 'page.reports.campaign_kpis',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    const Icon(Icons.campaign_rounded, size: 20, color: Color(0xFF1877F2)),
+                    Text(
+                      sectionTitle,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1877F2).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${campaignKpis.length} Active',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1877F2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Campaign KPI Cards Grid
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = CRMBreakpoints.kpiColumns(context);
+                    final spacing = 12.0;
+                    final cardWidth = (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: campaignKpis.map((kpiConfig) {
+                        return SizedBox(
+                          width: cardWidth,
+                          child: KpiCardWidget(
+                            config: kpiConfig,
+                            value: (isSalesOn && reportData.campaignPipelineValues.containsKey(kpiConfig.type))
+                                ? reportData.campaignPipelineValues[kpiConfig.type]
+                                : reportData.kpiValues[kpiConfig.type],
+                            titleOverride: kpiConfig.type == ReportKpiType.leadsAssignedToSalesPickedUp
+                                ? (isSalesOn ? 'Lead Allocated to Direct Sales' : 'Leads Assigned to Sales (Picked Up)')
+                                : null,
+                            showToggles: false,
+                            onExpand: () => _handleCampaignKpiClick(kpiConfig.type, reportData, config),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: CRMSpacing.xl),
+                const Divider(height: 1),
+                const SizedBox(height: CRMSpacing.l),
+              ],
+            ),
+          ),
+
+        // ====================================================================
+        // SECTION 2: LEADS PAGE KPIS (Displayed below existing Campaign KPIs when not in Sales mode)
+        // ====================================================================
+        if (showLeadsPageKpisSection)
+          AdminActionGate(
+            actionKey: 'page.reports.leads_kpis',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              const Icon(Icons.people_alt_rounded, size: 20, color: Color(0xFF0D9488)),
+              const Text(
+                'Leads Performance',
+                style: TextStyle(
+                  fontSize: 17,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF1877F2),
+                  letterSpacing: -0.2,
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Campaign KPI Cards Grid
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = CRMBreakpoints.kpiColumns(context);
-            final spacing = 12.0;
-            final cardWidth = (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
-
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: campaignKpis.map((kpiConfig) {
-                return SizedBox(
-                  width: cardWidth,
-                  child: KpiCardWidget(
-                    config: kpiConfig,
-                    value: reportData.kpiValues[kpiConfig.type],
-                    showToggles: false,
-                    onExpand: () => _handleCampaignKpiClick(kpiConfig.type, reportData, config),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${leadsPageKpis.length} Active',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0D9488),
                   ),
-                );
-              }).toList(),
-            );
-          },
-        ),
-
-        const SizedBox(height: CRMSpacing.xl),
-        const Divider(height: 1),
-        const SizedBox(height: CRMSpacing.l),
-            ],
-          ),
-        ),
-
-        // ====================================================================
-        // SECTION 2: LEADS PAGE KPIS (Displayed below existing Campaign KPIs)
-        // ====================================================================
-        AdminActionGate(
-          actionKey: 'page.reports.leads_kpis',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.spaceBetween,
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            const Icon(Icons.people_alt_rounded, size: 20, color: Color(0xFF0D9488)),
-            const Text(
-              'Leads Page KPIs',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.2,
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D9488).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${leadsPageKpis.length} Active',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0D9488),
                 ),
               ),
-            ),
-            Text(
-              'Synchronized with Leads page pipeline',
-              style: TextStyle(
-                fontSize: 11.5,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                fontStyle: FontStyle.italic,
+              Text(
+                'Synchronized with Sidebar Leads page pipeline',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  fontStyle: FontStyle.italic,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Leads Page KPI Cards Grid
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = CRMBreakpoints.kpiColumns(context);
-            final spacing = 12.0;
-            final cardWidth = (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
-
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: leadsPageKpis.map((kpiConfig) {
-                return SizedBox(
-                  width: cardWidth,
-                  child: KpiCardWidget(
-                    config: kpiConfig,
-                    value: reportData.kpiValues[kpiConfig.type],
-                    showToggles: false,
-                    onExpand: () {
-                      setState(() {
-                        _selectedLeadsPageKpi = kpiConfig.type;
-                        _currentView = BusinessInsightView.leadsPageKpi;
-                      });
-                    },
-                  ),
-                );
-              }).toList(),
-            );
-          },
-        ),
-        const SizedBox(height: CRMSpacing.xl),
-        const Divider(height: 1),
-        const SizedBox(height: CRMSpacing.l),
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+
+          // Leads Page KPI Cards Grid
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = CRMBreakpoints.kpiColumns(context);
+              final spacing = 12.0;
+              final cardWidth = (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
+
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: leadsPageKpis.map((kpiConfig) {
+                  return SizedBox(
+                    width: cardWidth,
+                    child: KpiCardWidget(
+                      config: kpiConfig,
+                      value: reportData.kpiValues[kpiConfig.type],
+                      showToggles: false,
+                      onExpand: () {
+                        setState(() {
+                          _selectedLeadsPageKpi = kpiConfig.type;
+                          _currentView = BusinessInsightView.leadsPageKpi;
+                        });
+                      },
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+          const SizedBox(height: CRMSpacing.xl),
+          const Divider(height: 1),
+          const SizedBox(height: CRMSpacing.l),
+              ],
+            ),
+          ),
 
         // SECTION 3: OPERATIONAL KPIS & PIPELINE BREAKDOWN (Inventory Sourcing, Manual Leads, Sales Pipeline, Qualified Leads)
         AdminActionGate(
@@ -705,14 +884,25 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
       case ReportKpiType.notInterestedLeads:
         setState(() => _currentView = BusinessInsightView.notInterestedLeads);
         break;
+      case ReportKpiType.salesUsers:
+        setState(() => _currentView = BusinessInsightView.salespersonsList);
+        break;
       case ReportKpiType.leadsAssignedToSalesPickedUp:
       case ReportKpiType.leadsAssignedToSales:
         setState(() => _currentView = BusinessInsightView.salesAssignedPickedUp);
         break;
-      case ReportKpiType.siteVisitsDone:
+      case ReportKpiType.leadsNotStarted:
+      case ReportKpiType.leadsCallAttempted:
+      case ReportKpiType.leadsFollowups:
+      case ReportKpiType.leadsReFollowups:
+      case ReportKpiType.leadsInterested:
+      case ReportKpiType.leadsSiteVisitScheduled:
       case ReportKpiType.leadsSiteVisitDone:
+      case ReportKpiType.leadsNegotiation:
+      case ReportKpiType.leadsRejected:
+      case ReportKpiType.siteVisitsDone:
         setState(() {
-          _selectedLeadsPageKpi = ReportKpiType.leadsSiteVisitDone;
+          _selectedLeadsPageKpi = type == ReportKpiType.siteVisitsDone ? ReportKpiType.leadsSiteVisitDone : type;
           _currentView = BusinessInsightView.leadsPageKpi;
         });
         break;
@@ -727,5 +917,134 @@ class _OverallBusinessInsightContentState extends State<_OverallBusinessInsightC
         );
         break;
     }
+  }
+
+  Widget _buildTelecallerWarningBanner(BuildContext context, BusinessInsightSummary summary) {
+    if (summary.hasInactiveTelecallers) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFDE68A), width: 1.5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Telecaller Inactive Warning',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'Telecaller is currently inactive. Please enable the Telecaller Active toggle on the Employees page to view Telecaller performance.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFFB45309),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            ElevatedButton.icon(
+              onPressed: () => context.go('/employees'),
+              icon: const Icon(Icons.people_alt_rounded, size: 15),
+              label: const Text('Go to Employees'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD97706),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (summary.noTelecallersExist) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No Telecaller Employees',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'No Telecaller employee found in your organization. Please add a Telecaller on the Employees page.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            ElevatedButton.icon(
+              onPressed: () => context.go('/employees'),
+              icon: const Icon(Icons.people_alt_rounded, size: 15),
+              label: const Text('Go to Employees'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF64748B),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

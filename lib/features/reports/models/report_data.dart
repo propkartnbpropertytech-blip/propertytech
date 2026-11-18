@@ -236,6 +236,7 @@ class TrendDataPoint {
 
 class ReportOverallData {
   final Map<ReportKpiType, KpiValue> kpiValues;
+  final Map<ReportKpiType, KpiValue> campaignPipelineValues;
   final List<PipelineStageData> pipelineStages;
   final List<FunnelStageData> funnelStages;
   final List<FollowupCategoryData> followupCategories;
@@ -259,6 +260,7 @@ class ReportOverallData {
 
   const ReportOverallData({
     required this.kpiValues,
+    this.campaignPipelineValues = const {},
     required this.pipelineStages,
     required this.funnelStages,
     required this.followupCategories,

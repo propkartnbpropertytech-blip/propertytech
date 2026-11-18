@@ -37,6 +37,7 @@ class TelecallerAssignedLeadsPage extends StatefulWidget {
       if (assignedUser != null && assignedUser.isNotEmpty) {
         return assignedUser;
       }
+      return 'Unassigned Sales';
     }
     if (lead.assignedTelecallerName != null && lead.assignedTelecallerName!.trim().isNotEmpty) {
       return lead.assignedTelecallerName!.trim();
@@ -63,19 +64,51 @@ class TelecallerAssignedLeadsPage extends StatefulWidget {
     return isSalesMode ? 'Assigned Sales' : 'Assigned Telecaller';
   }
 
+  // Helper to resolve accurate employee role from database records (never show Admin as Telecaller)
+  static String resolveEmployeeRole(String name, List<IntegrationLeadModel> leads, {bool isSalesMode = false}) {
+    if (name.toLowerCase().contains('admin') || leads.any((l) => l.isTelecallerAdmin)) {
+      return 'Admin';
+    }
+    if (isSalesMode) {
+      return 'Salesperson';
+    }
+    for (final l in leads) {
+      if (l.assignedTelecallerRole != null && l.assignedTelecallerRole!.trim().isNotEmpty) {
+        final r = l.assignedTelecallerRole!.trim();
+        if (r.toLowerCase().contains('admin')) return 'Admin';
+        if (r.toLowerCase().contains('telecaller')) return 'Telecaller';
+        return r;
+      }
+    }
+    return 'Telecaller';
+  }
+
   // Helper to check if lead is assigned to telecaller / sales
   static bool isLeadAssignedToTelecaller(IntegrationLeadModel lead, {bool isSalesMode = false}) {
     if (isSalesMode) {
+      // REQUIREMENT 2: Display ONLY leads directly allocated to Salespersons by the Sales allocation engine.
+      // Do not include leads assigned to Salespersons by Telecallers.
+      // Do not include Telecaller allocations or unrelated lead records in this count.
+      final isHandedFromTelecaller = lead.allocationStatus == 'HANDED_TO_SALES' ||
+          lead.rawJson['_allocation_status'] == 'HANDED_TO_SALES' ||
+          (lead.assignedTelecallerId != null && lead.assignedTelecallerId!.trim().isNotEmpty && !lead.isTelecallerAdmin);
+
+      if (isHandedFromTelecaller && !lead.isDirectSalesAllocated && lead.rawJson['direct_sales_allocated'] != true) {
+        return false;
+      }
+
       final hasSalesName = lead.assignedToName != null && lead.assignedToName!.trim().isNotEmpty;
       final hasSalesId = lead.assignedTo != null && lead.assignedTo!.trim().isNotEmpty;
       final rawSales = lead.rawJson['assigned_to_name']?.toString().trim();
       final assignedUser = lead.rawJson['assigned_user'] is Map ? lead.rawJson['assigned_user']['full_name']?.toString().trim() : null;
-      final isDirectSales = lead.rawJson['direct_sales_allocated'] == true ||
-          lead.allocationStatus == 'ASSIGNED_TO_SALES' ||
-          lead.rawJson['_allocation_status'] == 'ASSIGNED_TO_SALES';
-      if (hasSalesName || hasSalesId || (rawSales != null && rawSales.isNotEmpty) || (assignedUser != null && assignedUser.isNotEmpty) || isDirectSales) {
-        return true;
-      }
+      final hasSalesAssignee = hasSalesName || hasSalesId || (rawSales != null && rawSales.isNotEmpty) || (assignedUser != null && assignedUser.isNotEmpty);
+
+      final isDirectSales = lead.isDirectSalesAllocated ||
+          lead.rawJson['direct_sales_allocated'] == true ||
+          lead.rawJson['is_direct_sales_allocated'] == true ||
+          (lead.allocationStatus == 'ASSIGNED_TO_SALES' && (lead.assignedTelecallerId == null || lead.assignedTelecallerId!.isEmpty || lead.isTelecallerAdmin));
+
+      return hasSalesAssignee && isDirectSales;
     }
     final hasTcName = lead.assignedTelecallerName != null && lead.assignedTelecallerName!.trim().isNotEmpty;
     final hasTcId = lead.assignedTelecallerId != null && lead.assignedTelecallerId!.trim().isNotEmpty;
@@ -214,6 +247,9 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
     final totalAssigned = _assignedLeads.length;
     final propCount = _assignedLeads.where((l) => l.leadType == 'Property Listing').length;
     final reqCount = _assignedLeads.where((l) => l.leadType == 'Requirement').length;
+    final genuineTelecallersCount = widget.isSalesMode
+        ? map.length
+        : map.entries.where((e) => !e.key.toLowerCase().contains('admin') && !e.value.any((l) => l.isTelecallerAdmin)).length;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -242,7 +278,7 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                 _buildSummaryStat(
                   context,
                   title: widget.isSalesMode ? 'Active Salespersons' : 'Active Telecallers',
-                  count: map.length,
+                  count: genuineTelecallersCount,
                   color: const Color(0xFF6366F1),
                   icon: Icons.groups_rounded,
                 ),
@@ -329,7 +365,11 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                   border: Border.all(color: CRMColors.borderOf(context)),
                 ),
                 child: Text(
-                  '${telecallerEntries.length} ${widget.isSalesMode ? "Salesperson(s)" : "Telecaller(s)"}',
+                  widget.isSalesMode
+                      ? '${telecallerEntries.length} Salesperson(s)'
+                      : (telecallerEntries.any((e) => e.key.toLowerCase().contains('admin') || e.value.any((l) => l.isTelecallerAdmin))
+                          ? '${telecallerEntries.where((e) => !e.key.toLowerCase().contains('admin') && !e.value.any((l) => l.isTelecallerAdmin)).length} Telecaller(s) · ${telecallerEntries.where((e) => e.key.toLowerCase().contains('admin') || e.value.any((l) => l.isTelecallerAdmin)).length} Admin'
+                          : '${telecallerEntries.length} Telecaller(s)'),
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
               ),
@@ -389,9 +429,11 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                     final tcPropCount = leads.where((l) => l.leadType == 'Property Listing').length;
                     final tcReqCount = leads.where((l) => l.leadType == 'Requirement').length;
 
+                    final roleLabel = TelecallerAssignedLeadsPage.resolveEmployeeRole(tcName, leads, isSalesMode: widget.isSalesMode);
                     return _buildTelecallerCard(
                       context,
                       name: tcName,
+                      roleLabel: roleLabel,
                       totalLeads: leads.length,
                       propCount: tcPropCount,
                       reqCount: tcReqCount,
@@ -476,6 +518,7 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
   Widget _buildTelecallerCard(
     BuildContext context, {
     required String name,
+    required String roleLabel,
     required int totalLeads,
     required int propCount,
     required int reqCount,
@@ -528,7 +571,7 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        widget.isSalesMode ? 'Salesperson' : 'Telecaller',
+                        roleLabel,
                         style: TextStyle(
                           fontSize: 11,
                           color: CRMColors.textSecondaryOf(context),
@@ -683,7 +726,7 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                     });
                   },
                   icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                  label: Text('All ${widget.isSalesMode ? "Salespersons" : "Telecallers"}'),
+                  label: Text('All ${widget.isSalesMode ? "Salespersons" : (_selectedTelecaller != null && _selectedTelecaller!.toLowerCase().contains('admin') ? "Telecallers & Admins" : "Telecallers")}'),
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     side: BorderSide(color: CRMColors.borderOf(context)),
@@ -1243,6 +1286,8 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
       }
     }
 
+    final resolvedTcName = TelecallerAssignedLeadsPage.extractTelecallerName(lead, isSalesMode: widget.isSalesMode);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1285,8 +1330,15 @@ class _TelecallerAssignedLeadsPageState extends State<TelecallerAssignedLeadsPag
                 _buildDetailRow('Received Date', DateFormat('d MMM y, h:mm a').format(lead.receivedAt)),
                 if (lead.assignedToName != null && lead.assignedToName!.isNotEmpty)
                   _buildDetailRow('Assigned Salesperson', lead.assignedToName!),
-                if (lead.assignedTelecallerName != null || lead.assignedToName != null)
-                  _buildDetailRow(widget.isSalesMode ? 'Assigned Salesperson' : 'Assigned Telecaller', (widget.isSalesMode ? (lead.assignedToName ?? lead.assignedTelecallerName) : lead.assignedTelecallerName) ?? ''),
+                if (resolvedTcName.isNotEmpty && resolvedTcName != 'Assigned Telecaller' && resolvedTcName != 'Assigned Sales')
+                  _buildDetailRow(
+                    widget.isSalesMode
+                        ? 'Assigned Salesperson'
+                        : ((resolvedTcName.toLowerCase().contains('admin') || lead.isTelecallerAdmin)
+                            ? 'PropKart Admin'
+                            : 'Assigned Telecaller'),
+                    resolvedTcName,
+                  ),
                 if (lead.telecallerAssignedAt != null)
                   _buildDetailRow('Assigned At', DateFormat('d MMM y, h:mm a').format(lead.telecallerAssignedAt!)),
 

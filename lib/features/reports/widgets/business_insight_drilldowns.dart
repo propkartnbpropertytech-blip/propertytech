@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/design_system/tokens/app_colors.dart';
 import '../../../../core/design_system/tokens/app_spacing.dart';
@@ -194,6 +195,7 @@ class LeadSourceGridView extends StatelessWidget {
           key: ValueKey('all_leads_${from}_$to'),
           source: 'All',
           kpi: 'all',
+          telecallerId: 'assigned',
           from: from,
           to: to,
         ),
@@ -1186,6 +1188,133 @@ class TelecallersListView extends StatelessWidget {
         ),
         const SizedBox(height: CRMSpacing.l),
 
+        // Inactive Telecaller Employee Warning Banner
+        if (summary.hasInactiveTelecallers) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.l),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFDE68A), width: 1.5),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 22),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Telecaller Inactive Warning',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Telecaller is currently inactive. Please enable the Telecaller Active toggle on the Employees page to view Telecaller performance.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFFB45309),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                ElevatedButton.icon(
+                  onPressed: () => context.go('/employees'),
+                  icon: const Icon(Icons.people_alt_rounded, size: 15),
+                  label: const Text('Go to Employees'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD97706),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else if (summary.noTelecallersExist) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: CRMSpacing.l),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 22),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'No Telecaller Employees',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'No Telecaller employee found in your organization. Please add a Telecaller on the Employees page.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                ElevatedButton.icon(
+                  onPressed: () => context.go('/employees'),
+                  icon: const Icon(Icons.people_alt_rounded, size: 15),
+                  label: const Text('Go to Employees'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF64748B),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Telecaller Cards
         LayoutBuilder(
           builder: (context, constraints) {
@@ -1233,7 +1362,8 @@ class TelecallersListView extends StatelessWidget {
         LeadRecordTableView(
           key: ValueKey('telecallers_all_${from}_$to'),
           source: 'All',
-          kpi: 'all',
+          kpi: 'telecallers',
+          telecallerId: 'assigned',
           from: from,
           to: to,
         ),
@@ -1723,6 +1853,391 @@ class _TelecallerDetailViewState extends State<TelecallerDetailView> with Single
 }
 
 // ============================================================================
+// 5b. SALESPERSONS LIST VIEW (Salespersons KPI Click)
+// ============================================================================
+class SalespersonsListView extends StatefulWidget {
+  final BusinessInsightSummary summary;
+  final VoidCallback onBack;
+  final Function(SalespersonSummaryItem salesperson)? onSelectSalesperson;
+  final DateTime? from;
+  final DateTime? to;
+
+  const SalespersonsListView({
+    super.key,
+    required this.summary,
+    required this.onBack,
+    this.onSelectSalesperson,
+    this.from,
+    this.to,
+  });
+
+  @override
+  State<SalespersonsListView> createState() => _SalespersonsListViewState();
+}
+
+class _SalespersonsListViewState extends State<SalespersonsListView> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  int _activeTabIndex = 0;
+  SalespersonSummaryItem? _selectedSalesperson;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging && _activeTabIndex != _tabController.index) {
+        setState(() => _activeTabIndex = _tabController.index);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final salespersons = widget.summary.salespersons;
+    final isDark = ThemeManager().isDarkMode;
+
+    int totalPropLeads = _selectedSalesperson != null
+        ? _selectedSalesperson!.propListingLeads
+        : salespersons.list.fold<int>(0, (sum, sp) => sum + sp.propListingLeads);
+    int totalReqLeads = _selectedSalesperson != null
+        ? _selectedSalesperson!.reqLeads
+        : salespersons.list.fold<int>(0, (sum, sp) => sum + sp.reqLeads);
+
+    if (_selectedSalesperson == null && totalPropLeads == 0 && widget.summary.propertyListingLeads.total > 0) {
+      totalPropLeads = widget.summary.propertyListingLeads.total;
+    }
+    if (_selectedSalesperson == null && totalReqLeads == 0 && widget.summary.requirementLeads.total > 0) {
+      totalReqLeads = widget.summary.requirementLeads.total;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildBreadcrumb(context, 'Overall Business Insights', widget.onBack),
+        const SizedBox(height: CRMSpacing.m),
+
+        _buildDrilldownHeader(
+          context: context,
+          title: 'Salespersons Performance & Campaign Leads',
+          subtitle: 'Total Active Salespersons: ${salespersons.totalCount}. Inspect assigned campaign lead breakdowns.',
+          badge: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              'Salespersons: ${salespersons.totalCount}',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF6366F1),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: CRMSpacing.l),
+
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isSmall = constraints.maxWidth < 700;
+            final cardWidth = isSmall ? constraints.maxWidth : (constraints.maxWidth - 16) / 2;
+
+            return Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: salespersons.list.map((sp) {
+                return _buildSalespersonCard(context, cardWidth, sp);
+              }).toList(),
+            );
+          },
+        ),
+        const SizedBox(height: CRMSpacing.l),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              _selectedSalesperson != null
+                  ? 'Campaign Leads for ${_selectedSalesperson!.name}'
+                  : 'Campaign Leads Allocated to Direct Sales',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_selectedSalesperson != null) ...[
+                  InkWell(
+                    onTap: () => setState(() => _selectedSalesperson = null),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.clear_rounded, size: 14),
+                          SizedBox(width: 4),
+                          Text(
+                            'Show All',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Direct Sales Allocation',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: CRMSpacing.m),
+
+        // Two Tabs: Properties Listing Leads vs Requirements Leads
+        Container(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            labelColor: const Color(0xFF6366F1),
+            unselectedLabelColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            indicatorColor: const Color(0xFF6366F1),
+            indicatorWeight: 3,
+            labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            tabs: [
+              Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.apartment_rounded, size: 16),
+                    const SizedBox(width: 8),
+                    Text('Properties Listing Leads ($totalPropLeads)'),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.manage_search_rounded, size: 16),
+                    const SizedBox(width: 8),
+                    Text('Requirements Leads ($totalReqLeads)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: CRMSpacing.m),
+
+        LeadRecordTableView(
+          key: ValueKey('salespersons_${_selectedSalesperson?.id ?? 'all'}_${_activeTabIndex}_${widget.from?.toIso8601String() ?? ''}_${widget.to?.toIso8601String() ?? ''}'),
+          source: 'All',
+          leadType: _activeTabIndex == 0 ? 'Property Listing' : 'Requirement',
+          salesUserId: _selectedSalesperson?.id,
+          kpi: 'direct_sales',
+          from: widget.from,
+          to: widget.to,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSalespersonCard(BuildContext context, double width, SalespersonSummaryItem sp) {
+    final isDark = ThemeManager().isDarkMode;
+    final isSelected = _selectedSalesperson?.id == sp.id;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        setState(() {
+          if (_selectedSalesperson?.id == sp.id) {
+            _selectedSalesperson = null;
+          } else {
+            _selectedSalesperson = sp;
+          }
+        });
+      },
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF6366F1)
+                : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? const Color(0xFF6366F1).withValues(alpha: 0.15)
+                  : Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+              blurRadius: isSelected ? 12 : 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                  child: Text(
+                    sp.name.isNotEmpty ? sp.name[0].toUpperCase() : 'S',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        sp.name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        sp.email,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      sp.totalLeads.toString(),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF6366F1),
+                      ),
+                    ),
+                    Text(
+                      'Assigned Leads',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Property Listing',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFF0284C7), fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          sp.propListingLeads.toString(),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D9488).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Requirement',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFF0D9488), fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          sp.reqLeads.toString(),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0D9488)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // 7. REUSABLE LEAD RECORD TABLE VIEW (Fetches & Displays Actual DB Leads)
 // ============================================================================
 class LeadRecordTableView extends StatefulWidget {
@@ -1730,6 +2245,7 @@ class LeadRecordTableView extends StatefulWidget {
   final String? leadType;
   final String? kpi;
   final String? telecallerId;
+  final String? salesUserId;
   final DateTime? from;
   final DateTime? to;
 
@@ -1739,6 +2255,7 @@ class LeadRecordTableView extends StatefulWidget {
     this.leadType,
     this.kpi,
     this.telecallerId,
+    this.salesUserId,
     this.from,
     this.to,
   });
@@ -1768,6 +2285,7 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
         oldWidget.leadType != widget.leadType ||
         oldWidget.kpi != widget.kpi ||
         oldWidget.telecallerId != widget.telecallerId ||
+        oldWidget.salesUserId != widget.salesUserId ||
         oldWidget.from != widget.from ||
         oldWidget.to != widget.to) {
       _page = 0;
@@ -1788,6 +2306,7 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
       leadType: widget.leadType,
       kpi: widget.kpi,
       telecallerId: widget.telecallerId,
+      salesUserId: widget.salesUserId,
       from: widget.from,
       to: widget.to,
       limit: 5000,
@@ -2032,11 +2551,20 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                   if (widget.kpi == 'not_interested' || widget.kpi == 'rejected')
                     DataColumn(label: Text(widget.kpi == 'not_interested' ? 'Not Interested Remark' : 'Rejection Reason / Remark', style: const TextStyle(fontWeight: FontWeight.bold))),
                   const DataColumn(label: Text('Call Disposition', style: TextStyle(fontWeight: FontWeight.bold))),
-                  const DataColumn(label: Text('Assigned Telecaller', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(label: Text('Assigned', style: TextStyle(fontWeight: FontWeight.bold))),
                   const DataColumn(label: Text('Assigned Salesperson', style: TextStyle(fontWeight: FontWeight.bold))),
                   const DataColumn(label: Text('Created Date', style: TextStyle(fontWeight: FontWeight.bold))),
                 ],
                 rows: pageLeads.map((lead) {
+                  final isDirect = lead.isDirectSalesAllocated ||
+                      widget.kpi == 'direct_sales' ||
+                      widget.kpi == 'lead_allocated_to_direct_sales' ||
+                      lead.stage == 'Direct Allocate to Sales' ||
+                      lead.stage == 'Direct Allocate Sales' ||
+                      lead.stage.toLowerCase().contains('direct') ||
+                      (lead.resolvedAssignedRole == 'Sales' && (lead.telecallerName == null || lead.telecallerName!.isEmpty));
+                  final assignedName = lead.resolvedAssignedName;
+                  final assignedRole = lead.resolvedAssignedRole;
                   return DataRow(
                     cells: [
                       DataCell(
@@ -2066,7 +2594,24 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                         Text(lead.leadType, style: const TextStyle(fontSize: 12.5)),
                       ),
                       DataCell(
-                        _buildStageBadge(lead.stage, lead.rejectionReason),
+                        isDirect
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+                                ),
+                                child: const Text(
+                                  'Direct Allocate to Sales',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF4F46E5),
+                                  ),
+                                ),
+                              )
+                            : _buildStageBadge(lead.stage, lead.rejectionReason),
                       ),
                       if (widget.kpi == 'not_interested' || widget.kpi == 'rejected')
                         DataCell(
@@ -2089,36 +2634,80 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                         ),
                       ),
                       DataCell(
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.headset_mic_rounded, size: 14, color: primaryColor),
-                            const SizedBox(width: 6),
-                            Text(
-                              lead.telecallerName ?? '—',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: lead.telecallerName != null ? FontWeight.w600 : FontWeight.normal,
+                        () {
+                          if (assignedName == null || assignedName.isEmpty) {
+                            return const Text('—');
+                          }
+                          final Color badgeColor;
+                          final IconData roleIcon;
+                          if (assignedRole == 'Telecaller') {
+                            badgeColor = primaryColor;
+                            roleIcon = Icons.headset_mic_rounded;
+                          } else if (assignedRole == 'Sales') {
+                            badgeColor = const Color(0xFF2563EB);
+                            roleIcon = Icons.person_rounded;
+                          } else {
+                            badgeColor = const Color(0xFF8B5CF6);
+                            roleIcon = Icons.admin_panel_settings_rounded;
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(roleIcon, size: 14, color: badgeColor),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    assignedName,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
+                              if (assignedRole != null && assignedRole.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: badgeColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: badgeColor.withValues(alpha: 0.25)),
+                                  ),
+                                  child: Text(
+                                    assignedRole,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: badgeColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        }(),
                       ),
                       DataCell(
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.person_rounded, size: 14, color: Color(0xFF2563EB)),
-                            const SizedBox(width: 6),
-                            Text(
-                              lead.salespersonName ?? '—',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: lead.salespersonName != null ? FontWeight.w600 : FontWeight.normal,
+                        isDirect
+                            ? const Text('—')
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.person_rounded, size: 14, color: Color(0xFF2563EB)),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    lead.salespersonName ?? '—',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: lead.salespersonName != null ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
                       ),
                       DataCell(
                         Text(
@@ -2189,6 +2778,14 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
     bool isDark,
     Color primaryColor,
   ) {
+    final isDirect = lead.isDirectSalesAllocated ||
+        widget.kpi == 'direct_sales' ||
+        widget.kpi == 'lead_allocated_to_direct_sales' ||
+        lead.stage == 'Direct Allocate to Sales' ||
+        lead.stage == 'Direct Allocate Sales' ||
+        lead.stage.toLowerCase().contains('direct') ||
+        (lead.resolvedAssignedRole == 'Sales' && (lead.telecallerName == null || lead.telecallerName!.isEmpty));
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -2214,7 +2811,24 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
                 ),
               ),
               const SizedBox(width: 8),
-              _buildStageBadge(lead.stage, lead.rejectionReason),
+              isDirect
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+                      ),
+                      child: const Text(
+                        'Direct Allocate to Sales',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF4F46E5),
+                        ),
+                      ),
+                    )
+                  : _buildStageBadge(lead.stage, lead.rejectionReason),
             ],
           ),
           const SizedBox(height: 4),
@@ -2249,34 +2863,72 @@ class _LeadRecordTableViewState extends State<LeadRecordTableView> {
               ),
             ],
           ),
-          if ((lead.telecallerName != null && lead.telecallerName!.isNotEmpty) ||
-              (lead.salespersonName != null && lead.salespersonName!.isNotEmpty)) ...[
+          if (lead.resolvedAssignedName != null && lead.resolvedAssignedName!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 12,
               runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (lead.telecallerName != null)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.headset_mic_rounded, size: 12, color: primaryColor),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      lead.resolvedAssignedRole == 'Telecaller'
+                          ? Icons.headset_mic_rounded
+                          : (lead.resolvedAssignedRole == 'Sales'
+                              ? Icons.person_rounded
+                              : Icons.admin_panel_settings_rounded),
+                      size: 13,
+                      color: lead.resolvedAssignedRole == 'Telecaller'
+                          ? primaryColor
+                          : (lead.resolvedAssignedRole == 'Sales'
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFF8B5CF6)),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      lead.resolvedAssignedName!,
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                    ),
+                    if (lead.resolvedAssignedRole != null) ...[
                       const SizedBox(width: 4),
-                      Text(
-                        lead.telecallerName!,
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: (lead.resolvedAssignedRole == 'Telecaller'
+                                  ? primaryColor
+                                  : (lead.resolvedAssignedRole == 'Sales'
+                                      ? const Color(0xFF2563EB)
+                                      : const Color(0xFF8B5CF6)))
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          lead.resolvedAssignedRole!,
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: lead.resolvedAssignedRole == 'Telecaller'
+                                ? primaryColor
+                                : (lead.resolvedAssignedRole == 'Sales'
+                                    ? const Color(0xFF2563EB)
+                                    : const Color(0xFF8B5CF6)),
+                          ),
+                        ),
                       ),
                     ],
-                  ),
-                if (lead.salespersonName != null)
+                  ],
+                ),
+                if (!isDirect && lead.salespersonName != null && lead.salespersonName!.isNotEmpty && lead.salespersonName != lead.resolvedAssignedName)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.person_rounded, size: 12, color: Color(0xFF2563EB)),
                       const SizedBox(width: 4),
                       Text(
-                        lead.salespersonName!,
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        'Sales: ${lead.salespersonName!}',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB)),
                       ),
                     ],
                   ),

@@ -188,14 +188,6 @@ class AppNavigationRegistry {
       sortOrder: 30,
     ),
     AppNavItem(
-      key: 'page.my_campaign_leads',
-      title: 'Campaign Leads',
-      route: '/my-campaign-leads',
-      iconName: 'campaign_outlined',
-      supportedRoles: ['Sales'],
-      sortOrder: 31,
-    ),
-    AppNavItem(
       key: 'page.employees',
       title: 'Employees & Users',
       route: '/users',

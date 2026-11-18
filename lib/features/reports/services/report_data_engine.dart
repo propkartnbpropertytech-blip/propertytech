@@ -11,6 +11,7 @@ import '../models/report_filter_state.dart';
 import '../models/report_data.dart';
 import '../models/business_insight_summary.dart';
 import 'insight_generator.dart';
+import '../../integration/services/integration_service.dart';
 
 class ReportDataEngine {
   static ReportOverallData computeReport({
@@ -40,8 +41,8 @@ class ReportDataEngine {
     );
 
     // 3. Extract Active Telecallers and Sales Users
-    final telecallers = allUsers.where((u) => u.roleName.toLowerCase() == 'telecaller').toList();
-    final salesUsers = allUsers.where((u) => u.roleName.toLowerCase() == 'sales').toList();
+    final telecallers = allUsers.where((u) => u.roleName.toLowerCase() == 'telecaller' && u.isActive).toList();
+    final salesUsers = allUsers.where((u) => (u.roleName.toLowerCase() == 'sales' || u.roleName.toLowerCase() == 'salesperson') && u.isActive).toList();
 
     // 4. Compute 13 KPIs
     final totalLeadsCount = filteredLeads.length;
@@ -77,8 +78,9 @@ class ReportDataEngine {
     final activeTelecallerIds = filteredLeads.map((l) => l.createdBy).whereType<String>().toSet();
     final activeTelecallerCount = activeTelecallerIds.isEmpty ? telecallers.length : activeTelecallerIds.length;
 
-    final activeSalesIds = filteredLeads.map((l) => l.assignedTo).whereType<String>().toSet();
-    final activeSalesCount = activeSalesIds.isEmpty ? salesUsers.length : activeSalesIds.length;
+    final activeSalesCount = (insightSummary != null && insightSummary.activeSalespersonsCount > 0)
+        ? insightSummary.activeSalespersonsCount
+        : salesUsers.length;
 
     // Calls
     final callAttemptedCount = filteredFollowups.length;
@@ -102,7 +104,11 @@ class ReportDataEngine {
         filteredLeads.where((l) => l.status.toLowerCase().contains('follow')).length;
     final summaryNotInterested = insightSummary?.notInterestedLeads.total ??
         filteredLeads.where((l) => l.status.toLowerCase().contains('not interested')).length;
-    final summaryAssignedToSales = insightSummary?.assignedToSalesPickedUp.total ?? assignedCount;
+    final isSalesTarget = insightSummary != null &&
+        (insightSummary.isSalesAllocationEnabled || insightSummary.targetRole == 'Sales' || IntegrationService().lastTargetRole == 'Sales');
+    final summaryAssignedToSales = isSalesTarget
+        ? insightSummary.directSalesAllocatedCount
+        : (insightSummary?.assignedToSalesPickedUp.total ?? assignedCount);
     final summarySiteVisitsDone = insightSummary?.siteVisitDone ?? insightSummary?.leadsPageKpis.siteVisitDone ?? visitsDoneCount;
 
     // Leads Page Pipeline Counts (Directly from Leads page records / insightSummary)
@@ -194,58 +200,58 @@ class ReportDataEngine {
         denominatorLabel: '% of Total Leads ($summaryTotalLeads)',
       ),
 
-      // 2. Leads Page KPIs (Displayed below Campaign KPIs)
+      // 2. Leads Page KPIs (Displayed in Leads Performance section)
       ReportKpiType.leadsNotStarted: KpiValue.create(
         count: notStartedCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (notStartedCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsCallAttempted: KpiValue.create(
         count: callAttemptedLeadsCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (callAttemptedLeadsCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsFollowups: KpiValue.create(
         count: leadsFollowupsCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsFollowupsCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsReFollowups: KpiValue.create(
         count: leadsReFollowupsCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsReFollowupsCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsInterested: KpiValue.create(
         count: leadsInterestedCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsInterestedCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsSiteVisitScheduled: KpiValue.create(
         count: leadsSiteVisitScheduledCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsSiteVisitScheduledCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsSiteVisitDone: KpiValue.create(
         count: leadsSiteVisitDoneCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsSiteVisitDoneCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsNegotiation: KpiValue.create(
         count: leadsNegotiationCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsNegotiationCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
       ReportKpiType.leadsRejected: KpiValue.create(
         count: leadsRejectedCount,
         percentage: leadsPageTotal == 0 ? 0.0 : (leadsRejectedCount / leadsPageTotal * 100),
-        denominatorLabel: '% of Leads Page ($leadsPageTotal)',
+        denominatorLabel: '% of Sidebar Leads ($leadsPageTotal)',
       ),
 
       // Other / Compatibility KPIs
       ReportKpiType.salesUsers: KpiValue.create(
         count: activeSalesCount,
-        percentage: salesUsers.isEmpty ? 100.0 : (activeSalesCount / salesUsers.length * 100).clamp(0.0, 100.0),
-        denominatorLabel: '% of ${salesUsers.length} Sales Users',
+        percentage: 100.0,
+        denominatorLabel: '$activeSalesCount Active Salespersons',
       ),
       ReportKpiType.leadsContacted: KpiValue.create(
         count: contactedCount,
@@ -286,6 +292,63 @@ class ReportDataEngine {
         count: lostCount,
         percentage: totalLeadsCount == 0 ? 0.0 : (lostCount / totalLeadsCount * 100),
         denominatorLabel: '% of Total Leads ($totalLeadsCount)',
+      ),
+    };
+
+    // Campaign Pipeline Counts (for Campaign Leads Performance section)
+    final cpk = insightSummary?.campaignPipelineKpis;
+    final int campNotStarted = cpk?.notStarted ?? 0;
+    final int campFollowups = cpk?.followUps ?? 0;
+    final int campReFollowups = cpk?.reFollowUps ?? 0;
+    final int campInterested = cpk?.interested ?? 0;
+    final int campSiteVisitScheduled = cpk?.siteVisitScheduled ?? 0;
+    final int campSiteVisitDone = cpk?.siteVisitDone ?? 0;
+    final int campNegotiation = cpk?.negotiation ?? 0;
+    final int campRejected = cpk?.rejectedLeads ?? 0;
+    final int campTotal = summaryAssignedToSales > 0
+        ? summaryAssignedToSales
+        : (campNotStarted + campFollowups + campReFollowups + campInterested + campSiteVisitScheduled + campSiteVisitDone + campNegotiation + campRejected);
+
+    final Map<ReportKpiType, KpiValue> campaignPipelineValues = {
+      ReportKpiType.leadsNotStarted: KpiValue.create(
+        count: campNotStarted,
+        percentage: campTotal == 0 ? 0.0 : (campNotStarted / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsFollowups: KpiValue.create(
+        count: campFollowups,
+        percentage: campTotal == 0 ? 0.0 : (campFollowups / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsReFollowups: KpiValue.create(
+        count: campReFollowups,
+        percentage: campTotal == 0 ? 0.0 : (campReFollowups / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsInterested: KpiValue.create(
+        count: campInterested,
+        percentage: campTotal == 0 ? 0.0 : (campInterested / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsSiteVisitScheduled: KpiValue.create(
+        count: campSiteVisitScheduled,
+        percentage: campTotal == 0 ? 0.0 : (campSiteVisitScheduled / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsSiteVisitDone: KpiValue.create(
+        count: campSiteVisitDone,
+        percentage: campTotal == 0 ? 0.0 : (campSiteVisitDone / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsNegotiation: KpiValue.create(
+        count: campNegotiation,
+        percentage: campTotal == 0 ? 0.0 : (campNegotiation / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
+      ),
+      ReportKpiType.leadsRejected: KpiValue.create(
+        count: campRejected,
+        percentage: campTotal == 0 ? 0.0 : (campRejected / campTotal * 100),
+        denominatorLabel: '% of Campaign Leads ($campTotal)',
       ),
     };
 
@@ -689,6 +752,7 @@ class ReportDataEngine {
 
     return ReportOverallData(
       kpiValues: kpiValues,
+      campaignPipelineValues: campaignPipelineValues,
       pipelineStages: pipelineStages,
       funnelStages: funnelStages,
       followupCategories: followupCategories,
@@ -1280,6 +1344,7 @@ class ReportDataEngine {
 
     return ReportOverallData(
       kpiValues: data.kpiValues,
+      campaignPipelineValues: data.campaignPipelineValues,
       pipelineStages: data.pipelineStages.where((s) => s.count > 0).toList(),
       funnelStages: remappedFunnel,
       followupCategories: data.followupCategories,

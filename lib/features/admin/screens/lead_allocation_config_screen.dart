@@ -102,10 +102,15 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       final rawTelecallers = (data['telecallers'] as List<dynamic>? ?? [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
+          .where((u) => (u['role'] ?? '').toString().toLowerCase() == 'telecaller')
           .toList();
       final rawSalespersons = (data['salespersons'] as List<dynamic>? ?? [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
+          .where((u) {
+            final r = (u['role'] ?? '').toString().toLowerCase();
+            return r == 'sales' || r == 'salesperson';
+          })
           .toList();
       final rawCategoryAllocations = (data['categoryAllocations'] as List<dynamic>? ?? [])
           .whereType<Map>()
@@ -842,7 +847,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                               delegate: _StickyPoolHeaderDelegate(
                                 isDark: isDark,
                                 isMobile: isMobile,
-                                height: 120.0,
+                                height: isMobile ? 122.0 : 128.0,
                                 child: _buildUserDraggablePool(
                                   users: _salespersons,
                                   role: 'Sales',
@@ -876,7 +881,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
                               delegate: _StickyPoolHeaderDelegate(
                                 isDark: isDark,
                                 isMobile: isMobile,
-                                height: 120.0,
+                                height: isMobile ? 122.0 : 128.0,
                                 child: _buildUserDraggablePool(
                                   users: _telecallers,
                                   role: 'Telecaller',

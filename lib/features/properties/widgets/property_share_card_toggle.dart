@@ -27,7 +27,7 @@ class PropertyShareCardToggle extends StatelessWidget {
         final color = shared ? CRMColors.primaryOf(context) : CRMColors.textSecondaryOf(context);
 
         return Tooltip(
-          message: 'Share This $typeLabel Property with Other Admins',
+          message: 'Share with Others in Network',
           child: Container(
             height: 28,
             padding: const EdgeInsets.only(left: 8),
@@ -42,7 +42,7 @@ class PropertyShareCardToggle extends StatelessWidget {
                 Icon(shared ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 14, color: color),
                 const SizedBox(width: 4),
                 Text(
-                  'Share $typeLabel',
+                  'Share with Others in Network',
                   style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
                 ),
                 SizedBox(

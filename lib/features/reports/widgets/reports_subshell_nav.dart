@@ -5,6 +5,7 @@ import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/theme/theme_manager.dart';
+import '../../integration/services/integration_service.dart';
 
 enum ReportDomain {
   leads,
@@ -120,7 +121,8 @@ class ReportsSubshellNav extends StatelessWidget {
                     isActive: currentPath.contains('/overall-business-insight'),
                     isFunctional: true,
                   ),
-                  if (RoleGuard.canAction('page.reports.telecaller'))
+                  if (RoleGuard.canAction('page.reports.telecaller') &&
+                      IntegrationService().lastTargetRole != 'Sales')
                   _buildSubTab(
                     context,
                     title: 'Telecaller Report',

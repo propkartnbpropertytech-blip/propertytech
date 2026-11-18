@@ -48,6 +48,7 @@ import '../widgets/todays_schedule_card.dart';
 import '../widgets/followups_card.dart';
 import '../widgets/inventory_demand_analytics_section.dart';
 import '../../requirements/screens/requirements_screen.dart';
+import '../../integration/services/integration_service.dart';
 import '../widgets/pipeline_funnel_bar.dart';
 import '../widgets/pipeline_stage_drilldown_dialog.dart';
 import '../widgets/floating_mascot_chatbot_button.dart';
@@ -75,6 +76,15 @@ class _DashboardScreenState extends State<DashboardScreen>
   final DashboardRepository _dashboardRepository = DashboardRepository();
 
   bool get _isRent => ThemeManager().isRentMode;
+  String _allocationTargetRole = 'Telecaller';
+  bool get _isTelecallerEnabled => _allocationTargetRole.toLowerCase() == 'telecaller';
+
+  void _onAllocationRoleChanged() {
+    final newRole = IntegrationService().lastTargetRole;
+    if (mounted && newRole != null && newRole.isNotEmpty && newRole != _allocationTargetRole) {
+      setState(() => _allocationTargetRole = newRole);
+    }
+  }
 
   Map<String, dynamic>? _lifecycleData;
   bool _loadingLifecycle = false;
@@ -193,6 +203,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     PermissionMatrixService.instance.addListener(_onPermissionsMatrixChanged);
+    _allocationTargetRole = IntegrationService().lastTargetRole ?? 'Telecaller';
+    IntegrationService().addListener(_onAllocationRoleChanged);
+    IntegrationService().getAllocationTargetRole().then((role) {
+      if (mounted && role.isNotEmpty && role != _allocationTargetRole) {
+        setState(() => _allocationTargetRole = role);
+      }
+    });
     _nameShimmerController = AnimationController(
       vsync: this,
       duration: CRMMotion.nameShimmer,
@@ -221,6 +238,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   void dispose() {
+    IntegrationService().removeListener(_onAllocationRoleChanged);
     PermissionMatrixService.instance.removeListener(_onPermissionsMatrixChanged);
     _nameShimmerController.dispose();
     _propertyDetailFutures.clear();
@@ -393,8 +411,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   // Telecaller Section KPIs
-                                  _buildTelecallerKpisSection(data, kpis, kpiFilters),
-                                  const SizedBox(height: 16),
+                                  if (_isTelecallerEnabled) ...[
+                                    _buildTelecallerKpisSection(data, kpis, kpiFilters),
+                                    const SizedBox(height: 16),
+                                  ],
 
                                   // Sales Section KPIs
                                   _buildSalesKpisSection(data, kpis, kpiFilters),
@@ -650,8 +670,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 14),
 
           // 4. Telecaller Section KPIs
-          _buildTelecallerKpisSection(data, kpis, kpiFilters),
-          const SizedBox(height: 14),
+          if (_isTelecallerEnabled) ...[
+            _buildTelecallerKpisSection(data, kpis, kpiFilters),
+            const SizedBox(height: 14),
+          ],
 
           // 5. Sales Section KPIs
           _buildSalesKpisSection(data, kpis, kpiFilters),
@@ -1310,7 +1332,12 @@ class _DashboardScreenState extends State<DashboardScreen>
           rows.add(
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: Row(children: rowChildren),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: rowChildren,
+                ),
+              ),
             ),
           );
         }
@@ -1405,6 +1432,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     DashboardKpisResponse? kpis,
     KpiFilterParams kpiFilters,
   ) {
+    if (!_isTelecallerEnabled) return const SizedBox.shrink();
     final bool enableTelecallers = kpis?.isKpiEnabled('telecallers') ?? true;
     final bool enableAlloc = kpis?.isKpiEnabled('leads_allocated') ?? true;
     final bool enableOldAlloc = kpis?.isKpiEnabled('old_leads_allocated') ?? true;
@@ -1632,7 +1660,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       cards.add(
         StatCard(
-          title: 'Sales Lead Outcomes',
+          title: 'Sales Lead Outcome',
           value: '${campaignKpis.interested} / ${campaignKpis.rejected}',
           subtitle:
               'Interested ${campaignKpis.interested} · Rejected ${campaignKpis.rejected}',

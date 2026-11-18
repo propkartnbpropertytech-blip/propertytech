@@ -272,6 +272,53 @@ class TelecallerListSummary {
   }
 }
 
+class SalespersonSummaryItem {
+  final String id;
+  final String name;
+  final String email;
+  final int totalLeads;
+  final int propListingLeads;
+  final int reqLeads;
+
+  const SalespersonSummaryItem({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.totalLeads,
+    required this.propListingLeads,
+    required this.reqLeads,
+  });
+
+  factory SalespersonSummaryItem.fromJson(Map<String, dynamic> json) {
+    return SalespersonSummaryItem(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      totalLeads: json['total_leads'] as int? ?? 0,
+      propListingLeads: json['prop_listing_leads'] as int? ?? 0,
+      reqLeads: json['req_leads'] as int? ?? 0,
+    );
+  }
+}
+
+class SalespersonListSummary {
+  final int totalCount;
+  final List<SalespersonSummaryItem> list;
+
+  const SalespersonListSummary({
+    required this.totalCount,
+    required this.list,
+  });
+
+  factory SalespersonListSummary.fromJson(Map<String, dynamic> json) {
+    final rawList = json['list'] as List<dynamic>? ?? [];
+    return SalespersonListSummary(
+      totalCount: json['total_count'] as int? ?? 0,
+      list: rawList.map((e) => SalespersonSummaryItem.fromJson(e as Map<String, dynamic>)).toList(),
+    );
+  }
+}
+
 // -------------------------------------------------------------
 // NEW CAMPAIGN KPI MODELS
 // -------------------------------------------------------------
@@ -463,12 +510,53 @@ class LeadsPageKpisSummary {
   }
 }
 
+class CampaignPipelineKpisSummary {
+  final int notStarted;
+  final int followUps;
+  final int reFollowUps;
+  final int interested;
+  final int siteVisitScheduled;
+  final int siteVisitDone;
+  final int negotiation;
+  final int rejectedLeads;
+
+  const CampaignPipelineKpisSummary({
+    this.notStarted = 0,
+    this.followUps = 0,
+    this.reFollowUps = 0,
+    this.interested = 0,
+    this.siteVisitScheduled = 0,
+    this.siteVisitDone = 0,
+    this.negotiation = 0,
+    this.rejectedLeads = 0,
+  });
+
+  factory CampaignPipelineKpisSummary.fromJson(Map<String, dynamic> json) {
+    return CampaignPipelineKpisSummary(
+      notStarted: json['not_started'] as int? ?? 0,
+      followUps: json['follow_ups'] as int? ?? 0,
+      reFollowUps: json['re_follow_ups'] as int? ?? 0,
+      interested: json['interested'] as int? ?? 0,
+      siteVisitScheduled: json['site_visit_scheduled'] as int? ?? 0,
+      siteVisitDone: json['site_visit_done'] as int? ?? 0,
+      negotiation: json['negotiation'] as int? ?? 0,
+      rejectedLeads: json['rejected_leads'] as int? ?? 0,
+    );
+  }
+}
+
 class BusinessInsightSummary {
   final int totalLeads;
   final Map<String, SourceSummary> sources;
   final PropertyListingSummary propertyListingLeads;
   final RequirementSummary requirementLeads;
   final TelecallerListSummary telecallers;
+  final String targetRole;
+  final bool isTelecallerAllocationEnabled;
+  final bool isSalesAllocationEnabled;
+  final int activeSalespersonsCount;
+  final int directSalesAllocatedCount;
+  final SalespersonListSummary salespersons;
   final NewOpenLeadsSummary newOpenLeads;
   final CnrLeadsSummary cnrLeads;
   final CallbackLeadsSummary callbackLeads;
@@ -477,6 +565,12 @@ class BusinessInsightSummary {
   final AssignedToSalesSummary assignedToSalesPickedUp;
   final int siteVisitDone;
   final LeadsPageKpisSummary leadsPageKpis;
+  final CampaignPipelineKpisSummary campaignPipelineKpis;
+  final bool hasInactiveTelecallers;
+  final bool noTelecallersExist;
+  final int inactiveTelecallersCount;
+  final int totalTelecallersCount;
+  final int activeTelecallersCount;
 
   const BusinessInsightSummary({
     required this.totalLeads,
@@ -484,6 +578,12 @@ class BusinessInsightSummary {
     required this.propertyListingLeads,
     required this.requirementLeads,
     required this.telecallers,
+    this.targetRole = 'NONE',
+    this.isTelecallerAllocationEnabled = false,
+    this.isSalesAllocationEnabled = false,
+    this.activeSalespersonsCount = 0,
+    this.directSalesAllocatedCount = 0,
+    this.salespersons = const SalespersonListSummary(totalCount: 0, list: []),
     this.newOpenLeads = const NewOpenLeadsSummary(total: 0, bySource: {}),
     this.cnrLeads = const CnrLeadsSummary(total: 0, bySource: {}),
     this.callbackLeads = const CallbackLeadsSummary(total: 0, bySource: {}),
@@ -492,6 +592,12 @@ class BusinessInsightSummary {
     this.assignedToSalesPickedUp = const AssignedToSalesSummary(total: 0, byTelecaller: []),
     this.siteVisitDone = 0,
     this.leadsPageKpis = const LeadsPageKpisSummary(),
+    this.campaignPipelineKpis = const CampaignPipelineKpisSummary(),
+    this.hasInactiveTelecallers = false,
+    this.noTelecallersExist = false,
+    this.inactiveTelecallersCount = 0,
+    this.totalTelecallersCount = 0,
+    this.activeTelecallersCount = 0,
   });
 
   const BusinessInsightSummary.empty()
@@ -526,6 +632,12 @@ class BusinessInsightSummary {
           ),
         ),
         telecallers = const TelecallerListSummary(totalCount: 0, list: []),
+        targetRole = 'NONE',
+        isTelecallerAllocationEnabled = false,
+        isSalesAllocationEnabled = false,
+        activeSalespersonsCount = 0,
+        directSalesAllocatedCount = 0,
+        salespersons = const SalespersonListSummary(totalCount: 0, list: []),
         newOpenLeads = const NewOpenLeadsSummary(total: 0, bySource: {}),
         cnrLeads = const CnrLeadsSummary(total: 0, bySource: {}),
         callbackLeads = const CallbackLeadsSummary(total: 0, bySource: {}),
@@ -533,7 +645,13 @@ class BusinessInsightSummary {
         notInterestedLeads = const SourceCountBreakdown(total: 0, bySource: {}),
         assignedToSalesPickedUp = const AssignedToSalesSummary(total: 0, byTelecaller: []),
         siteVisitDone = 0,
-        leadsPageKpis = const LeadsPageKpisSummary();
+        leadsPageKpis = const LeadsPageKpisSummary(),
+        campaignPipelineKpis = const CampaignPipelineKpisSummary(),
+        hasInactiveTelecallers = false,
+        noTelecallersExist = false,
+        inactiveTelecallersCount = 0,
+        totalTelecallersCount = 0,
+        activeTelecallersCount = 0;
 
   factory BusinessInsightSummary.fromJson(Map<String, dynamic> json) {
     final rawSources = json['sources'] as Map<String, dynamic>? ?? {};
@@ -541,7 +659,12 @@ class BusinessInsightSummary {
       (k, v) => MapEntry(k, SourceSummary.fromJson(v as Map<String, dynamic>? ?? {})),
     );
     final lpkJson = json['leads_page_kpis'] as Map<String, dynamic>? ?? {};
+    final cpkJson = json['campaign_pipeline_kpis'] as Map<String, dynamic>? ?? {};
     final svDone = json['site_visit_done'] as int? ?? (lpkJson['site_visit_done'] as int? ?? 0);
+
+    final rawTargetRole = (json['target_role'] ?? '').toString().trim();
+    final isSalesEnabled = json['is_sales_allocation_enabled'] as bool? ?? (rawTargetRole.toLowerCase() == 'sales');
+    final isTelecallerEnabled = json['is_telecaller_allocation_enabled'] as bool? ?? (rawTargetRole.toLowerCase() == 'telecaller');
 
     return BusinessInsightSummary(
       totalLeads: json['total_leads'] as int? ?? 0,
@@ -549,6 +672,12 @@ class BusinessInsightSummary {
       propertyListingLeads: PropertyListingSummary.fromJson(json['property_listing_leads'] as Map<String, dynamic>? ?? {}),
       requirementLeads: RequirementSummary.fromJson(json['requirement_leads'] as Map<String, dynamic>? ?? {}),
       telecallers: TelecallerListSummary.fromJson(json['telecallers'] as Map<String, dynamic>? ?? {}),
+      targetRole: rawTargetRole.isNotEmpty ? rawTargetRole : (isSalesEnabled ? 'Sales' : (isTelecallerEnabled ? 'Telecaller' : 'NONE')),
+      isTelecallerAllocationEnabled: isTelecallerEnabled,
+      isSalesAllocationEnabled: isSalesEnabled,
+      activeSalespersonsCount: json['active_salespersons_count'] as int? ?? 0,
+      directSalesAllocatedCount: json['direct_sales_allocated_count'] as int? ?? 0,
+      salespersons: SalespersonListSummary.fromJson(json['salespersons'] as Map<String, dynamic>? ?? {}),
       newOpenLeads: NewOpenLeadsSummary.fromJson(json['new_open_leads'] as Map<String, dynamic>? ?? {}),
       cnrLeads: CnrLeadsSummary.fromJson(json['cnr_leads'] as Map<String, dynamic>? ?? {}),
       callbackLeads: CallbackLeadsSummary.fromJson(json['callback_leads'] as Map<String, dynamic>? ?? {}),
@@ -557,6 +686,15 @@ class BusinessInsightSummary {
       assignedToSalesPickedUp: AssignedToSalesSummary.fromJson(json['assigned_to_sales_picked_up'] as Map<String, dynamic>? ?? {}),
       siteVisitDone: svDone,
       leadsPageKpis: LeadsPageKpisSummary.fromJson(lpkJson),
+      campaignPipelineKpis: CampaignPipelineKpisSummary.fromJson(cpkJson),
+      hasInactiveTelecallers: json['has_inactive_telecallers'] == true ||
+          (((json['telecaller_employee_status']?['total_telecallers'] as num?)?.toInt() ?? 0) > 0 &&
+           ((json['telecaller_employee_status']?['active_telecallers'] as num?)?.toInt() ?? 0) == 0),
+      noTelecallersExist: json['no_telecallers_exist'] == true ||
+          ((json['telecaller_employee_status']?['total_telecallers'] as num?)?.toInt() ?? 0) == 0,
+      inactiveTelecallersCount: (json['telecaller_employee_status']?['inactive_telecallers'] as num?)?.toInt() ?? 0,
+      totalTelecallersCount: (json['telecaller_employee_status']?['total_telecallers'] as num?)?.toInt() ?? 0,
+      activeTelecallersCount: (json['telecaller_employee_status']?['active_telecallers'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -583,6 +721,9 @@ class BusinessInsightLead {
   final DateTime? salesAssignedAt;
   final DateTime? telecallerAssignedAt;
   final DateTime? createdAt;
+  final bool isDirectSalesAllocated;
+  final String? assignedName;
+  final String? assignedRole;
 
   const BusinessInsightLead({
     required this.id,
@@ -606,7 +747,32 @@ class BusinessInsightLead {
     this.salesAssignedAt,
     this.telecallerAssignedAt,
     this.createdAt,
+    this.isDirectSalesAllocated = false,
+    this.assignedName,
+    this.assignedRole,
   });
+
+  String? get resolvedAssignedName {
+    if (assignedName != null && assignedName!.isNotEmpty) return assignedName;
+    if (isDirectSalesAllocated && salespersonName != null && salespersonName!.isNotEmpty) return salespersonName;
+    if (telecallerName != null && telecallerName!.isNotEmpty) {
+      if (telecallerName == 'Propkart Admin') return 'PropKart Admin';
+      return telecallerName;
+    }
+    if (salespersonName != null && salespersonName!.isNotEmpty) return salespersonName;
+    return null;
+  }
+
+  String? get resolvedAssignedRole {
+    if (assignedRole != null && assignedRole!.isNotEmpty) return assignedRole;
+    if (isDirectSalesAllocated) return 'Sales';
+    if (telecallerName != null && telecallerName!.isNotEmpty) {
+      if (telecallerName == 'Propkart Admin') return 'Admin';
+      return 'Telecaller';
+    }
+    if (salespersonName != null && salespersonName!.isNotEmpty) return 'Sales';
+    return null;
+  }
 
   factory BusinessInsightLead.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(dynamic val) {
@@ -640,6 +806,9 @@ class BusinessInsightLead {
       salesAssignedAt: parseDate(json['sales_assigned_at']),
       telecallerAssignedAt: parseDate(json['telecaller_assigned_at']),
       createdAt: parseDate(json['created_at']),
+      isDirectSalesAllocated: json['is_direct_sales_allocated'] == true,
+      assignedName: json['assigned_name'] as String?,
+      assignedRole: json['assigned_role'] as String?,
     );
   }
 }

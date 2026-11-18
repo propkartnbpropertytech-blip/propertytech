@@ -22,6 +22,7 @@ import '../../features/builders/screens/builders_screen.dart';
 import '../../features/users/screens/employee_detail_screen.dart';
 import '../../features/users/screens/user_tree_screen.dart';
 import '../../features/requirements/screens/requirements_screen.dart';
+import '../../features/requirements/screens/touched_leads_screen.dart';
 import '../../splash.dart';
 import '../../get_started_screen.dart';
 import '../../modules/legal/presentation/terms_and_conditions_page.dart';
@@ -515,46 +516,29 @@ class AppRouter {
           GoRoute(
             path: '/my-campaign-leads',
             redirect: (context, state) {
-              final role = RoleGuard.currentUser?.role ?? '';
-              final isAdminRole = RoleGuard.isAdmin(role) || RoleGuard.isSuperAdmin(role);
-              if (!RoleGuard.isSales(role) && !isAdminRole) return '/requirements';
-              if (!RoleGuard.canViewPage(role, '/requirements')) {
-                return RoleGuard.getFirstAllowedRoute(role);
-              }
-              if (!isAdminRole && !RoleGuard.canAction('page.my_campaign_leads')) return '/requirements';
-              return null;
-            },
-            pageBuilder: (context, state) {
-              final tab = state.uri.queryParameters['tab'];
-              final subTab = state.uri.queryParameters['subTab'];
-              final section = state.uri.queryParameters['section'];
-              return crmFadeSlidePage(
-                key: state.pageKey,
-                child: RequirementsScreen(
-                  key: const ValueKey('sales-campaign-leads'),
-                  initialTab: tab,
-                  initialSubTab: subTab,
-                  initialSection: section,
-                  campaignMode: true,
-                ),
-              );
+              final params = state.uri.queryParameters;
+              return Uri(
+                path: '/requirements',
+                queryParameters: params.isEmpty ? null : params,
+              ).toString();
             },
           ),
           GoRoute(
-            path: '/requirements',
+            path: '/requirements/touched-leads',
             redirect: (context, state) {
-              final group = (state.uri.queryParameters['group'] ?? '').toLowerCase();
-              final isCampaignGroup = group == 'campaign' || group == 'campaign_leads' || group == 'campaign-leads';
-              if (isCampaignGroup && RoleGuard.isSales(RoleGuard.currentUser?.role)) {
-                final params = Map<String, String>.from(state.uri.queryParameters)
-                  ..remove('group');
-                return Uri(
-                  path: '/my-campaign-leads',
-                  queryParameters: params.isEmpty ? null : params,
-                ).toString();
+              final role = RoleGuard.currentUser?.role ?? '';
+              if (role != 'Admin' && role != 'Super Admin') {
+                return '/requirements';
               }
               return null;
             },
+            pageBuilder: (context, state) => crmFadeSlidePage(
+              key: state.pageKey,
+              child: const TouchedLeadsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/requirements',
             pageBuilder: (context, state) {
               final tab = state.uri.queryParameters['tab'];
               final subTab = state.uri.queryParameters['subTab'];

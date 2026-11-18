@@ -47,9 +47,17 @@ class PropertySharePdf {
   }
 
   static String fileName(PropertyModel p) {
-    final raw = p.title.trim().isNotEmpty ? p.title.trim() : displayTitle(p);
-    final safe = raw.replaceAll(RegExp(r'[^\w\s\.-]'), '_').replaceAll(RegExp(r'\s+'), '_').trim();
-    return '$safe.pdf';
+    String idPart = p.propertyCode.trim();
+    if (idPart.toUpperCase().startsWith('PR-') || idPart.toUpperCase().startsWith('PR_')) {
+      idPart = idPart.substring(3).trim();
+    } else if (idPart.toUpperCase().startsWith('PR')) {
+      idPart = idPart.substring(2).trim();
+    }
+    if (idPart.isEmpty) {
+      idPart = p.id.trim();
+    }
+    final safeId = idPart.replaceAll(RegExp(r'[^\w\.-]'), '_').trim();
+    return 'PropKart_PR_$safeId.pdf';
   }
 
   /// Cloudinary image URL optimization helper (requests compressed 600x400 JPEG for ultra-fast generation)
@@ -559,9 +567,6 @@ class PropertySharePdf {
 
     // 3. Location Banner Line (ONLY with location parts that are actually selected)
     final List<String> locBannerParts = [];
-    if (config.isFieldEnabled('loc_address') && _hasValue(p.address)) {
-      locBannerParts.add(p.address.trim());
-    }
     if (config.isFieldEnabled('loc_area') && _hasValue(p.areaName)) {
       locBannerParts.add(p.areaName.trim());
     }
@@ -776,9 +781,6 @@ class PropertySharePdf {
     final showPrice = config.isFieldEnabled('basic_price') && p.price > 0;
 
     final List<String> locBannerParts = [];
-    if (config.isFieldEnabled('loc_address') && _hasValue(p.address)) {
-      locBannerParts.add(p.address.trim());
-    }
     if (config.isFieldEnabled('loc_area') && _hasValue(p.areaName)) {
       locBannerParts.add(p.areaName.trim());
     }
@@ -978,9 +980,6 @@ class PropertySharePdf {
     final showPrice = config.isFieldEnabled('basic_price') && p.price > 0;
 
     final List<String> locBannerParts = [];
-    if (config.isFieldEnabled('loc_address') && _hasValue(p.address)) {
-      locBannerParts.add(p.address.trim());
-    }
     if (config.isFieldEnabled('loc_area') && _hasValue(p.areaName)) {
       locBannerParts.add(p.areaName.trim());
     }
@@ -1236,7 +1235,7 @@ class PropertySharePdf {
     final List<pw.Widget> items = [];
 
     if (config.isFieldEnabled('overview_title') && p.title.trim().isNotEmpty) {
-      items.add(_detailRow('Project / Title', p.title.trim(), _svgBuilding, iconHex));
+      items.add(_detailRow('Property Name', p.title.trim(), _svgBuilding, iconHex));
     }
     if ((config.isFieldEnabled('overview_property_code') || config.isFieldEnabled('basic_property_code')) && _hasValue(p.propertyCode)) {
       items.add(_detailRow('Property Code', _text(p.propertyCode), _svgBuilding, iconHex));
@@ -1371,8 +1370,11 @@ class PropertySharePdf {
     if (config.isFieldEnabled('loc_pincode') && _hasValue(p.pincode)) {
       items.add(_detailRow('Pincode', _text(p.pincode), _svgLocation, iconHex));
     }
-    if (config.isFieldEnabled('loc_address') && _hasValue(p.address)) {
-      items.add(_detailRow('Address', _text(p.address), _svgLocation, iconHex));
+    if ((config.isFieldEnabled('loc_address_street_1') || config.isFieldEnabled('loc_address')) && _hasValue(p.displayStreet1)) {
+      items.add(_detailRow('Address Street 1', _text(p.displayStreet1), _svgLocation, iconHex));
+    }
+    if (config.isFieldEnabled('loc_address_street_2') && _hasValue(p.displayStreet2)) {
+      items.add(_detailRow('Address Street 2', _text(p.displayStreet2), _svgLocation, iconHex));
     }
     if (config.isFieldEnabled('loc_landmark') && _hasValue(p.landmark)) {
       items.add(_detailRow('Landmark', _text(p.landmark), _svgLocation, iconHex));

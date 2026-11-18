@@ -1086,8 +1086,12 @@ class _BuildPropertyDetailWidgetState extends State<BuildPropertyDetailWidget> {
       locationItems.add(PropertyDetailItem('વિભાગ (Section)', property.section!, Icons.grid_view_rounded));
     }
 
-    if (_isValidValue(property.address)) {
-      locationItems.add(PropertyDetailItem('Address', property.address, Icons.home_outlined));
+    final st1 = (_isValidValue(property.addressStreet1)) ? property.addressStreet1! : property.address;
+    if (_isValidValue(st1)) {
+      locationItems.add(PropertyDetailItem('Address Street 1', st1, Icons.home_outlined));
+    }
+    if (_isValidValue(property.addressStreet2)) {
+      locationItems.add(PropertyDetailItem('Address Street 2', property.addressStreet2!, Icons.add_road_outlined));
     }
     if (property.latitude != null && property.longitude != null) {
       locationItems.add(PropertyDetailItem('Coordinates', '${property.latitude!.toStringAsFixed(5)}, ${property.longitude!.toStringAsFixed(5)}', Icons.my_location_outlined));
@@ -2428,7 +2432,7 @@ Widget _buildOverviewCard(BuildContext context, PropertyModel p) {
               spacing: tileSpacing,
               runSpacing: 16,
               children: [
-                _buildOverviewTile(context, 'Project / Title', p.title.isNotEmpty ? p.title : p.propertyCode, Icons.business_rounded, tileWidth),
+                _buildOverviewTile(context, 'Property Name', p.title.isNotEmpty ? p.title : p.propertyCode, Icons.business_rounded, tileWidth),
                 _buildOverviewTile(context, 'Security Deposit', p.deposit > 0 ? '₹${BudgetFormatter.format(p.deposit)}' : 'N/A', Icons.account_balance_wallet_outlined, tileWidth),
                 _buildOverviewTile(context, 'Built Up Area', areaStr, Icons.square_foot_outlined, tileWidth),
                 _buildOverviewTile(context, 'Furnishing', p.furnishingTypeName ?? 'Unfurnished', Icons.chair_outlined, tileWidth),

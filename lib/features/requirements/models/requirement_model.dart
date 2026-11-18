@@ -53,8 +53,21 @@ class RequirementModel {
   final String? assignedTelecallerId;
   String? get telecallerId => assignedTelecallerId;
   final DateTime? salesAssignedAt;
+  final DateTime? leadReceivedAt;
+  final DateTime? autoAllocatedAt;
   final String? rejectionRemark;
   final bool isDirectSalesAllocated;
+
+  String get callDisposition {
+    final s = status.toUpperCase();
+    if (s.contains('CNR')) return 'CNR';
+    if (s.contains('CALLBACK')) return 'CALLBACK';
+    if (s.contains('NOT INTERESTED') || s.contains('NOT_INTERESTED')) return 'NOT_INTERESTED';
+    if (s.contains('INTERESTED')) return 'INTERESTED';
+    if (s.contains('FOLLOW')) return 'FOLLOWUP';
+    if (s.contains('PICKED UP') || s.contains('PICKED_UP')) return 'CONTACTED';
+    return 'NOT_ATTEMPTED';
+  }
 
   RequirementModel({
     required this.id,
@@ -108,12 +121,21 @@ class RequirementModel {
     this.leadQuality,
     this.assignedTelecallerId,
     this.salesAssignedAt,
+    this.leadReceivedAt,
+    this.autoAllocatedAt,
     this.rejectionRemark,
     this.isDirectSalesAllocated = false,
   });
 
   /// Returns true if this lead originated from an external campaign connection (Housing, Meta, Webhook, Portal, etc.)
   bool get isCampaignLead {
+    if (metaCustomFields != null &&
+        (metaCustomFields!['is_manually_added'] == true ||
+         metaCustomFields!['is_manually_added'] == 'true' ||
+         metaCustomFields!['created_via'] == 'add_lead' ||
+         metaCustomFields!['entry_source'] == 'manual')) {
+      return false;
+    }
     if (isDirectSalesAllocated) return true;
     if (isMetaLead) return true;
     if (metaLeadId != null && metaLeadId!.trim().isNotEmpty) return true;
@@ -166,8 +188,16 @@ class RequirementModel {
   /// Returns true if this lead was manually created via "+ Add Lead" by a Salesperson, Telecaller, or Admin.
   bool get isManuallyAdded {
     if (isDirectSalesAllocated) return false;
+    // 1. Explicit manual flag set by "+ Add Lead" form:
+    if (metaCustomFields != null) {
+      final flag = metaCustomFields!['is_manually_added'];
+      if (flag == true || flag == 'true' || flag == 1) return true;
+      final createdVia = metaCustomFields!['created_via']?.toString().toLowerCase();
+      if (createdVia == 'add_lead' || createdVia == 'manual') return true;
+      final entrySource = metaCustomFields!['entry_source']?.toString().toLowerCase();
+      if (entrySource == 'manual') return true;
+    }
     if (isCampaignLead) return false;
-    if ((leadSource ?? '').toLowerCase().contains('housing')) return false;
     // 1. Automated integration exclusion:
     // If it has an external Meta Lead ID, Housing sync Lead ID, or Campaign integration info, it is NOT manually added.
     if (isMetaLead ||
@@ -842,6 +872,20 @@ class RequirementModel {
         }
         return null;
       }(),
+      leadReceivedAt: () {
+        final raw = json['leadReceivedAt'] ?? json['lead_received_at'];
+        if (raw != null && raw.toString().trim().isNotEmpty) {
+          return DateTime.tryParse(raw.toString().trim());
+        }
+        return null;
+      }(),
+      autoAllocatedAt: () {
+        final raw = json['autoAllocatedAt'] ?? json['auto_allocated_at'];
+        if (raw != null && raw.toString().trim().isNotEmpty) {
+          return DateTime.tryParse(raw.toString().trim());
+        }
+        return null;
+      }(),
       rejectionRemark: (json['rejection_remark'] ?? json['rejectionRemark'])?.toString(),
       isDirectSalesAllocated: json['is_direct_sales_allocated'] == true ||
           json['isDirectSalesAllocated'] == true ||
@@ -907,6 +951,10 @@ class RequirementModel {
       'assignedTelecallerId': assignedTelecallerId,
       'sales_assigned_at': salesAssignedAt?.toIso8601String(),
       'salesAssignedAt': salesAssignedAt?.toIso8601String(),
+      'lead_received_at': leadReceivedAt?.toIso8601String(),
+      'leadReceivedAt': leadReceivedAt?.toIso8601String(),
+      'auto_allocated_at': autoAllocatedAt?.toIso8601String(),
+      'autoAllocatedAt': autoAllocatedAt?.toIso8601String(),
       'rejection_remark': rejectionRemark,
       'rejectionRemark': rejectionRemark,
     };
@@ -1188,6 +1236,8 @@ class RequirementModel {
     String? leadQuality,
     String? assignedTelecallerId,
     DateTime? salesAssignedAt,
+    DateTime? leadReceivedAt,
+    DateTime? autoAllocatedAt,
     String? rejectionRemark,
     bool? isDirectSalesAllocated,
   }) {
@@ -1243,13 +1293,16 @@ class RequirementModel {
       leadQuality: leadQuality ?? this.leadQuality,
       assignedTelecallerId: assignedTelecallerId ?? this.assignedTelecallerId,
       salesAssignedAt: salesAssignedAt ?? this.salesAssignedAt,
+      leadReceivedAt: leadReceivedAt ?? this.leadReceivedAt,
+      autoAllocatedAt: autoAllocatedAt ?? this.autoAllocatedAt,
       rejectionRemark: rejectionRemark ?? this.rejectionRemark,
       isDirectSalesAllocated: isDirectSalesAllocated ?? this.isDirectSalesAllocated,
     );
   }
 
-  /// Exact date and time to display: transfer date for transferred leads, else creation date.
-  DateTime get effectiveDate => (salesAssignedAt ?? createdAt).toLocal();
+  /// Exact date and time to display: auto-allocation date for auto-allocated leads,
+  /// transfer/assignment date for assigned leads, else creation date.
+  DateTime get effectiveDate => (autoAllocatedAt ?? salesAssignedAt ?? createdAt).toLocal();
 }
 
 String _requirementStatusKey(String value) {

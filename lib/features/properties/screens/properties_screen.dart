@@ -117,6 +117,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   List<PropertyListItemViewModel> _allViewModels = [];
   List<PropertyListItemViewModel> _filteredViewModels = [];
   List<PropertyModel> _filteredProperties = [];
+  int _currentWithImagesCount = 0;
+  int _currentNoImagesCount = 0;
   Timer? _searchDebounceTimer;
   String? _lastComputedPropertyFilterKey;
   List<PropertyModel>? _lastSourcePropertyList;
@@ -161,7 +163,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       return _filteredProperties;
     }
 
-    _cachedProperties = list;
+    if (_serverSearchProperties == null) {
+      _cachedProperties = list;
+    }
     if (metadata != null) _cachedMetadata = metadata;
     _recomputeFilteredProperties(notify: false, currentUserId: currentUserId);
     _lastComputedPropertyFilterKey = key;
@@ -301,8 +305,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       statusName: _selectedStatusFilter,
       furnishingName: _selectedFurnishingFilter,
       bhkLabel: _activeBhkFilter,
-      imageFilter: _imageFilter,
-      noImagesOnly: _noImagesOnly,
+      // Keep With Photos / No Photos client-side so both photo counts stay independent
+      // and never trigger a truncated 50-row server query that zeros out the opposite count.
+      imageFilter: null,
+      noImagesOnly: false,
       datePreset: _selectedPropertyDateFilter,
       customStart: _propertyCustomStartDate,
       customEnd: _propertyCustomEndDate,
@@ -349,7 +355,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final effUserName = authUser?.fullName;
     final effUserEmail = authUser?.email;
 
-    _filteredViewModels = PropertyFilterEngine.filterAndSort(
+    final baseViewModels = PropertyFilterEngine.filterAndSort(
       items: _allViewModels,
       activeListingTab: _activeListingTab,
       selectedCategory: _selectedCategory,
@@ -370,12 +376,23 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       selectedStatusFilter: _selectedStatusFilter,
       activeBhkFilter: _activeBhkFilter,
       selectedFurnishingFilter: _selectedFurnishingFilter,
-      imageFilter: _imageFilter ?? 'all',
-      noImagesOnly: _noImagesOnly,
+      imageFilter: 'all',
+      noImagesOnly: false,
       datePreset: _selectedPropertyDateFilter,
       customStartDate: _propertyCustomStartDate,
       customEndDate: _propertyCustomEndDate,
     );
+
+    _currentWithImagesCount = baseViewModels.where((vm) => vm.property.images.isNotEmpty).length;
+    _currentNoImagesCount = baseViewModels.where((vm) => vm.property.images.isEmpty).length;
+
+    if (_imageFilter == 'with_images') {
+      _filteredViewModels = baseViewModels.where((vm) => vm.property.images.isNotEmpty).toList();
+    } else if (_imageFilter == 'no_images' || _noImagesOnly) {
+      _filteredViewModels = baseViewModels.where((vm) => vm.property.images.isEmpty).toList();
+    } else {
+      _filteredViewModels = baseViewModels;
+    }
 
     _filteredProperties = _filteredViewModels.map((vm) => vm.property).toList();
     _lastComputedPropertyFilterKey = _buildPropertyFilterCacheKey(effUserId, rawLoadedList);
@@ -3488,7 +3505,7 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
                       const SizedBox(height: CRMSpacing.l),
 
                       // 2. Statistics Row (High-Density KPIs & Category Tabs)
-                      _buildStatisticsRow(rawLoadedList),
+                      _buildStatisticsRow(_cachedProperties.isNotEmpty ? _cachedProperties : rawLoadedList),
                       const SizedBox(height: CRMSpacing.l),
 
                       // 3. Search & 4. Advanced Filters
@@ -5186,10 +5203,8 @@ _recomputeFilteredProperties();
   }
 
   Widget _buildActionToolbar(List<PropertyModel> allProperties, List<PropertyModel> pagedProperties) {
-    final int withImagesCount =
-        allProperties.where((p) => p.images.isNotEmpty).length;
-    final int noImagesCount =
-        allProperties.where((p) => p.images.isEmpty).length;
+    final int withImagesCount = _currentWithImagesCount;
+    final int noImagesCount = _currentNoImagesCount;
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     final role = currentUser?.role.toLowerCase() ?? '';
@@ -6722,7 +6737,7 @@ _recomputeFilteredProperties();
                     const SizedBox(height: CRMSpacing.m),
 
                     // 2. Statistics Row (Category chips: Residential, Commercial, Industrial, Land & Plot + KPI Card + Donut Chart)
-                    _buildStatisticsRow(rawLoadedList),
+                    _buildStatisticsRow(_cachedProperties.isNotEmpty ? _cachedProperties : rawLoadedList),
                     const SizedBox(height: CRMSpacing.m),
 
                     // 3. Search & Advanced Filters Card (Collapsible on mobile)

@@ -50,6 +50,9 @@ class _StatCardState extends State<StatCard> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
+          constraints: BoxConstraints(
+            minHeight: compact ? (isVeryNarrow ? 62 : 68) : 78,
+          ),
           padding: EdgeInsets.symmetric(
             horizontal: compact ? (isVeryNarrow ? 7 : 10) : 14,
             vertical: compact ? (isVeryNarrow ? 8 : 9) : 11,

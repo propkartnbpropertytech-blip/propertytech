@@ -19,6 +19,7 @@ class RequirementsRepository {
 
   static Future<void>? _refreshInFlight;
   static DateTime? _lastRefreshAt;
+  static bool? _lastRefreshCampaignMode;
   static const _minRefreshInterval = Duration(seconds: 45);
 
   Future<List<RequirementModel>> getRequirements({
@@ -27,6 +28,7 @@ class RequirementsRepository {
     String? propertyTypeId,
     String? status,
     String? listingTypeId,
+    bool? campaignMode,
     bool refreshFromServer = true,
     bool forceRefresh = false,
   }) async {
@@ -128,14 +130,66 @@ class RequirementsRepository {
       totalMs: totalMs,
     );
 
-    if (refreshFromServer) {
+    final hasCampaignLocally = localList.any((r) => RequirementLocalRepository.isDirectSalesAllocated(r.id));
+    final modeSwitched = _lastRefreshCampaignMode != campaignMode;
+    if (campaignMode == true && refreshFromServer && (!hasCampaignLocally || modeSwitched || forceRefresh)) {
+      try {
+        final response = await _requirementsService.getRequirements(
+          search: search,
+          configurationId: configurationId,
+          propertyTypeId: propertyTypeId,
+          status: status,
+          listingTypeId: listingTypeId,
+          campaignMode: true,
+        );
+        _lastRefreshAt = DateTime.now();
+        _lastRefreshCampaignMode = true;
+
+        final data = response['data'] as Map<String, dynamic>? ?? {};
+        final list = data['requirements'] as List? ?? [];
+        final freshList = list.map((item) {
+          final model = RequirementModel.fromJson(item);
+          _rememberMeta(model);
+          return _withRememberedMeta(model);
+        }).where((r) {
+          if (r.isCampaignLead) {
+            final assigned = r.assignedTo?.trim();
+            return assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
+          }
+          return true;
+        }).toList();
+
+        final existingLocalMap = RequirementLocalRepository.inMemory;
+        final localEntities = freshList.map((r) {
+          final local = r.toLocal();
+          final existing = existingLocalMap[r.id];
+          if ((local.nextFollowupDate == null || local.nextFollowupDate!.trim().isEmpty) && existing != null) {
+            local.nextFollowupDate = existing.nextFollowupDate;
+          }
+          if ((local.remarks == null || local.remarks!.trim().isEmpty) && existing != null) {
+            local.remarks = existing.remarks;
+          }
+          if ((local.notes == null || local.notes!.trim().isEmpty) && existing != null) {
+            local.notes = existing.notes;
+          }
+          return local;
+        }).toList();
+
+        await _coordinator.requirementLocal.saveRequirements(localEntities);
+        _coordinator.refreshRequirements();
+        requirements = freshList;
+      } catch (_) {
+        // Fallback to local
+      }
+    } else if (refreshFromServer) {
       _triggerBackgroundRequirementsRefresh(
         search: search,
         configurationId: configurationId,
         propertyTypeId: propertyTypeId,
         status: status,
         listingTypeId: listingTypeId,
-        force: forceRefresh,
+        campaignMode: campaignMode,
+        force: forceRefresh || modeSwitched,
       );
     }
 
@@ -177,12 +231,15 @@ class RequirementsRepository {
     String? propertyTypeId,
     String? status,
     String? listingTypeId,
+    bool? campaignMode,
     bool force = false,
   }) {
     if (_refreshInFlight != null) return;
-    if (!force && _lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
+    final modeChanged = _lastRefreshCampaignMode != campaignMode;
+    if (!force && !modeChanged && _lastRefreshAt != null && DateTime.now().difference(_lastRefreshAt!) < _minRefreshInterval) {
       return;
     }
+    _lastRefreshCampaignMode = campaignMode;
 
     final start = DateTime.now();
     _refreshInFlight = _requirementsService.getRequirements(
@@ -191,8 +248,10 @@ class RequirementsRepository {
       propertyTypeId: propertyTypeId,
       status: status,
       listingTypeId: listingTypeId,
+      campaignMode: campaignMode,
     ).then((response) async {
       _lastRefreshAt = DateTime.now();
+      _lastRefreshCampaignMode = campaignMode;
       final networkMs = DateTime.now().difference(start).inMilliseconds;
 
       final parseStart = DateTime.now();
@@ -306,6 +365,7 @@ class RequirementsRepository {
 
   void _rememberMeta(RequirementModel req) {
     RequirementLocalRepository.rememberMetaCustomFields(req.id, req.metaCustomFields);
+    RequirementLocalRepository.rememberDirectSalesAllocated(req.id, req.isDirectSalesAllocated);
     if (req.assignedTo != null && req.assignedTo!.trim().isNotEmpty) {
       RequirementLocalRepository.rememberAssignedTo(req.id, req.assignedTo);
     }
@@ -352,6 +412,10 @@ class RequirementsRepository {
         rememberedTelecallerId != null &&
         rememberedTelecallerId.trim().isNotEmpty) {
       updated = updated.copyWith(assignedTelecallerId: rememberedTelecallerId);
+    }
+    final rememberedDirect = RequirementLocalRepository.isDirectSalesAllocated(req.id);
+    if (rememberedDirect && !updated.isDirectSalesAllocated) {
+      updated = updated.copyWith(isDirectSalesAllocated: true);
     }
     return updated;
   }
@@ -680,6 +744,18 @@ class RequirementsRepository {
       toSalesUserId: toSalesUserId,
       reason: reason,
     );
+  }
+
+  Future<List<Map<String, String>>> getAvailableLeadSources() {
+    return _requirementsService.getAvailableLeadSources();
+  }
+
+  Future<Map<String, dynamic>> getTouchedLeads() {
+    return _requirementsService.getTouchedLeads();
+  }
+
+  Future<String> getAllocationTargetRole() {
+    return _requirementsService.getAllocationTargetRole();
   }
 
   Future<void> downloadFile(String url, String savePath) {

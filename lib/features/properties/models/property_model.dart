@@ -21,6 +21,8 @@ class PropertyModel {
   final String areaName;
   final String pincode;
   final String address;
+  final String? addressStreet1;
+  final String? addressStreet2;
   final String? landmark;
   final double? latitude;
   final double? longitude;
@@ -88,6 +90,8 @@ class PropertyModel {
     required this.areaName,
     required this.pincode,
     required this.address,
+    this.addressStreet1,
+    this.addressStreet2,
     this.landmark,
     this.latitude,
     this.longitude,
@@ -135,6 +139,9 @@ class PropertyModel {
     this.portalStatus = 'None',
   });
 
+
+  String get displayStreet1 => (addressStreet1 != null && addressStreet1!.trim().isNotEmpty) ? addressStreet1!.trim() : address.trim();
+  String get displayStreet2 => addressStreet2?.trim() ?? '';
   bool get showsAddedBy {
     final name = createdByName.trim();
     return createdBy.trim().isNotEmpty &&
@@ -306,6 +313,8 @@ class PropertyModel {
       areaName: _resolveAreaName(area, json),
       pincode: area != null ? area['pincode'] as String? ?? 'N/A' : 'N/A',
       address: json['address'] as String? ?? '',
+      addressStreet1: json['address_street_1'] as String? ?? json['addressStreet1'] as String? ?? (json['address_line1'] as String?),
+      addressStreet2: json['address_street_2'] as String? ?? json['addressStreet2'] as String?,
       landmark: json['landmark'] as String?,
       latitude: json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null,
       longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
@@ -367,6 +376,8 @@ class PropertyModel {
       'city_id': cityId,
       'area_id': areaId,
       'address': address,
+      'address_street_1': addressStreet1,
+      'address_street_2': addressStreet2,
       'landmark': landmark,
       'latitude': latitude,
       'longitude': longitude,
@@ -423,6 +434,8 @@ class PropertyModel {
     String? areaName,
     String? pincode,
     String? address,
+    String? addressStreet1,
+    String? addressStreet2,
     String? landmark,
     double? latitude,
     double? longitude,
@@ -490,6 +503,8 @@ class PropertyModel {
       areaName: areaName ?? this.areaName,
       pincode: pincode ?? this.pincode,
       address: address ?? this.address,
+      addressStreet1: addressStreet1 ?? this.addressStreet1,
+      addressStreet2: addressStreet2 ?? this.addressStreet2,
       landmark: landmark ?? this.landmark,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,

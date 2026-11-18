@@ -71,8 +71,8 @@ bool isFollowupStatus(String? statusStr) {
 
 bool isFollowupLeadStatus(String? statusStr) {
   if (statusStr == null) return false;
-  final s = statusStr.trim().toLowerCase().replaceAll('-', '').replaceAll(' ', '');
-  return s == 'followup' || s == 'refollowup';
+  final s = statusStr.trim().toLowerCase().replaceAll('-', '').replaceAll('_', '').replaceAll(' ', '');
+  return s == 'followup' || s == 'followups' || s == 'refollowup' || s == 'refollowups';
 }
 
 String getListingTypeLabel(RequirementModel r) {
@@ -309,6 +309,7 @@ class FollowupSyncEngine {
     List<dynamic>? users,
     DateTime? customDateFilter,
     String? selectedSalesperson,
+    bool onlyFollowupStatusLeads = false,
   }) {
     final allFollowups = [
       ...?localFollowups,
@@ -510,8 +511,8 @@ class FollowupSyncEngine {
         final reqStatusLower = req.status.trim().toLowerCase();
         final isWon = reqStatusLower == 'won' || reqStatusLower == 'closed' || reqStatusLower == 'deal won';
         final isRejected = reqStatusLower.startsWith('rejected') || reqStatusLower == 'dead' || reqStatusLower == 'bin' || reqStatusLower == 'suspended';
-        // Active/Interested leads with followups are included
         if (isWon || isRejected) continue;
+        if (onlyFollowupStatusLeads && !isFollowupLeadStatus(req.status)) continue;
 
         // Prevent duplicate follow-up records for the same client
         final cleanMob = req.clientMobile.replaceAll(RegExp(r'\D'), '');
@@ -584,11 +585,13 @@ class FollowupSyncEngine {
         followupItems.add(itemWithSalesman);
       }
 
-      // Ensure requirements in reqsList with Follow-up/Re-Followup status or nextFollowupDate are also included
+      // Ensure requirements in reqsList with Follow-up/Re-Followup status (or nextFollowupDate when not strict) are also included
       for (final req in reqsList) {
         final reqStatus = req.status;
-        final hasFollowup = isFollowupLeadStatus(reqStatus) ||
-            (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty);
+        final hasFollowup = onlyFollowupStatusLeads
+            ? isFollowupLeadStatus(reqStatus)
+            : (isFollowupLeadStatus(reqStatus) ||
+                (req.nextFollowupDate != null && req.nextFollowupDate!.trim().isNotEmpty));
         if (!hasFollowup) continue;
         if (isSiteVisitStatus(reqStatus)) continue;
         final rStatusLower = reqStatus.trim().toLowerCase();

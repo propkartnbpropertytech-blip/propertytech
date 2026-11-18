@@ -38,7 +38,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _addressController = TextEditingController();
+  final _street1Controller = TextEditingController();
+  final _street2Controller = TextEditingController();
+  TextEditingController get _addressController => _street1Controller;
   final _landmarkController = TextEditingController();
   final _superBuiltupController = TextEditingController();
   final _carpetController = TextEditingController();
@@ -150,7 +152,8 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
     _titleFocusNode.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
-    _addressController.dispose();
+    _street1Controller.dispose();
+    _street2Controller.dispose();
     _landmarkController.dispose();
     _superBuiltupController.dispose();
     _carpetController.dispose();
@@ -290,7 +293,8 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       _selectedCity = p.cityId;
       _updateAreasForCity(p.cityId);
       _selectedArea = p.areaId;
-      _addressController.text = p.address;
+      _street1Controller.text = (p.addressStreet1 != null && p.addressStreet1!.trim().isNotEmpty) ? p.addressStreet1! : p.address;
+      _street2Controller.text = p.addressStreet2 ?? '';
       _landmarkController.text = p.landmark ?? '';
       _superBuiltupController.text = p.superBuiltupArea?.toStringAsFixed(0) ?? '';
       _carpetController.text = p.carpetArea?.toStringAsFixed(0) ?? '';
@@ -432,7 +436,8 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
 
     setState(() {
       final place = _selectedPlaceDetails!;
-      _addressController.text = place['formattedAddress'] ?? '';
+      _street1Controller.text = place['formattedAddress'] ?? '';
+      _street2Controller.text = '';
       _googlePlaceId = place['placeId'] ?? '';
       _latitude = place['latitude'];
       _longitude = place['longitude'];
@@ -682,7 +687,9 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       'property_status_id': _selectedStatus,
       'city_id': _selectedCity,
       'area_id': _selectedArea,
-      'address': _addressController.text,
+      'address_street_1': _street1Controller.text,
+      'address_street_2': _street2Controller.text,
+      'address': [_street1Controller.text.trim(), _street2Controller.text.trim()].where((s) => s.isNotEmpty).join(', '),
       'landmark': _landmarkController.text,
       'block_wing': _blockWingController.text,
       'flat_no': _flatNoController.text,
@@ -752,7 +759,8 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
                     _updateAreasForCity(_selectedCity!);
                   }
                   _selectedArea = draft['area_id'];
-                  _addressController.text = draft['address'] ?? '';
+                  _street1Controller.text = draft['address_street_1'] ?? draft['address'] ?? '';
+                  _street2Controller.text = draft['address_street_2'] ?? '';
                   _landmarkController.text = draft['landmark'] ?? '';
                   _blockWingController.text = draft['block_wing'] ?? '';
                   _flatNoController.text = draft['flat_no'] ?? '';
@@ -1197,13 +1205,15 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
         'property_status_id': (_selectedStatus != null && _selectedStatus!.isNotEmpty) ? _selectedStatus : null,
         'city_id': (_selectedCity != null && _selectedCity!.isNotEmpty) ? _selectedCity : null,
         'area_id': (_selectedArea != null && _selectedArea!.isNotEmpty) ? _selectedArea : null,
-        'address': _addressController.text.trim(),
+        'address': [_street1Controller.text.trim(), _street2Controller.text.trim()].where((s) => s.isNotEmpty).join(', '),
+        'address_street_1': _street1Controller.text.trim().isEmpty ? null : _street1Controller.text.trim(),
+        'address_street_2': _street2Controller.text.trim().isEmpty ? null : _street2Controller.text.trim(),
         'landmark': _landmarkController.text.trim().isEmpty ? null : _landmarkController.text.trim(),
         'block_wing': _blockWingController.text.trim().isEmpty ? null : _blockWingController.text.trim(),
         'flat_no': _flatNoController.text.trim().isEmpty ? null : _flatNoController.text.trim(),
         'section': (_selectedSection != null && _selectedSection!.trim().isNotEmpty) ? _selectedSection!.trim() : null,
         'google_place_id': _googlePlaceId,
-        'formatted_address': _addressController.text.trim(),
+        'formatted_address': [_street1Controller.text.trim(), _street2Controller.text.trim()].where((s) => s.isNotEmpty).join(', '),
         'address_line1': _selectedPlaceDetails != null ? _selectedPlaceDetails!['addressLine1'] : _landmarkController.text.trim(),
         'locality': _selectedPlaceDetails != null ? _selectedPlaceDetails!['locality'] : null,
         'city': _selectedPlaceDetails != null ? _selectedPlaceDetails!['city'] : null,
@@ -2328,14 +2338,37 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
           ],
           const SizedBox(height: CRMSpacing.m),
           TextFormField(
-            controller: _addressController,
+            controller: _street1Controller,
             style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
             maxLines: 2,
             decoration: InputDecoration(
-              labelText: 'Address Details *',
+              labelText: 'Address Street 1',
+              hintText: 'House / Flat / Building / Street 1',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
             ),
-            validator: (v) => _requiredForAdd('Address Details', v),
+            validator: (v) {
+              if (_street1Controller.text.trim().isEmpty && _street2Controller.text.trim().isEmpty) {
+                return 'At least one of Address Street 1 or Street 2 is required';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: CRMSpacing.m),
+          TextFormField(
+            controller: _street2Controller,
+            style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
+            maxLines: 2,
+            decoration: InputDecoration(
+              labelText: 'Address Street 2',
+              hintText: 'Road / Area landmark / Street 2',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s)),
+            ),
+            validator: (v) {
+              if (_street1Controller.text.trim().isEmpty && _street2Controller.text.trim().isEmpty) {
+                return 'At least one of Address Street 1 or Street 2 is required';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: CRMSpacing.m),
           landmarkField,
@@ -3821,7 +3854,7 @@ class _AddEditPropertyScreenState extends State<AddEditPropertyScreen> {
       case 1:
         if (isEmpty(_selectedCity)) missing.add('City');
         if (isEmpty(_selectedArea)) missing.add('Area');
-        if (isEmpty(_addressController.text)) missing.add('Address Details');
+        if (isEmpty(_street1Controller.text) && isEmpty(_street2Controller.text)) missing.add('Address Street 1 or Street 2');
         break;
       case 2:
         if (isEmpty(_priceController.text)) missing.add('Price');

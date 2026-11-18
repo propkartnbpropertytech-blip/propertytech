@@ -14,6 +14,7 @@ class FetchRequirementsEvent extends RequirementsEvent {
   final String? propertyTypeId;
   final String? status;
   final String? listingTypeId;
+  final bool? campaignMode;
   final bool refreshFromServer;
   FetchRequirementsEvent({
     this.search,
@@ -21,6 +22,7 @@ class FetchRequirementsEvent extends RequirementsEvent {
     this.propertyTypeId,
     this.status,
     this.listingTypeId,
+    this.campaignMode,
     this.refreshFromServer = true,
   });
 }
@@ -121,6 +123,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         propertyTypeId: last?.propertyTypeId,
         status: last?.status,
         listingTypeId: last?.listingTypeId,
+        campaignMode: last?.campaignMode,
         refreshFromServer: false,
       ));
     });
@@ -150,6 +153,7 @@ class RequirementsBloc extends Bloc<RequirementsEvent, RequirementsState> {
         propertyTypeId: event.propertyTypeId,
         status: event.status,
         listingTypeId: event.listingTypeId,
+        campaignMode: event.campaignMode,
         refreshFromServer: event.refreshFromServer,
       );
       emit(RequirementsLoaded(requirements: list, isSilentRefreshing: false));

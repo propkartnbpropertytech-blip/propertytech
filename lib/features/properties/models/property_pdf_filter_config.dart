@@ -51,7 +51,7 @@ class PropertyPdfFilterConfig {
       title: 'Overview',
       icon: Icons.dashboard_outlined,
       fields: [
-        PropertyPdfFieldItem(id: 'overview_title', label: 'Project / Title', sectionId: 'overview'),
+        PropertyPdfFieldItem(id: 'overview_title', label: 'Property Name', sectionId: 'overview'),
         PropertyPdfFieldItem(id: 'overview_property_code', label: 'Property Code', sectionId: 'overview'),
         PropertyPdfFieldItem(id: 'overview_configuration', label: 'Configuration', sectionId: 'overview'),
         PropertyPdfFieldItem(id: 'overview_property_type', label: 'Property Type', sectionId: 'overview'),
@@ -97,7 +97,8 @@ class PropertyPdfFilterConfig {
       title: 'Location & Address',
       icon: Icons.location_on_outlined,
       fields: [
-        PropertyPdfFieldItem(id: 'loc_address', label: 'Address', sectionId: 'location'),
+        PropertyPdfFieldItem(id: 'loc_address_street_1', label: 'Address Street 1', sectionId: 'location'),
+        PropertyPdfFieldItem(id: 'loc_address_street_2', label: 'Address Street 2', sectionId: 'location'),
         PropertyPdfFieldItem(id: 'loc_area', label: 'Area', sectionId: 'location'),
         PropertyPdfFieldItem(id: 'loc_city', label: 'City', sectionId: 'location'),
         PropertyPdfFieldItem(id: 'loc_pincode', label: 'Pincode', sectionId: 'location'),
@@ -139,6 +140,9 @@ class PropertyPdfFilterConfig {
   bool isSectionEnabled(String sectionId) => enabledSections.contains(sectionId);
 
   bool isFieldEnabled(String fieldId) {
+    if (fieldId == 'loc_address') {
+      return isFieldEnabled('loc_address_street_1') || enabledFields.contains('loc_address');
+    }
     final sectionId = fieldToSection[fieldId];
     if (sectionId != null && !isSectionEnabled(sectionId)) {
       return false;

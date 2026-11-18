@@ -125,7 +125,7 @@ class RequirementListItemViewModel {
     String mapped = rej
         ? effStatus
         : ((r.status == 'Assigned' || r.status == 'Assigned to Sales' || r.status == 'Allocate to Sales')
-            ? 'Allocate to Sales'
+            ? 'Assigned to Sales'
             : (unhandledAssigned ? 'Not Started' : effStatus));
     if (mapped == 'Active' || mapped == 'Live') mapped = 'Interested';
     if (mapped == 'Closed' || mapped == 'Won') mapped = 'Won';
@@ -145,8 +145,8 @@ class RequirementListItemViewModel {
         ? '₹${BudgetFormatter.format(r.minBudget)} - ₹${BudgetFormatter.format(r.maxBudget)}'
         : 'Budget on Request';
 
-    // Date text (use transfer date for transferred leads)
-    final effectiveLeadDate = (r.salesAssignedAt ?? r.createdAt).toLocal();
+    // Date text (use auto-allocation date for auto-allocated leads, else assignment/creation date)
+    final effectiveLeadDate = r.effectiveDate;
     final String dateStr = DateFormat("dd MMM ''yy, h:mm a").format(effectiveLeadDate);
 
     // Specs text
@@ -170,10 +170,10 @@ class RequirementListItemViewModel {
       }
     }
 
-    final localCreated = (r.salesAssignedAt ?? r.createdAt).toLocal();
+    final localCreated = r.effectiveDate;
     final dtForFilter = rejDate ?? localCreated;
-    final int sortMillis = (rejDate ?? r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
-    final int normSortMillis = (r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
+    final int sortMillis = (rejDate ?? r.autoAllocatedAt ?? r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
+    final int normSortMillis = (r.autoAllocatedAt ?? r.salesAssignedAt ?? r.createdAt).millisecondsSinceEpoch;
 
     // Normalized search tokens
     final cNameLower = r.clientName.toLowerCase();
@@ -257,35 +257,127 @@ class RequirementListItemViewModel {
     return false;
   }
 
+  /// Returns true if this lead was transferred/reassigned to the current salesperson
+  /// by another salesperson (so it belongs under "Assigned to Me", NOT "Auto Allocate Leads").
+  static bool isTransferredBetweenSales(RequirementModel r) {
+    final meta = r.metaCustomFields;
+    if (meta == null) return false;
+    if (meta['transferred_from_sales'] == true || meta['transferred_from_sales'] == 'true') {
+      return true;
+    }
+    final transferredBy = meta['transferred_by']?.toString().trim();
+    if (transferredBy != null && transferredBy.isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
   /// Returns true ONLY if this lead was directly allocated to the Salesperson
   /// through the Admin's Salesperson lead allocation configuration (when Salesperson toggle was ON).
   /// Excludes leads assigned through the Telecaller workflow, leads manually added by the Salesperson,
-  /// or leads belonging to other staff.
+  /// leads transferred from another salesperson, or leads belonging to other staff.
   static bool isDirectSalesCampaignLead(RequirementModel r, dynamic user) {
     if (user == null) return false;
     final uid = (user is UserModel ? user.id : (user is users_model.UserModel ? user.id : user.toString())).trim();
     if (uid.isEmpty) return false;
 
-    // 1. Must be currently assigned to this user
-    if (!_checkUserAssignee(r, user)) return false;
+    // 0. Leads transferred from another salesperson belong in "Assigned to Me", never "Auto Allocate Leads"
+    if (isTransferredBetweenSales(r)) return false;
+
+    // 1. Must be currently assigned to this user (or user is Admin/Super Admin viewing)
+    String roleStr = '';
+    if (user is UserModel) {
+      roleStr = user.role;
+    } else if (user is users_model.UserModel) {
+      roleStr = user.roleName;
+    } else {
+      try {
+        roleStr = ((user as dynamic).role ?? (user as dynamic).roleName ?? '').toString();
+      } catch (_) {
+        roleStr = '';
+      }
+    }
+    final roleLower = roleStr.trim().toLowerCase();
+    final isAdmin = roleLower == 'admin' || roleLower == 'super admin';
+    if (!isAdmin && !_checkUserAssignee(r, user)) return false;
 
     // 2. Must not be manually created by this user
     if (_checkUserCreator(r, user)) return false;
 
-    // 3. Must have isDirectSalesAllocated set to true (or fallback to metadata tag)
+    // 3. Telecaller handoffs are assigned through the Telecaller workflow, NOT direct campaign allocations
+    if (isTelecallerAssignedToSales(r)) return false;
+
+    // 4. Must have isDirectSalesAllocated set to true (or fallback to explicit direct_sales_allocated metadata tag)
     if (r.isDirectSalesAllocated) return true;
     final meta = r.metaCustomFields;
     if (meta != null &&
         (meta['direct_sales_allocated'] == true ||
          meta['direct_sales_allocated'] == 'true' ||
          meta['is_direct_sales_allocated'] == true ||
-         meta['is_direct_sales_allocated'] == 'true' ||
-         meta['transferred_from_sales'] == true ||
-         meta['campaign_lead_transferred'] == true)) {
+         meta['is_direct_sales_allocated'] == 'true')) {
       return true;
     }
 
-    if (r.isCampaignLead) return true;
+    return false;
+  }
+
+  /// Returns true if this lead was assigned through the Lead Allocation page
+  /// to a Telecaller and then the Telecaller assigned it to a Salesperson.
+  static bool isTelecallerAssignedToSales(RequirementModel r) {
+    if (r.isDirectSalesAllocated) return false;
+    final assigned = r.assignedTo?.trim();
+    final isAssignedToSales = assigned != null &&
+        assigned.isNotEmpty &&
+        assigned.toLowerCase() != 'unassigned' &&
+        assigned.toLowerCase() != 'null';
+    if (!isAssignedToSales) return false;
+
+    final hasTelecaller = (r.telecallerId != null && r.telecallerId!.trim().isNotEmpty) ||
+        (r.assignedTelecallerId != null && r.assignedTelecallerId!.trim().isNotEmpty);
+    if (hasTelecaller) return true;
+
+    final meta = r.metaCustomFields;
+    if (meta != null) {
+      if (meta['telecaller_id'] != null ||
+          meta['assigned_telecaller_id'] != null ||
+          meta['telecaller_by'] != null ||
+          meta['telecaller_by_id'] != null) {
+        return true;
+      }
+      if (meta['_transfer'] is Map &&
+          (meta['_transfer']['telecaller_id'] != null ||
+           meta['_transfer']['interacted_by'] != null)) {
+        return true;
+      }
+      if (meta['_cnr'] is Map && meta['_cnr']['telecaller_id'] != null) return true;
+      if (meta['_callback'] is Map && meta['_callback']['telecaller_id'] != null) return true;
+      if (meta['assignment_history'] is List && (meta['assignment_history'] as List).isNotEmpty) return true;
+    }
+
+    return false;
+  }
+
+  /// Returns true if this lead was manually added directly in the CRM
+  static bool isManuallyAddedLead(RequirementModel r) {
+    if (r.isDirectSalesAllocated) return false;
+    if (r.isManuallyAdded) return true;
+    final isDirectCamp = (r.metaCustomFields?['direct_sales_allocated'] == true ||
+        r.metaCustomFields?['direct_sales_allocated'] == 'true' ||
+        r.metaCustomFields?['is_direct_sales_allocated'] == true ||
+        r.metaCustomFields?['is_direct_sales_allocated'] == 'true');
+    if (isDirectCamp) return false;
+
+    if (r.metaLeadId != null && r.metaLeadId!.trim().isNotEmpty) return false;
+    if (r.metaCampaignId != null && r.metaCampaignId!.trim().isNotEmpty) return false;
+    if (r.metaCampaignName != null && r.metaCampaignName!.trim().isNotEmpty) return false;
+
+    final src = r.leadSource?.trim().toLowerCase();
+    if (src != null && (src.contains('housing') || src.contains('meta') || src.contains('webhook') || src.contains('portal'))) {
+      return false;
+    }
+
+    if (r.createdBy != null && r.createdBy!.trim().isNotEmpty) return true;
+    if (r.creatorName != null && r.creatorName!.trim().isNotEmpty && r.creatorName!.trim().toLowerCase() != 'system') return true;
 
     return false;
   }
@@ -419,6 +511,49 @@ class RequirementFilterEngine {
     return false;
   }
 
+  static String normalizeSourceKey(String? raw) {
+    final s = (raw ?? '').trim();
+    if (s.isEmpty) return '';
+    final lower = s.toLowerCase();
+    if (lower.contains('housing')) return 'HOUSING';
+    if (lower == 'meta' || lower.contains('meta ads') || lower.contains('facebook') || lower.contains('instagram')) return 'META';
+    if (lower.contains('webhook')) return 'WEBHOOK';
+    if (lower.contains('referral')) return 'REFERRAL';
+    if (lower == 'manual' || lower == 'manually added' || lower == 'crm') return 'MANUAL';
+    return s.toUpperCase().replaceAll(RegExp(r'\s+'), '_');
+  }
+
+  static bool matchesSource(RequirementModel r, String selectedSource) {
+    if (selectedSource == 'All' || selectedSource.trim().isEmpty) return true;
+    final targetKey = normalizeSourceKey(selectedSource);
+    if (targetKey.isEmpty) return true;
+
+    final candidates = <String>[];
+    if (r.leadSource != null && r.leadSource!.trim().isNotEmpty) {
+      candidates.add(r.leadSource!.trim());
+    }
+    final customSrc = r.metaCustomFields?['source']?.toString().trim();
+    if (customSrc != null && customSrc.isNotEmpty) {
+      candidates.add(customSrc);
+    }
+    if (r.metaCampaignName != null && r.metaCampaignName!.trim().isNotEmpty) {
+      candidates.add(r.metaCampaignName!.trim());
+    }
+    if (candidates.isEmpty) {
+      if (r.isMetaLead) {
+        candidates.add('META');
+      } else if (r.isManuallyAdded) {
+        candidates.add('MANUAL');
+      }
+    }
+
+    for (final c in candidates) {
+      if (normalizeSourceKey(c) == targetKey) return true;
+      if (c.trim().toLowerCase() == selectedSource.trim().toLowerCase()) return true;
+    }
+    return false;
+  }
+
   static List<RequirementListItemViewModel> filterAndSort({
     required List<RequirementListItemViewModel> items,
     UserModel? currentUser,
@@ -431,6 +566,8 @@ class RequirementFilterEngine {
     String selectedSalesFilterId = 'All',
     Set<String> selectedTelecallerFilterIds = const {},
     String selectedReadiness = 'All',
+    String selectedSource = 'All',
+    Set<String> directRequirementIds = const {},
     String searchQuery = '',
     LeadDateFilterPreset datePreset = LeadDateFilterPreset.allTime,
     DateTime? customStartDate,
@@ -511,7 +648,10 @@ class RequirementFilterEngine {
 
     final bool isWonTab = activeMainTab == 'My Won' || activeMainTab == 'Won';
     final bool isRejectedTab = activeMainTab == 'Rejected';
-    final bool isLeadsAddedByMe = activeMainTab == 'Leads Added by Me';
+    final bool isLeadsAddedByMe = activeMainTab == 'Leads Added by Me' ||
+        activeMainTab == 'Manually Added Leads' ||
+        activeMainTab == 'manually added leads' ||
+        activeMainTab == 'added';
 
     final bool viewAllRejected = isRejectedTab && (currentUser == null || isAdmin);
 
@@ -530,32 +670,27 @@ class RequirementFilterEngine {
         continue;
       }
 
-      // 0. Campaign leads filtering:
-      if (campaignMode) {
-        // In campaignMode (e.g. My Campaign Leads), only campaign leads belong on this page
-        if (!r.isCampaignLead && !r.isDirectSalesAllocated && !RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) {
-          continue;
-        }
-        final assigned = r.assignedTo?.trim();
-        final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
-        if (!hasAssignedSalesperson) {
-          continue;
-        }
-      } else {
-        // On regular Leads page, campaign leads must have an assigned salesperson to appear
-        if (r.isCampaignLead) {
-          final assigned = r.assignedTo?.trim();
-          final hasAssignedSalesperson = assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'unassigned';
-          if (!hasAssignedSalesperson) {
-            continue;
-          }
-        }
-      }
-
-      // 1. Leads Added by Me check
+      // 1. Manually Added Leads check
       if (isLeadsAddedByMe) {
-        if (currentUser == null || !RequirementListItemViewModel._checkUserCreator(r, currentUser)) {
+        final isManual = r.isManuallyAdded || RequirementListItemViewModel.isManuallyAddedLead(r);
+        if (!isManual) {
           continue;
+        }
+        if (currentUser != null) {
+          if (isSales) {
+            if (RequirementListItemViewModel._checkLeadTransferredAway(r, currentUser)) {
+              continue;
+            }
+            final canView = RequirementListItemViewModel._checkUserCreator(r, currentUser) ||
+                RequirementListItemViewModel._checkUserAssignee(r, currentUser);
+            if (!canView) continue;
+          } else if (isTelecaller) {
+            final canView = RequirementListItemViewModel._checkUserCreator(r, currentUser) ||
+                RequirementListItemViewModel._checkUserAssignee(r, currentUser) ||
+                TeamUserVisibility.telecallerLeadSentToSalesperson(r, null, currentUser);
+            if (!canView) continue;
+          }
+          // Admin & Super Admin see all manually added leads
         }
       }
 
@@ -574,12 +709,24 @@ class RequirementFilterEngine {
             if (salesLeadGroupFilter == 'assigned') {
               final isAssigned = RequirementListItemViewModel._checkUserAssignee(r, currentUser);
               final isCreator = RequirementListItemViewModel._checkUserCreator(r, currentUser);
-              final isDirectCamp = RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser);
+              final isTransferred = RequirementListItemViewModel.isTransferredBetweenSales(r);
+              final isDirectCamp = !isTransferred &&
+                  (RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser) ||
+                      directRequirementIds.contains(r.id));
               if (!isAssigned || isCreator || isDirectCamp) continue;
             } else if (salesLeadGroupFilter == 'campaign') {
-              if (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser)) continue;
+              if (RequirementListItemViewModel.isTransferredBetweenSales(r)) continue;
+              final isDirectCamp = RequirementListItemViewModel.isDirectSalesCampaignLead(r, currentUser) ||
+                  (directRequirementIds.contains(r.id) &&
+                      RequirementListItemViewModel._checkUserAssignee(r, currentUser) &&
+                      !RequirementListItemViewModel._checkUserCreator(r, currentUser) &&
+                      !RequirementListItemViewModel.isTelecallerAssignedToSales(r));
+              if (!isDirectCamp) continue;
             } else if (salesLeadGroupFilter == 'added') {
-              if (!RequirementListItemViewModel._checkUserCreator(r, currentUser)) continue;
+              if (!RequirementListItemViewModel._checkUserCreator(r, currentUser) ||
+                  directRequirementIds.contains(r.id)) {
+                continue;
+              }
             }
           }
         } else if (isTelecaller) {
@@ -682,24 +829,34 @@ class RequirementFilterEngine {
             final salesRole = selectedSales?.roleName ?? '';
             if (salesRole.toLowerCase().contains('sales') || selectedSales == null) {
               if (salesLeadGroupFilter == 'assigned') {
+                final isTransferred = RequirementListItemViewModel.isTransferredBetweenSales(r);
                 final isAssigned = selectedSales != null
                     ? (RequirementListItemViewModel._checkUserAssignee(r, selectedSales) &&
                         !RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
-                        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales))
+                        (isTransferred ||
+                            (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales) &&
+                                !directRequirementIds.contains(r.id))))
                     : (RequirementListItemViewModel._checkUserAssignee(r, selectedSalesFilterId) &&
                         r.createdBy != selectedSalesFilterId &&
-                        !RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId));
+                        (isTransferred ||
+                            (!RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId) &&
+                                !directRequirementIds.contains(r.id))));
                 if (!isAssigned) continue;
               } else if (salesLeadGroupFilter == 'campaign') {
-                final isDirectCamp = selectedSales != null
-                    ? RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSales)
-                    : RequirementListItemViewModel.isDirectSalesCampaignLead(r, selectedSalesFilterId);
+                if (RequirementListItemViewModel.isTransferredBetweenSales(r)) continue;
+                final targetUser = selectedSales ?? selectedSalesFilterId;
+                final isDirectCamp = RequirementListItemViewModel.isDirectSalesCampaignLead(r, targetUser) ||
+                    (directRequirementIds.contains(r.id) &&
+                        RequirementListItemViewModel._checkUserAssignee(r, targetUser) &&
+                        !RequirementListItemViewModel._checkUserCreator(r, targetUser) &&
+                        !RequirementListItemViewModel.isTelecallerAssignedToSales(r));
                 if (!isDirectCamp) continue;
               } else if (salesLeadGroupFilter == 'added') {
                 final isCreator = selectedSales != null
-                    ? RequirementListItemViewModel._checkUserCreator(r, selectedSales)
+                    ? (RequirementListItemViewModel._checkUserCreator(r, selectedSales) &&
+                        !RequirementListItemViewModel._checkLeadTransferredAway(r, selectedSales))
                     : (r.createdBy == selectedSalesFilterId);
-                if (!isCreator) continue;
+                if (!isCreator || directRequirementIds.contains(r.id)) continue;
               }
             }
           }
@@ -724,6 +881,11 @@ class RequirementFilterEngine {
           }
           if (!matchesTelecaller) continue;
         }
+      }
+
+      // 9.5 Source filter
+      if (selectedSource != 'All' && selectedSource.trim().isNotEmpty) {
+        if (!matchesSource(r, selectedSource)) continue;
       }
 
       // 10. Search query
@@ -755,7 +917,7 @@ class RequirementFilterEngine {
       }
 
       // 12. Date filter
-      final dt = isRejectedTab ? vm.filterDate : (vm.requirement.salesAssignedAt != null ? vm.requirement.salesAssignedAt!.toLocal() : vm.requirement.createdAt.toLocal());
+      final dt = isRejectedTab ? vm.filterDate : vm.requirement.effectiveDate;
       bool matchesDate = true;
       switch (datePreset) {
         case LeadDateFilterPreset.today:

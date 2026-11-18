@@ -311,8 +311,24 @@ class RequirementLocalRepository {
   static final Map<String, String> rejectionRemarksById = {};
   static final Map<String, String> assignedTelecallerIdById = {};
   static final Map<String, DateTime> salesAssignedAtById = {};
+  static final Map<String, DateTime> leadReceivedAtById = {};
+  static final Map<String, DateTime> autoAllocatedAtById = {};
   static final Map<String, String> assignedToById = {};
   static final Map<String, String> assigneeNameById = {};
+  static final Set<String> directSalesAllocatedIds = {};
+
+  static void rememberDirectSalesAllocated(String id, bool isDirect) {
+    if (id.trim().isEmpty) return;
+    if (isDirect) {
+      directSalesAllocatedIds.add(id.trim());
+    } else {
+      directSalesAllocatedIds.remove(id.trim());
+    }
+  }
+
+  static bool isDirectSalesAllocated(String id) {
+    return directSalesAllocatedIds.contains(id.trim());
+  }
 
   static void rememberAssignedTo(String id, String? assignedTo) {
     if (id.trim().isEmpty) return;
@@ -348,6 +364,20 @@ class RequirementLocalRepository {
   static DateTime? getSalesAssignedAt(String id) {
     return salesAssignedAtById[id];
   }
+
+  static void rememberLeadReceivedAt(String id, DateTime? dt) {
+    if (id.trim().isEmpty || dt == null) return;
+    leadReceivedAtById[id] = dt;
+  }
+
+  static DateTime? getLeadReceivedAt(String id) => leadReceivedAtById[id];
+
+  static void rememberAutoAllocatedAt(String id, DateTime? dt) {
+    if (id.trim().isEmpty || dt == null) return;
+    autoAllocatedAtById[id] = dt;
+  }
+
+  static DateTime? getAutoAllocatedAt(String id) => autoAllocatedAtById[id];
 
   static void rememberAssignedTelecallerId(String id, String? telecallerId) {
     if (id.trim().isEmpty || telecallerId == null || telecallerId.trim().isEmpty) return;
@@ -485,6 +515,10 @@ class RequirementLocalRepository {
         'rejectionRemark': rejectionRemarksById[item.id],
       if (salesAssignedAtById[item.id] != null)
         'salesAssignedAt': salesAssignedAtById[item.id]!.toIso8601String(),
+      if (leadReceivedAtById[item.id] != null)
+        'leadReceivedAt': leadReceivedAtById[item.id]!.toIso8601String(),
+      if (autoAllocatedAtById[item.id] != null)
+        'autoAllocatedAt': autoAllocatedAtById[item.id]!.toIso8601String(),
     };
   }
 
@@ -538,6 +572,14 @@ class RequirementLocalRepository {
     final rawSalesAssignedAt = map['salesAssignedAt']?.toString().trim() ?? '';
     if (rawSalesAssignedAt.isNotEmpty) {
       rememberSalesAssignedAt(r.id, DateTime.tryParse(rawSalesAssignedAt));
+    }
+    final rawLeadReceivedAt = map['leadReceivedAt']?.toString().trim() ?? '';
+    if (rawLeadReceivedAt.isNotEmpty) {
+      rememberLeadReceivedAt(r.id, DateTime.tryParse(rawLeadReceivedAt));
+    }
+    final rawAutoAllocatedAt = map['autoAllocatedAt']?.toString().trim() ?? '';
+    if (rawAutoAllocatedAt.isNotEmpty) {
+      rememberAutoAllocatedAt(r.id, DateTime.tryParse(rawAutoAllocatedAt));
     }
     return r;
   }

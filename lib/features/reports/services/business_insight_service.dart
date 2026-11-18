@@ -58,12 +58,13 @@ class BusinessInsightService {
     }
   }
 
-  /// Fetches leads matching source, leadType, kpi, telecaller, or date range
+  /// Fetches leads matching source, leadType, kpi, telecaller, sales user, or date range
   Future<Map<String, dynamic>> fetchLeads({
     String? source,
     String? leadType,
     String? kpi,
     String? telecallerId,
+    String? salesUserId,
     DateTime? from,
     DateTime? to,
     int limit = 500,
@@ -87,6 +88,9 @@ class BusinessInsightService {
       }
       if (telecallerId != null && telecallerId.isNotEmpty) {
         queryParams['telecallerId'] = telecallerId;
+      }
+      if (salesUserId != null && salesUserId.isNotEmpty && salesUserId.toLowerCase() != 'all') {
+        queryParams['salesUserId'] = salesUserId;
       }
 
       final response = await _apiClient.get(
