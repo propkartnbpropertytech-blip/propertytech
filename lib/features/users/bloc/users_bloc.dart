@@ -259,6 +259,26 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
         return;
       }
       await _usersRepository.toggleUserStatus(event.id, event.isActive);
+      _cachedUsers = _cachedUsers
+          .map((u) => u.id == event.id
+              ? UserModel(
+                  id: u.id,
+                  roleId: u.roleId,
+                  roleName: u.roleName,
+                  fullName: u.fullName,
+                  email: u.email,
+                  mobile: u.mobile,
+                  isActive: event.isActive,
+                  profilePhoto: u.profilePhoto,
+                  createdAt: u.createdAt,
+                  adminId: u.adminId,
+                  organizationId: u.organizationId,
+                  organizationName: u.organizationName,
+                  campaignEnabled: u.campaignEnabled,
+                  createdByName: u.createdByName,
+                )
+              : u)
+          .toList();
       emit(const UsersOperationSuccess(message: "User status updated."));
       emit(UsersLoaded(users: _cachedUsers, roles: _cachedRoles));
     } catch (e) {

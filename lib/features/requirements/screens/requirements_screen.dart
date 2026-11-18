@@ -5491,7 +5491,7 @@ _recomputeFilteredRequirements();
                   roleName: u.role,
                   fullName: u.name,
                   email: u.email,
-                  isActive: true,
+                  isActive: u.isActive,
                   adminId: u.adminId,
                 ))
             .where((u) => u.id.isNotEmpty)
@@ -5580,6 +5580,7 @@ _recomputeFilteredRequirements();
     final isTelecaller = curRole == 'telecaller';
 
     var salesmen = users.where((u) {
+      if (!u.isActive) return false;
       if (currentAssignedTo != null && u.id == currentAssignedTo) return true;
 
       if (isTelecaller) {
@@ -5612,10 +5613,13 @@ _recomputeFilteredRequirements();
     if (currentAssignedTo != null &&
         currentAssignedTo.isNotEmpty &&
         !salesmen.any((u) => u.id == currentAssignedTo)) {
+      final assignedUser = users.firstWhereOrNull((u) => u.id == currentAssignedTo);
+      if (assignedUser != null && !assignedUser.isActive) {
+        return salesmen;
+      }
       final name = (req.assigneeName != null && req.assigneeName!.trim().isNotEmpty)
           ? req.assigneeName!.trim()
           : (_liveUserName(currentAssignedTo) ?? 'Assigned');
-      final assignedUser = users.firstWhereOrNull((u) => u.id == currentAssignedTo);
       if (!isTelecaller || assignedUser == null || _isSalesPersonRole(assignedUser.roleName)) {
         salesmen = [
           users_model.UserModel(
@@ -15470,7 +15474,7 @@ _recomputeFilteredRequirements();
     final currentAssigneeId = lead['assignedTo']?.toString() ?? '';
     final salesUsers = _getSalesUsers();
     final availableSalesUsers = salesUsers
-        .where((u) => u.id != currentAssigneeId && (currentUser == null || u.id != currentUser.id))
+        .where((u) => u.isActive && u.id != currentAssigneeId && (currentUser == null || u.id != currentUser.id))
         .toList();
 
     return PopupMenuButton<String>(
@@ -15546,7 +15550,7 @@ _recomputeFilteredRequirements();
     final currentAssigneeId = req.assignedTo ?? '';
     final salesUsers = _getSalesUsers();
     final availableSalesUsers = salesUsers
-        .where((u) => u.id != currentAssigneeId && (currentUser == null || u.id != currentUser.id))
+        .where((u) => u.isActive && u.id != currentAssigneeId && (currentUser == null || u.id != currentUser.id))
         .toList();
 
     return PopupMenuButton<String>(
@@ -15618,7 +15622,7 @@ _recomputeFilteredRequirements();
     final authState = context.read<AuthBloc>().state;
     final currentUser = authState is Authenticated ? authState.user : null;
     final salesUsers = _getSalesUsers()
-        .where((u) => u.id != req.assignedTo && (currentUser == null || u.id != currentUser.id))
+        .where((u) => u.isActive && u.id != req.assignedTo && (currentUser == null || u.id != currentUser.id))
         .toList();
     if (salesUsers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

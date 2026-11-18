@@ -3,6 +3,7 @@ class TeamChatUserModel {
   final String name;
   final String email;
   final String role;
+  final bool isActive;
   final String? adminId;
   final String? teamName;
   final String? adminName;
@@ -15,6 +16,7 @@ class TeamChatUserModel {
     required this.name,
     required this.email,
     required this.role,
+    this.isActive = true,
     this.adminId,
     this.teamName,
     this.adminName,
@@ -35,6 +37,7 @@ class TeamChatUserModel {
       name: json['name']?.toString() ?? json['full_name']?.toString() ?? 'User',
       email: json['email']?.toString() ?? '',
       role: r,
+      isActive: json['is_active'] != false,
       adminId: adminId,
       teamName: json['team_name']?.toString(),
       adminName: json['admin_name']?.toString(),
@@ -54,6 +57,7 @@ class TeamChatUserModel {
       'name': name,
       'email': email,
       'role': role,
+      'is_active': isActive,
       'admin_id': adminId,
       'team_name': teamName,
       'admin_name': adminName,
