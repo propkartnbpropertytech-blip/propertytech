@@ -5,6 +5,7 @@ import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/storage/isar_collections.dart';
 import '../../../core/storage/model_mappers.dart';
 import '../../../core/storage/performance_logger.dart';
+import '../../../core/api/api_exception.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/storage/local_repositories.dart';
 
@@ -228,7 +229,22 @@ class RequirementsRepository {
         // Keep the server assignee as-is so unassign (empty/null) actually sticks.
         return local;
       }).toList();
-      await _coordinator.requirementLocal.saveRequirements(localEntities);
+      final isUnfilteredFullRefresh =
+          (search == null || search.trim().isEmpty) &&
+          (configurationId == null || configurationId.trim().isEmpty) &&
+          (propertyTypeId == null || propertyTypeId.trim().isEmpty) &&
+          (status == null || status.trim().isEmpty || status == 'All') &&
+          (listingTypeId == null || listingTypeId.trim().isEmpty);
+
+      if (isUnfilteredFullRefresh) {
+        final freshIds = freshList.map((r) => r.id).toSet();
+        RequirementLocalRepository.metaCustomFieldsById.removeWhere((k, _) => !freshIds.contains(k));
+      }
+
+      await _coordinator.requirementLocal.saveRequirements(
+        localEntities,
+        clearExisting: isUnfilteredFullRefresh,
+      );
       _coordinator.refreshRequirements();
       final isarWriteMs = DateTime.now().difference(writeStart).inMilliseconds;
 
@@ -459,6 +475,9 @@ class RequirementsRepository {
       return merged;
     } catch (e) {
       print("RequirementsRepository.updateRequirement error: $e");
+      if (e is ApiException && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+        rethrow;
+      }
       final json = req.toBackendJson();
       json['id'] = req.id;
       json['updated_at'] = DateTime.now().toIso8601String();
@@ -507,6 +526,9 @@ class RequirementsRepository {
       _coordinator.refreshRequirements();
     } catch (e) {
       print("RequirementsRepository.updateRequirementFields error: $e");
+      if (e is ApiException && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+        rethrow;
+      }
       final existingList = await _coordinator.requirementLocal.getRequirements();
       final matches = existingList.where((r) => r.id == id).toList();
       if (matches.isNotEmpty) {
@@ -674,12 +696,29 @@ class RequirementsRepository {
     required String leadId,
     required String toSalesUserId,
     String? reason,
-  }) {
-    return _requirementsService.transferCampaignLead(
+  }) async {
+    final res = await _requirementsService.transferCampaignLead(
       leadId: leadId,
       toSalesUserId: toSalesUserId,
       reason: reason,
     );
+    if (res['success'] == false) {
+      throw ApiException(
+        message: res['message']?.toString() ?? 'Failed to transfer lead.',
+      );
+    }
+    _lastRefreshAt = null;
+    RequirementLocalRepository.metaCustomFieldsById.remove(leadId);
+    final data = res['data'];
+    if (data is Map) {
+      final reqId = data['requirementId']?.toString();
+      if (reqId != null && reqId.isNotEmpty) {
+        RequirementLocalRepository.metaCustomFieldsById.remove(reqId);
+      }
+    }
+    await refreshFromServerNow();
+    _coordinator.refreshDashboard();
+    return res;
   }
 
   Future<void> downloadFile(String url, String savePath) {
