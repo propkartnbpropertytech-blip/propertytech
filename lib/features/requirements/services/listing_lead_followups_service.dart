@@ -19,6 +19,9 @@ class ListingLeadFollowup {
   final String? phone;
   final String? salesUserName;
   final String? createdByName;
+  final String? propertyType;
+  final String? propertyLocation;
+  final String? campaignName;
   final bool isToday;
   final bool isDue;
   final bool isFuture;
@@ -40,6 +43,9 @@ class ListingLeadFollowup {
     this.phone,
     this.salesUserName,
     this.createdByName,
+    this.propertyType,
+    this.propertyLocation,
+    this.campaignName,
     this.isToday = false,
     this.isDue = false,
     this.isFuture = false,
@@ -71,6 +77,9 @@ class ListingLeadFollowup {
         phone: _text(json['phone']),
         salesUserName: _text(json['sales_user_name']),
         createdByName: _text(json['created_by_name']),
+        propertyType: _text(json['property_type']),
+        propertyLocation: _text(json['property_location']),
+        campaignName: _text(json['campaign_name']),
         isToday: json['is_today'] == true,
         isDue: json['is_due'] == true,
         isFuture: json['is_future'] == true,

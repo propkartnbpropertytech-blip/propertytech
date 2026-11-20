@@ -140,12 +140,22 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       // 4. Evaluate version status
       if (config.versionStatus == "forceUpdate") {
         if (mounted) {
-          _showForceUpdateDialog(config.androidLink, config.iosLink);
+          _showForceUpdateDialog(
+            config.androidLink,
+            config.iosLink,
+            version: config.maxVersion,
+            releaseNotes: config.releaseNotes,
+          );
         }
         return;
       } else if (config.versionStatus == "softUpdate") {
         if (mounted) {
-          await _showSoftUpdateDialog(config.androidLink, config.iosLink);
+          await _showSoftUpdateDialog(
+            config.androidLink,
+            config.iosLink,
+            version: config.maxVersion,
+            releaseNotes: config.releaseNotes,
+          );
         }
       }
 
@@ -319,7 +329,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
   }
 
-  void _showForceUpdateDialog(String androidLink, String iosLink) {
+  void _showForceUpdateDialog(String androidLink, String iosLink, {String? version, String? releaseNotes}) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -329,13 +339,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           isForceUpdate: true,
           androidLink: androidLink,
           iosLink: iosLink,
+          newVersion: version,
+          releaseNotes: releaseNotes,
           onDismiss: () {},
         ),
       ),
     );
   }
 
-  Future<void> _showSoftUpdateDialog(String androidLink, String iosLink) async {
+  Future<void> _showSoftUpdateDialog(String androidLink, String iosLink, {String? version, String? releaseNotes}) async {
     await showDialog(
       context: context,
       barrierDismissible: true,
@@ -343,6 +355,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         isForceUpdate: false,
         androidLink: androidLink,
         iosLink: iosLink,
+        newVersion: version,
+        releaseNotes: releaseNotes,
         onDismiss: () {
           Navigator.of(context).pop();
         },

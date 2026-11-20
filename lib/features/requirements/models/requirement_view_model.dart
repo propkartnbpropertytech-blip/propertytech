@@ -406,11 +406,19 @@ class RequirementListItemViewModel {
     final role = (currentUser is UserModel ? currentUser.role : (currentUser is users_model.UserModel ? currentUser.roleName : ''));
     if (!role.toLowerCase().contains('sales')) return false;
     final isAssignee = _checkUserAssignee(r, currentUser);
-    final isCreator = _checkUserCreator(r, currentUser);
-    if (!isCreator) return false;
+    if (isAssignee) return false;
     final assigned = r.assignedTo;
     if (assigned == null || assigned.isEmpty) return false;
-    return !isAssignee;
+    final isCreator = _checkUserCreator(r, currentUser);
+    if (isCreator) return true;
+    final currentUserId = (currentUser is UserModel ? currentUser.id : (currentUser is users_model.UserModel ? currentUser.id : '')).toString().trim();
+    final meta = r.metaCustomFields;
+    final metaTransfer = meta != null && meta['_transfer'] is Map ? meta['_transfer'] as Map : null;
+    final transferredBy = (meta?['transferred_by']?.toString() ??
+        metaTransfer?['transferred_by']?.toString() ??
+        meta?['reassigned_by']?.toString() ?? '').trim();
+    if (currentUserId.isNotEmpty && transferredBy == currentUserId) return true;
+    return false;
   }
 
   static bool _checkSalesHasHandledLead(RequirementModel req) {

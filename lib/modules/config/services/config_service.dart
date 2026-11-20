@@ -41,10 +41,12 @@ class AppConfigModel {
     return AppConfigModel(
       maintenanceMode: json['maintenance_mode'] ?? false,
       maintenanceMessage: json['maintenance_message'] ?? '',
-      androidLink: json['android_link'] ?? 'comingsoon',
+      androidLink: (json['android_link'] != null && json['android_link'] != 'comingsoon')
+          ? json['android_link'].toString()
+          : 'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart',
       iosLink: json['ios_link'] ?? 'comingsoon',
       minVersion: json['min_version'] ?? '1.0.0',
-      maxVersion: json['max_version'] ?? '1.1.3',
+      maxVersion: json['max_version'] ?? '1.1.4',
       latestTermsVersion: json['latest_terms_version'] ?? 1,
       latestPrivacyVersion: json['latest_privacy_version'] ?? 1,
       enableAi: json['enable_ai'] ?? true,
@@ -85,10 +87,10 @@ class ConfigService {
         return AppConfigModel(
           maintenanceMode: false,
           maintenanceMessage: '',
-          androidLink: 'comingsoon',
+          androidLink: 'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart',
           iosLink: 'comingsoon',
           minVersion: '1.0.0',
-          maxVersion: '1.1.3',
+          maxVersion: '1.1.4',
           latestTermsVersion: 1,
           latestPrivacyVersion: 1,
           enableAi: true,
@@ -134,7 +136,7 @@ class ConfigService {
         final recalculatedStatus = _calculateVersionStatus(
           currentVersion: currentVersion,
           minVersion: payload['min_version']?.toString() ?? '1.0.0',
-          maxVersion: payload['max_version']?.toString() ?? '1.1.3',
+          maxVersion: payload['max_version']?.toString() ?? '1.1.4',
         );
         payload['versionStatus'] = recalculatedStatus;
 
@@ -167,10 +169,10 @@ class ConfigService {
     return AppConfigModel(
       maintenanceMode: false,
       maintenanceMessage: '',
-      androidLink: 'comingsoon',
+      androidLink: 'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart',
       iosLink: 'comingsoon',
       minVersion: '1.0.0',
-      maxVersion: '1.1.3',
+      maxVersion: '1.1.4',
       latestTermsVersion: 1,
       latestPrivacyVersion: 1,
       enableAi: true,

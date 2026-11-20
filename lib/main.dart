@@ -34,6 +34,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'core/platform/video_player_init.dart';
 import 'core/services/push_notification_service.dart';
+import 'core/services/android_update_service.dart';
 
 void main() async {
   if (kIsWeb) {
@@ -63,6 +64,13 @@ void main() async {
           await PushNotificationService.initialize();
         } catch (e) {
           debugPrint('[PushNotificationService] startup init skipped: $e');
+        }
+        try {
+          if (AndroidUpdateService.isAndroidMobile) {
+            AndroidUpdateService().initialize();
+          }
+        } catch (e) {
+          debugPrint('[AndroidUpdateService] startup init skipped: $e');
         }
         await PerformanceLogger().initialize();
         await SyncManager().initialize();

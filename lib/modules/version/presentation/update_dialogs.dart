@@ -13,6 +13,13 @@ class UpdateDialog extends StatelessWidget {
   final String androidLink;
   final String iosLink;
   final VoidCallback onDismiss;
+  final String? newVersion;
+  final String? releaseNotes;
+
+  static const String defaultPlayStoreUrl =
+      'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart';
+  static const String defaultPlayStoreMarketUri =
+      'market://details?id=com.nbpropertytech.propkart';
 
   const UpdateDialog({
     super.key,
@@ -20,6 +27,8 @@ class UpdateDialog extends StatelessWidget {
     required this.androidLink,
     required this.iosLink,
     required this.onDismiss,
+    this.newVersion,
+    this.releaseNotes,
   });
 
   Future<void> _handleUpdateAction(BuildContext context) async {
@@ -28,11 +37,25 @@ class UpdateDialog extends StatelessWidget {
       return;
     }
 
-    String storeUrl = "comingsoon";
-    if (Platform.isAndroid) storeUrl = androidLink;
-    if (Platform.isIOS) storeUrl = iosLink;
+    String storeUrl = defaultPlayStoreUrl;
+    if (Platform.isAndroid) {
+      storeUrl = (androidLink.isNotEmpty && androidLink != 'comingsoon')
+          ? androidLink
+          : defaultPlayStoreUrl;
 
-    if (storeUrl == "comingsoon") {
+      // On Android mobile devices, try opening directly in Google Play Store app first
+      final marketUri = Uri.parse(defaultPlayStoreMarketUri);
+      try {
+        if (await canLaunchUrl(marketUri)) {
+          await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+          return;
+        }
+      } catch (_) {}
+    } else if (Platform.isIOS) {
+      storeUrl = iosLink;
+    }
+
+    if (storeUrl == 'comingsoon') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -56,102 +79,148 @@ class UpdateDialog extends StatelessWidget {
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not launch the download page.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the Google Play Store page.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    const playStoreGreen = Color(0xFF01875F);
+
     return Dialog(
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
+        borderRadius: BorderRadius.circular(20),
       ),
-      backgroundColor: AppColors.darkSlate,
-      elevation: 16,
+      backgroundColor: const Color(0xFF1E293B),
+      elevation: 20,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Warning Icon
+            // Warning/Store Icon
             Container(
-              padding: const EdgeInsets.all(AppSpacing.m),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: (isForceUpdate ? CRMColors.danger : AppColors.brandGreen).withOpacity(0.15),
+                color: (isForceUpdate ? CRMColors.danger : playStoreGreen).withOpacity(0.15),
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: (isForceUpdate ? CRMColors.danger : playStoreGreen).withOpacity(0.3),
+                  width: 1.5,
+                ),
               ),
               child: Icon(
-                isForceUpdate ? Icons.system_update_rounded : Icons.info_outline_rounded,
-                color: isForceUpdate ? CRMColors.danger : AppColors.brandGreenHighlight,
-                size: 40,
+                isForceUpdate ? Icons.system_update_rounded : Icons.shop_two_rounded,
+                color: isForceUpdate ? CRMColors.danger : const Color(0xFF10B981),
+                size: 38,
               ),
             ),
-            const SizedBox(height: AppSpacing.l),
-            // Header
+            const SizedBox(height: 16),
+
+            // Header Title
             Text(
               isForceUpdate ? 'Critical Update Required' : 'New Update Available',
               textAlign: TextAlign.center,
-              style: CRMTypography.sectionTitle.copyWith(
+              style: const TextStyle(
                 color: Colors.white,
-                fontSize: 18,
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
+
+            // Version tag if provided
+            if (newVersion != null && newVersion!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF01875F).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF01875F).withOpacity(0.4)),
+                ),
+                child: Text(
+                  'v$newVersion on Google Play',
+                  style: const TextStyle(
+                    color: Color(0xFF34D399),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+
             // Body description
             Text(
               isForceUpdate
-                  ? 'A critical update is required to continue using PropKart. Please update to the latest version.'
-                  : 'A new version of PropKart is available with performance improvements and bug fixes. Would you like to update now?',
+                  ? 'A critical update is required to continue using PropKart. Please update to the latest version on the Google Play Store.'
+                  : (releaseNotes != null && releaseNotes!.isNotEmpty)
+                      ? releaseNotes!
+                      : 'A new version of PropKart is available with performance improvements and bug fixes. Would you like to update now?',
               textAlign: TextAlign.center,
-              style: CRMTypography.body.copyWith(
-                color: AppColors.textMuted,
-                fontSize: 14,
-                height: 1.5,
+              style: const TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 13.5,
+                height: 1.45,
               ),
             ),
-            const SizedBox(height: AppSpacing.xl),
-            // Buttons Row
+            const SizedBox(height: 24),
+
+            // Buttons Row: Cancel and Update Now
             Row(
               children: [
                 if (!isForceUpdate) ...[
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(color: AppColors.textMuted.withOpacity(0.3)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withOpacity(0.25)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       onPressed: onDismiss,
-                      child: Text(
-                        'Later',
-                        style: CRMTypography.button.copyWith(color: Colors.white),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.m),
+                  const SizedBox(width: 12),
                 ],
                 Expanded(
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.brandGreen,
+                      backgroundColor: const Color(0xFF01875F),
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      elevation: 3,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     onPressed: () => _handleUpdateAction(context),
-                    child: Text(
+                    child: const Text(
                       'Update Now',
-                      style: CRMTypography.button.copyWith(color: Colors.white),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),

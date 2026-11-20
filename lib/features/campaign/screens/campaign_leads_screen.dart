@@ -2075,7 +2075,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ],
             ),
           ),
-        if (_selectedSection != 'Property Listing' && lead.leadType != 'Property Listing')
+        if (!isArchiveLead)
           PopupMenuItem(
             value: 'Follow up',
             child: Row(
@@ -5727,7 +5727,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final isTelecaller = RoleGuard.isTelecaller(role) || currentRoleStr == 'telecaller';
     final currentUserId = RoleGuard.currentUser?.id;
 
-    if (isAdminOnly && _selectedFollowupTelecaller != 'All' && _selectedFollowupTelecaller.isNotEmpty) {
+    final bool isTelecallerAllocationOn = _allocationTargetRole.toLowerCase() == 'telecaller';
+
+    if (isAdminOnly) {
+      if (!isTelecallerAllocationOn || _selectedFollowupTelecaller == 'All' || _selectedFollowupTelecaller.isEmpty) {
+        return sourceFilteredItems;
+      }
       return sourceFilteredItems.where((f) {
         final tcName = (f.telecallerName ??
                 f.lead?.assignedTelecallerName ??
@@ -5747,9 +5752,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         }
         return true;
       }).toList();
+    } else if (RoleGuard.isSales(role) || currentRoleStr == 'sales') {
+      if (currentUserId != null && currentUserId.isNotEmpty) {
+        return sourceFilteredItems.where((f) {
+          final creatorId = (f.createdBy ?? '').toString().trim();
+          final assignedTo = (f.lead?.assignedTo ?? '').toString().trim();
+          return creatorId == currentUserId || assignedTo == currentUserId;
+        }).toList();
+      }
     }
-    // Default-deny: Non-telecaller and non-admin cannot view telecaller followups
-    return const [];
+    // Safe fallback: preserve all existing follow-up records
+    return sourceFilteredItems;
   }
 
   int _pendingDueFollowupLeadCount() {
@@ -5784,7 +5797,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final currentAuth = context.read<AuthBloc>().state;
     final currentRoleStr = (currentAuth is Authenticated ? currentAuth.user.role : null)?.toLowerCase().trim() ?? '';
     final isAdminOnly = role == 'admin' || role == 'super admin' || currentRoleStr == 'admin' || currentRoleStr == 'super admin';
-    final canUseTelecallerFilter = isAdminOnly;
+    final bool isTelecallerAllocationOn = _allocationTargetRole.toLowerCase() == 'telecaller';
+    final canUseTelecallerFilter = isAdminOnly && isTelecallerAllocationOn;
 
     // Extract telecallers strictly (exclude salespersons and admins)
     final Map<String, int> telecallerCounts = {};
