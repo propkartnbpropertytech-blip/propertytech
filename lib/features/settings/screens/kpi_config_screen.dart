@@ -463,56 +463,129 @@ class _KpiConfigScreenState extends State<KpiConfigScreen> {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 640;
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.tune_rounded,
+                          color: Color(0xFF3B82F6), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'KPI Configuration & Data Mapping',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: textColor,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Direct table mapping for all KPIs across dashboard, reports, and role dashboards.',
+                            style: TextStyle(fontSize: 11.5, color: subColor),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.tune_rounded,
-                    color: Color(0xFF3B82F6), size: 20),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'KPI Configuration & Data Mapping',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: textColor,
+                if (_canAddKpi) ...[
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    onPressed: () => _openKpiConfigDialog(),
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Add New KPI',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
-                  Text(
-                    'Direct table mapping for all KPIs across dashboard, reports, and role dashboards.',
-                    style: TextStyle(fontSize: 12, color: subColor),
-                  ),
                 ],
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.tune_rounded,
+                          color: Color(0xFF3B82F6), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'KPI Configuration & Data Mapping',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: textColor,
+                            ),
+                          ),
+                          Text(
+                            'Direct table mapping for all KPIs across dashboard, reports, and role dashboards.',
+                            style: TextStyle(fontSize: 12, color: subColor),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              if (_canAddKpi)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: ElevatedButton.icon(
+                    onPressed: () => _openKpiConfigDialog(),
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Add New KPI',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
             ],
-          ),
-          if (_canAddKpi)
-          ElevatedButton.icon(
-            onPressed: () => _openKpiConfigDialog(),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('Add New KPI',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

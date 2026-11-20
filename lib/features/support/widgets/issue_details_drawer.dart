@@ -159,14 +159,19 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = ThemeManager().primaryColor;
     final isSuperAdmin = RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
 
     return Dialog(
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: isMobile
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 16)
+          : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       child: Container(
-        width: 780,
-        constraints: const BoxConstraints(maxHeight: 800),
-        padding: const EdgeInsets.all(24),
+        width: isMobile ? double.infinity : 780,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+        padding: EdgeInsets.all(isMobile ? 14 : 24),
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _issue == null
@@ -176,19 +181,20 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                     children: [
                       // Header Row
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: primaryColor.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               _issue!.ticketNumber,
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: primaryColor),
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 12.5 : 14, color: primaryColor),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,7 +202,7 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                                 Text(
                                   '${_issue!.pageName} -> ${_issue!.functionName}',
                                   style: TextStyle(
-                                    fontSize: 16,
+                                    fontSize: isMobile ? 14 : 16,
                                     fontWeight: FontWeight.bold,
                                     color: isDark ? Colors.white : const Color(0xFF0F172A),
                                   ),
@@ -205,7 +211,7 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                                 Text(
                                   'Reported by ${_issue!.reporterName} (${_issue!.reporterRole}) on ${DateFormat('MMM d, yyyy h:mm a').format(_issue!.createdAt)}',
                                   style: TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: isMobile ? 10.5 : 11.5,
                                     color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                   ),
                                 ),
@@ -214,17 +220,19 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.close_rounded, size: 20),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                             onPressed: () => Navigator.pop(context),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                       const Divider(height: 1),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
 
                       // Status & Priority Bar (Controls for Super Admin)
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: EdgeInsets.all(isMobile ? 10 : 12),
                         decoration: BoxDecoration(
                           color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(10),
@@ -234,17 +242,17 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                           children: [
                             if (_isUpdatingStatus)
                               const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 8),
-                                child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                                padding: EdgeInsets.symmetric(horizontal: 6),
+                                child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
                               ),
-                            const Text('Status: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                            Text('Status: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11.5 : 12.5)),
                             if (isSuperAdmin)
                               DropdownButton<String>(
                                 value: _normalizeStatus(_issue!.status),
                                 isDense: true,
                                 underline: const SizedBox.shrink(),
                                 items: const ['Open', 'In Progress', 'Complete']
-                                    .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12.5))))
+                                    .map((s) => DropdownMenuItem(value: s, child: Text(s, style: TextStyle(fontSize: isMobile ? 11.5 : 12.5))))
                                     .toList(),
                                 onChanged: (val) {
                                   if (val != null) _updateStatus(val);
@@ -259,21 +267,21 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                                 ),
                                 child: Text(
                                   _normalizeStatus(_issue!.status),
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _getStatusColor(_issue!.status)),
+                                  style: TextStyle(fontSize: isMobile ? 11 : 12, fontWeight: FontWeight.bold, color: _getStatusColor(_issue!.status)),
                                 ),
                               ),
 
                             const Spacer(),
 
                             // Priority Badge / Dropdown
-                            const Text('Priority: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                            Text('Priority: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11.5 : 12.5)),
                             if (isSuperAdmin)
                               DropdownButton<String>(
                                 value: _issue!.priority,
                                 isDense: true,
                                 underline: const SizedBox.shrink(),
                                 items: const ['Low', 'Medium', 'High', 'Critical']
-                                    .map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 12.5))))
+                                    .map((p) => DropdownMenuItem(value: p, child: Text(p, style: TextStyle(fontSize: isMobile ? 11.5 : 12.5))))
                                     .toList(),
                                 onChanged: (val) {
                                   if (val != null) _updatePriority(val);
@@ -288,13 +296,13 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                                 ),
                                 child: Text(
                                   _issue!.priority,
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _getPriorityColor(_issue!.priority)),
+                                  style: TextStyle(fontSize: isMobile ? 11 : 12, fontWeight: FontWeight.bold, color: _getPriorityColor(_issue!.priority)),
                                 ),
                               ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
 
                       // Main Details Tabs / Split View
                       Expanded(
@@ -304,13 +312,16 @@ class _IssueDetailsDrawerState extends State<IssueDetailsDrawer> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               TabBar(
+                                isScrollable: isMobile,
+                                tabAlignment: isMobile ? TabAlignment.start : TabAlignment.fill,
+                                labelPadding: isMobile ? const EdgeInsets.symmetric(horizontal: 12) : null,
                                 labelColor: primaryColor,
                                 unselectedLabelColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                 indicatorColor: primaryColor,
-                                tabs: const [
-                                  Tab(text: 'Issue Description'),
-                                  Tab(text: 'Replies & Discussion'),
-                                  Tab(text: 'Diagnostic Timeline'),
+                                tabs: [
+                                  Tab(text: isMobile ? 'Details' : 'Issue Description'),
+                                  Tab(text: isMobile ? 'Replies' : 'Replies & Discussion'),
+                                  Tab(text: isMobile ? 'Timeline' : 'Diagnostic Timeline'),
                                 ],
                               ),
                               const SizedBox(height: 12),

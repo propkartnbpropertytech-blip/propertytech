@@ -17527,6 +17527,9 @@ _recomputeFilteredRequirements();
     final city = _listingValue(lead, 'city');
     final email = _listingValue(lead, 'email');
     final campaignName = _listingValue(lead, 'campaignName');
+    final leadId = lead['id']?.toString() ?? '';
+    final hasTransferredBadge = _activeMainTab == 'Assign to Me' || _isListingLeadTransferredFromOtherSales(lead, '');
+    final hasSalespersonBadge = _isCampaignLeadAdmin;
 
     return Card(
       elevation: 0,
@@ -17540,91 +17543,210 @@ _recomputeFilteredRequirements();
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Row 1: Checkbox, Index, Source Badge & Status Dropdown ──
             Row(
               children: [
-                Checkbox(
-                  value: (lead['id']?.toString() ?? '').isNotEmpty && _selectedCampaignLeadIds.contains(lead['id']?.toString()),
-                  onChanged: (lead['id']?.toString() ?? '').isEmpty
-                      ? null
-                      : (checked) {
-                          final leadId = lead['id'].toString();
-                          setState(() {
-                            if (checked == true) {
-                              _selectedCampaignLeadIds.add(leadId);
-                            } else {
-                              _selectedCampaignLeadIds.remove(leadId);
-                            }
-                          });
-                        },
-                ),
-                Text('#$index', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
-                const SizedBox(width: 8),
-                source.trim().isEmpty ? _listingTextCell('—') : _buildSalesSourceBadge(source),
-                if (_activeMainTab == 'Assign to Me' || _isListingLeadTransferredFromOtherSales(lead, '')) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0284C7).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'By: ${_getLeadTransferredByName(lead)}',
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
-                    ),
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    value: leadId.isNotEmpty && _selectedCampaignLeadIds.contains(leadId),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    onChanged: leadId.isEmpty
+                        ? null
+                        : (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selectedCampaignLeadIds.add(leadId);
+                              } else {
+                                _selectedCampaignLeadIds.remove(leadId);
+                              }
+                            });
+                          },
                   ),
+                ),
+                const SizedBox(width: 6),
+                Text('#$index', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                if (source.trim().isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  _buildSalesSourceBadge(source),
                 ],
                 const Spacer(),
-                if (_isCampaignLeadAdmin)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text(
-                      _isCampaignPageSuperAdmin
-                          ? '${_listingValue(lead, 'assignedToName')} · ${_campaignAdminLabel(lead['adminId'])}'
-                          : _listingValue(lead, 'assignedToName'),
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                    ),
-                  ),
                 _buildSalesPropertyListingStatusDropdown(lead),
-                const SizedBox(width: 4),
-                _buildCampaignLeadTransferButton(lead: lead, currentUser: currentUser),
-                if (_canDeletePropertyListingLead(lead)) _buildPropertyListingDeleteButton(lead),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              clientName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+
+            // ── Row 2: Client Name, Transfer Button & Delete Button ──
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    clientName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildCampaignLeadTransferButton(lead: lead, currentUser: currentUser),
+                if (_canDeletePropertyListingLead(lead)) ...[
+                  const SizedBox(width: 4),
+                  _buildPropertyListingDeleteButton(lead),
+                ],
+              ],
             ),
-            const SizedBox(height: 4),
+
+            // ── Row 3: Transferred By Badge & Assigned Salesperson Badge ──
+            if (hasTransferredBadge || hasSalespersonBadge) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (hasTransferredBadge)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.swap_horiz_rounded, size: 12, color: Color(0xFF0284C7)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'By: ${_getLeadTransferredByName(lead)}',
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (hasSalespersonBadge)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.person_outline_rounded, size: 12, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isCampaignPageSuperAdmin
+                                ? '${_listingValue(lead, 'assignedToName')} · ${_campaignAdminLabel(lead['adminId'])}'
+                                : 'Sales: ${_listingValue(lead, 'assignedToName')}',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : const Color(0xFF475569),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+
+            // ── Row 4: Phone with Direct Call & WhatsApp Actions ──
+            if (phone.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  InkWell(
+                    onTap: () => _makePhoneCall(phone),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.phone_outlined, size: 13, color: CRMColors.primaryOf(context)),
+                          const SizedBox(width: 4),
+                          Text(
+                            phone,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: CRMColors.primaryOf(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => _sendWhatsAppMessage(phone),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.chat_bubble_outline, size: 12, color: Color(0xFF25D366)),
+                          SizedBox(width: 4),
+                          Text(
+                            'WhatsApp',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF25D366),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // ── Row 5: Details (Type, Rent, Location, Email, Campaign) ──
+            const SizedBox(height: 6),
             Wrap(
               spacing: 8,
               runSpacing: 4,
               children: [
-                if (phone.isNotEmpty)
-                  InkWell(
-                    onTap: () => _sendWhatsAppMessage(phone),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.chat_bubble_outline, size: 12, color: Color(0xFF25D366)),
-                        const SizedBox(width: 4),
-                        Text(phone, style: const TextStyle(fontSize: 12, color: Color(0xFF25D366), fontWeight: FontWeight.w600)),
-                      ],
-                    ),
+                if (propType.isNotEmpty && propType != '—')
+                  Text('• Type: $propType', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                if (expectedRent.isNotEmpty && expectedRent != '—')
+                  Text('• Rent: $expectedRent', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                if ((propertyLocation.isNotEmpty && propertyLocation != '—') || (city.isNotEmpty && city != '—'))
+                  Text(
+                    '• ${[propertyLocation, city].where((s) => s.isNotEmpty && s != '—').join(', ')}',
+                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                   ),
-                Text('• Type: $propType', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                Text('• Rent: $expectedRent', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                Text('• $propertyLocation, $city', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                Text('• $email', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                Text('• $campaignName', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                if (email.isNotEmpty && email != '—')
+                  Text('• $email', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                if (campaignName.isNotEmpty && campaignName != '—')
+                  Text('• $campaignName', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Allocated: ${_formatLeadReceivedDate(allocatedOn)} (${_formatLeadTimeAgo(allocatedOn)})',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
+
+            // ── Row 6: Allocated Date & Time Ago ──
+            if (allocatedOn != null && allocatedOn.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Allocated: ${_formatLeadReceivedDate(allocatedOn)} (${_formatLeadTimeAgo(allocatedOn)})',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
+            ],
           ],
         ),
       ),
