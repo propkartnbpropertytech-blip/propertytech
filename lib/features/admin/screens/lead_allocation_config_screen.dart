@@ -497,7 +497,10 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     // Optimistic UI update
     setState(() {
       _salespersons[index]['isAllocatedEnabled'] = newStatus;
-      _salespersons[index]['status'] = newStatus ? 'ACTIVE' : 'INACTIVE';
+      final currentStatus = _salespersons[index]['status']?.toString();
+      if (currentStatus != 'LOGGED_OUT') {
+        _salespersons[index]['status'] = newStatus ? 'ACTIVE' : 'INACTIVE';
+      }
       for (final alloc in _categoryAllocations) {
         if (alloc['user_id']?.toString() == userId) {
           alloc['is_enabled'] = newStatus;
@@ -508,7 +511,7 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
     });
 
     try {
-      await DioClient.dio.post(
+      final response = await DioClient.dio.post(
         ApiConstants.adminAllocationConfigUserAvailability,
         data: {
           'userId': userId,
@@ -517,8 +520,13 @@ class _LeadAllocationConfigScreenState extends State<LeadAllocationConfigScreen>
       );
 
       if (mounted) {
+        final serverData = response.data?['data'];
+        final serverStatus = serverData?['status']?.toString();
         setState(() {
           _pendingActionIds.remove(userId);
+          if (serverStatus != null && serverStatus.isNotEmpty) {
+            _salespersons[index]['status'] = serverStatus;
+          }
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
