@@ -49,6 +49,9 @@ class IntegrationLeadModel {
   final String? archiveRemark;
   final String? archiveReason;
 
+  String? get salesListingStatus =>
+      rawJson['sales_listing_status']?.toString().trim();
+
   String? get displayArchiveRemark =>
       archiveRemark?.trim().isNotEmpty == true
           ? archiveRemark!.trim()
@@ -940,9 +943,22 @@ class IntegrationLeadModel {
     final statusUpdatedAtRaw = json['status_updated_at'] ?? raw['status_updated_at'];
     final statusUpdatedAtVal = statusUpdatedAtRaw != null ? DateTime.tryParse(statusUpdatedAtRaw.toString()) : null;
 
-    final notInterestedByNameVal = json['not_interested_by_name']?.toString() ??
-        raw['not_interested_by_name']?.toString() ??
-        (json['campaign_status'] == 'Not interested' ? (statusUpdatedByNameVal ?? telecallerNameVal) : null);
+    final rawNotInterestedName = json['not_interested_by_name']?.toString() ??
+        raw['not_interested_by_name']?.toString();
+    final notInterestedByNameVal = (rawNotInterestedName != null &&
+            rawNotInterestedName.trim().isNotEmpty &&
+            !rawNotInterestedName.toLowerCase().contains('admin'))
+        ? rawNotInterestedName
+        : (assignedNameVal != null &&
+                assignedNameVal.trim().isNotEmpty &&
+                !assignedNameVal.toLowerCase().contains('admin')
+            ? assignedNameVal
+            : (rawNotInterestedName ??
+                ((json['campaign_status'] == 'Not interested' &&
+                        statusUpdatedByNameVal != null &&
+                        !statusUpdatedByNameVal.toLowerCase().contains('admin'))
+                    ? statusUpdatedByNameVal
+                    : (json['campaign_status'] == 'Not interested' ? telecallerNameVal : null))));
     final notInterestedByIdVal = json['not_interested_by_id']?.toString() ??
         raw['not_interested_by_id']?.toString();
     final notInterestedAtRaw = json['not_interested_at'] ?? raw['not_interested_at'];
@@ -1007,14 +1023,20 @@ class IntegrationLeadModel {
         final explicitCampaignStatus = json['campaign_status']?.toString().trim() ??
             json['_campaign_status']?.toString().trim() ??
             raw['_campaign_status']?.toString().trim();
+        final salesListingStatus = json['sales_listing_status']?.toString().trim() ??
+            raw['sales_listing_status']?.toString().trim();
         final rawStatus = (explicitCampaignStatus != null && explicitCampaignStatus.isNotEmpty)
             ? explicitCampaignStatus
             : 'New';
         final rej = (json['rejection_reason'] ?? raw['rejection_reason'] ?? json['stage'] ?? raw['stage'] ?? '').toString().toLowerCase();
         final rawStatusLower = rawStatus.toLowerCase();
+        final salesStatusLower = (salesListingStatus ?? '').toLowerCase();
+
         if (rawStatusLower == 'archived' ||
             rawStatusLower == 'property listed' ||
-            rawStatusLower == 'listed') {
+            rawStatusLower == 'listed' ||
+            salesStatusLower == 'listed' ||
+            salesStatusLower == 'property listed') {
           return (rawStatusLower == 'archived') ? 'Archived' : 'Property Listed';
         }
         if (archivedAtVal != null || (raw['archived_at'] != null && raw['archived_at'].toString().isNotEmpty)) {
@@ -1022,6 +1044,8 @@ class IntegrationLeadModel {
         }
         if (rawStatusLower == 'not interested' ||
             rawStatusLower == 'not_interested' ||
+            rawStatusLower == 'rejected' ||
+            salesStatusLower == 'rejected' ||
             rej.contains('not_interested') ||
             rej == 'lost' ||
             json['not_interested_reason'] != null ||
@@ -1030,8 +1054,12 @@ class IntegrationLeadModel {
             raw['not_interested_notes'] != null) {
           return 'Not interested';
         }
-        if ((rawStatus == 'New' || rawStatus == 'Assigned' || rawStatus.isEmpty) && latestFu != null && latestFu['status'] == 'Pending') {
-          return latestFu['outcome'] == 'CALLBACK' ? 'Callback' : 'Follow up';
+        if (rawStatusLower == 'interested' || rawStatusLower == 'complete' || rawStatusLower == 'completed' || salesStatusLower == 'interested') {
+          return 'Interested';
+        }
+        if ((salesStatusLower == 'follow-up' || salesStatusLower == 'followup' || salesStatusLower == 're-followup' || salesStatusLower == 'refollowup') ||
+            ((rawStatus == 'New' || rawStatus == 'Assigned' || rawStatus.isEmpty) && latestFu != null && latestFu['status'] == 'Pending')) {
+          return latestFu != null && latestFu['outcome'] == 'CALLBACK' ? 'Callback' : 'Follow up';
         }
         return rawStatus;
       })(),

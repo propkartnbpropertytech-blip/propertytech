@@ -717,11 +717,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             future: PackageInfo.fromPlatform(),
             builder: (context, snapshot) {
               final rawVersion = snapshot.data?.version;
-              final version = (rawVersion != null && rawVersion.isNotEmpty && rawVersion != '1.0.0' && rawVersion != '1.1.1' && rawVersion != '1.1.2' && rawVersion != '1.1.3' && rawVersion != '1.1.5' && rawVersion != '2.0.0' && rawVersion != '2.0.1')
+              final version = (rawVersion != null && rawVersion.isNotEmpty && rawVersion != '1.0.0' && rawVersion != '1.1.1' && rawVersion != '1.1.2' && rawVersion != '1.1.3' && rawVersion != '1.1.4' && rawVersion != '2.0.0' && rawVersion != '2.0.1')
                   ? rawVersion
                   : AppConstants.appVersion;
               final rawBuild = snapshot.data?.buildNumber;
-              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '4' && rawBuild != '5' && rawBuild != '7' && rawBuild != '8' && rawBuild != '9' && rawBuild != '14')
+              final buildNumber = (rawBuild != null && rawBuild.isNotEmpty && rawBuild != '1' && rawBuild != '3' && rawBuild != '4' && rawBuild != '5' && rawBuild != '6' && rawBuild != '8' && rawBuild != '9' && rawBuild != '14')
                   ? rawBuild
                   : AppConstants.buildNumber;
 

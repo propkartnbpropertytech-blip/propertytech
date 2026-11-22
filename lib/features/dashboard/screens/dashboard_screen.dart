@@ -223,12 +223,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
     final authState = context.read<AuthBloc>().state;
     final role = authState is Authenticated ? authState.user.role : '';
-    if (RoleGuard.isSuperAdmin(role)) {
-      return;
-    }
-    final currentDashboardState = context.read<DashboardBloc>().state;
-    if (currentDashboardState is! DashboardLoadedState) {
-      context.read<DashboardBloc>().add(LoadDashboard());
+    if (authState is Authenticated && !RoleGuard.isSuperAdmin(role)) {
+      final currentDashboardState = context.read<DashboardBloc>().state;
+      if (currentDashboardState is! DashboardLoadedState && currentDashboardState is! DashboardRefreshing) {
+        context.read<DashboardBloc>().add(LoadDashboard());
+      }
     }
   }
 
@@ -248,10 +247,21 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final role = context.select<AuthBloc, String>((bloc) {
-      final state = bloc.state;
-      return state is Authenticated ? state.user.role : '';
-    });
+    final authState = context.watch<AuthBloc>().state;
+    final viewport = MediaQuery.sizeOf(context).width;
+    final isMobile = MobileLayout.isMobileShell(viewport);
+
+    if (authState is AuthLoading || authState is AuthInitial) {
+      if (isMobile) {
+        return const MobileScreenScaffold(
+          scrollable: false,
+          body: MobileLoadingState(),
+        );
+      }
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final role = authState is Authenticated ? authState.user.role : '';
 
     final Widget dashboardView;
     if (RoleGuard.isSuperAdmin(role)) {
@@ -262,13 +272,23 @@ class _DashboardScreenState extends State<DashboardScreen>
       dashboardView = const SalesDashboardScreen();
     } else {
       Theme.of(context);
-      final userName = context.select<AuthBloc, String>((bloc) {
-        final state = bloc.state;
-        return state is Authenticated ? state.user.fullName : '';
-      });
+      final userName = authState is Authenticated ? authState.user.fullName : '';
 
       dashboardView = MultiBlocListener(
       listeners: [
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (previous, current) =>
+              current is Authenticated &&
+              (previous is! Authenticated || previous.user.id != current.user.id),
+          listener: (context, state) {
+            if (state is Authenticated && !RoleGuard.isSuperAdmin(state.user.role)) {
+              final dState = context.read<DashboardBloc>().state;
+              if (dState is! DashboardLoadedState && dState is! DashboardRefreshing) {
+                context.read<DashboardBloc>().add(LoadDashboard());
+              }
+            }
+          },
+        ),
         BlocListener<RequirementsBloc, RequirementsState>(
           listenWhen: (previous, current) =>
               current is RequirementsSuccess ||
@@ -309,6 +329,14 @@ class _DashboardScreenState extends State<DashboardScreen>
             final viewport = MediaQuery.sizeOf(context).width;
             final isMobile = MobileLayout.isMobileShell(viewport);
 
+            if (state is DashboardInitial) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && context.read<DashboardBloc>().state is DashboardInitial) {
+                  context.read<DashboardBloc>().add(LoadDashboard());
+                }
+              });
+            }
+
             if (state is DashboardLoading || state is DashboardInitial) {
               if (isMobile) {
                 return const MobileScreenScaffold(
@@ -327,7 +355,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   body: MobileErrorState(
                     title: 'Failed to load dashboard',
                     message: state.message,
-                    onRetry: () => context.read<DashboardBloc>().add(RefreshDashboard()),
+                    onRetry: () => context.read<DashboardBloc>().add(LoadDashboard()),
                   ),
                 );
               }

@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import '../../requirements/screens/add_edit_requirement_screen.dart';
 import '../../integration/services/integration_service.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../../core/theme/theme_manager.dart';
 import 'mobile_nav_config.dart';
 
 /// Existing badge counts made available to routed mobile pages (e.g. More)
@@ -134,6 +135,12 @@ class _MobileAppShellState extends State<MobileAppShell> {
         Icons.chat_bubble_outline_rounded,
         onMessages,
         badgeCount: unreadMessages,
+      ),
+      _OverflowAction(
+        'theme_toggle',
+        'Theme',
+        Icons.brightness_6_rounded,
+        () {},
       ),
       _OverflowAction(
         'logout',
@@ -315,27 +322,54 @@ class _MobileAppShellState extends State<MobileAppShell> {
     BuildContext context,
     List<_OverflowAction> actions,
   ) async {
+    final themeManager = ThemeManager();
     final id = await MobileSheet.show<String>(
       context,
       title: 'More actions',
-      maxHeightFactor: 0.6,
-      child: Builder(
-        builder: (sheetContext) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final a in actions)
-              MobileListItem(
-                 key: ValueKey('overflow_${a.id}'),
-                 icon: a.icon,
-                 title: a.label,
-                 badgeCount: a.badgeCount,
-                 showChevron: false,
-                 iconColor: a.color,
-                 titleColor: a.color,
-                 onTap: () => Navigator.of(sheetContext).pop(a.id),
-               ),
-          ],
-        ),
+      maxHeightFactor: 0.65,
+      child: ListenableBuilder(
+        listenable: themeManager,
+        builder: (sheetContext, _) {
+          final isDark = themeManager.isDarkMode;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final a in actions)
+                if (a.id == 'theme_toggle')
+                  MobileListItem(
+                    key: const ValueKey('overflow_theme_toggle'),
+                    icon: isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                    title: isDark ? 'Dark Mode' : 'Light Mode',
+                    subtitle: isDark ? 'Tap to switch to light theme' : 'Tap to switch to dark theme',
+                    showChevron: false,
+                    iconColor: isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B),
+                    trailing: Switch.adaptive(
+                      value: isDark,
+                      activeTrackColor: const Color(0xFF059669),
+                      activeThumbColor: Colors.white,
+                      onChanged: (_) {
+                        themeManager.toggleTheme();
+                      },
+                    ),
+                    onTap: () {
+                      themeManager.toggleTheme();
+                    },
+                  )
+                else
+                  MobileListItem(
+                    key: ValueKey('overflow_${a.id}'),
+                    icon: a.icon,
+                    title: a.label,
+                    trailing: a.trailing,
+                    badgeCount: a.badgeCount,
+                    showChevron: false,
+                    iconColor: a.color,
+                    titleColor: a.color,
+                    onTap: () => Navigator.of(sheetContext).pop(a.id),
+                  ),
+            ],
+          );
+        },
       ),
     );
     if (id == null) return;
@@ -355,6 +389,7 @@ class _OverflowAction {
   final VoidCallback onSelected;
   final int badgeCount;
   final Color? color;
+  final Widget? trailing;
 
   const _OverflowAction(
     this.id,
@@ -363,5 +398,6 @@ class _OverflowAction {
     this.onSelected, {
     this.badgeCount = 0,
     this.color,
+    this.trailing,
   });
 }

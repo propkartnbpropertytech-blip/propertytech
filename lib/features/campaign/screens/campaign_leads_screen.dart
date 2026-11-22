@@ -370,7 +370,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
   static bool isNotInterestedStatus(String? status) {
     if (status == null) return false;
     final s = status.trim().toLowerCase();
-    return s == 'not interested' || s == 'not_interested' || s == 'disqualified';
+    return s == 'not interested' || s == 'not_interested' || s == 'disqualified' || s == 'rejected' || s.startsWith('rejected');
   }
 
   static bool _isLeadArchived(IntegrationLeadModel l) {
@@ -378,6 +378,8 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     if (l.rawJson['archived_at'] != null && l.rawJson['archived_at'].toString().trim().isNotEmpty) return true;
     final s = l.campaignStatus.trim().toLowerCase();
     if (s == 'archived' || s == 'property listed' || s == 'listed') return true;
+    final sls = (l.salesListingStatus ?? l.rawJson['sales_listing_status']?.toString() ?? '').trim().toLowerCase();
+    if (sls == 'listed' || sls == 'property listed') return true;
     if (l.importStatus.trim().toLowerCase() == 'archived') return true;
     return false;
   }
@@ -1830,11 +1832,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       badgeBorder = const Color(0xFF0284C7).withValues(alpha: 0.45);
       textColor = const Color(0xFF0284C7);
       icon = Icons.phone_callback_rounded;
-    } else if (status == 'Follow up' || status == 'Follow-up') {
+    } else if (status == 'Follow up' || status == 'Follow-up' || status == 'Re-Follow-Up' || status == 'Re-Followup') {
       badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.15);
       badgeBorder = const Color(0xFFF59E0B).withValues(alpha: 0.45);
       textColor = const Color(0xFFF59E0B);
       icon = Icons.schedule_rounded;
+    } else if (status == 'Interested') {
+      badgeBg = const Color(0xFF10B981).withValues(alpha: 0.15);
+      badgeBorder = const Color(0xFF10B981).withValues(alpha: 0.45);
+      textColor = const Color(0xFF10B981);
+      icon = Icons.star_rounded;
     } else if (status == 'CNR') {
       badgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.15);
       badgeBorder = const Color(0xFFF59E0B).withValues(alpha: 0.45);
@@ -1855,7 +1862,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       badgeBorder = const Color(0xFF6366F1).withValues(alpha: 0.45);
       textColor = const Color(0xFF6366F1);
       icon = Icons.archive_rounded;
-    } else if (status == 'Not interested') {
+    } else if (status == 'Not interested' || status == 'Rejected') {
       badgeBg = const Color(0xFFEF4444).withValues(alpha: 0.15);
       badgeBorder = const Color(0xFFEF4444).withValues(alpha: 0.45);
       textColor = const Color(0xFFEF4444);
@@ -1873,8 +1880,12 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     }
 
     String label = status.isEmpty ? 'New' : status;
-    if ((status == 'Follow up' || status == 'Follow-up') && lead.followupScheduledAt != null) {
+    if ((status == 'Follow up' || status == 'Follow-up' || status == 'Re-Follow-Up' || status == 'Re-Followup') && lead.followupScheduledAt != null) {
       label = 'Follow up (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
+    } else if (status == 'Interested') {
+      label = 'Interested';
+    } else if (status == 'Not interested' || status == 'Rejected') {
+      label = 'Not interested';
     } else if (status == 'Callback' || status == 'Call Back') {
       if (lead.followupScheduledAt != null) {
         label = 'Callback (${DateFormat('d MMM, h:mm a').format(lead.followupScheduledAt!)})';
@@ -1887,7 +1898,7 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       label = telecallerName.isNotEmpty ? 'CNR ($telecallerName)' : 'CNR';
     } else if (status == 'Assigned' && lead.assignedToName?.isNotEmpty == true) {
       label = 'Assigned (${lead.assignedToName})';
-    } else if ((status == 'New' || status == 'Assigned' || status == 'Interested' || status.isEmpty) && telecallerName.isNotEmpty) {
+    } else if ((status == 'New' || status == 'Assigned' || status.isEmpty) && telecallerName.isNotEmpty) {
       if (lead.allocationStatus == 'ASSIGNED_TO_TELECALLER') {
         label = 'Allocated: $telecallerName';
       } else if (lead.allocationStatus == 'IN_CALL') {
@@ -3686,13 +3697,21 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                             ? lead.getStringValue('notes')
                             : '-')))));
 
-    final markedBy = lead.notInterestedByName?.trim().isNotEmpty == true
-        ? lead.notInterestedByName!
-        : (lead.statusUpdatedByName?.trim().isNotEmpty == true
-            ? lead.statusUpdatedByName!
-            : (lead.assignedTelecallerName?.trim().isNotEmpty == true
-                ? lead.assignedTelecallerName!
-                : (lead.isTelecallerAdmin ? 'Admin' : 'Telecaller')));
+    final assignedEmployee = lead.assignedToName?.trim().isNotEmpty == true ? lead.assignedToName!.trim() : null;
+    String markedBy = 'Employee';
+    if (lead.notInterestedByName?.trim().isNotEmpty == true &&
+        !lead.notInterestedByName!.trim().toLowerCase().contains('admin')) {
+      markedBy = lead.notInterestedByName!.trim();
+    } else if (assignedEmployee != null && assignedEmployee.isNotEmpty) {
+      markedBy = assignedEmployee;
+    } else if (lead.notInterestedByName?.trim().isNotEmpty == true) {
+      markedBy = lead.notInterestedByName!.trim();
+    } else if (lead.statusUpdatedByName?.trim().isNotEmpty == true &&
+        !lead.statusUpdatedByName!.trim().toLowerCase().contains('admin')) {
+      markedBy = lead.statusUpdatedByName!.trim();
+    } else if (lead.assignedTelecallerName?.trim().isNotEmpty == true) {
+      markedBy = lead.assignedTelecallerName!.trim();
+    }
 
     final markedAtText = lead.notInterestedAt != null
         ? DateFormat('d MMM yyyy, h:mm a').format(lead.notInterestedAt!.toLocal())
@@ -3834,10 +3853,10 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.support_agent_rounded, size: 13, color: Color(0xFF6366F1)),
+                              const Icon(Icons.person_outline_rounded, size: 13, color: Color(0xFF6366F1)),
                               const SizedBox(width: 4),
                               Text(
-                                'Marked by: $markedBy',
+                                'Employee: $markedBy',
                                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
                               ),
                             ],
@@ -6388,11 +6407,31 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
     final email = lead.getStringValue('email').isNotEmpty ? lead.getStringValue('email') : '-';
     final role = (RoleGuard.currentUser?.role ?? '').toLowerCase();
     final isRealAdmin = role == 'admin' || role == 'super admin';
-    final markedBy = lead.notInterestedByName?.trim().isNotEmpty == true
-        ? lead.notInterestedByName!
-        : (lead.statusUpdatedByName?.trim().isNotEmpty == true
-            ? lead.statusUpdatedByName!
-            : (lead.assignedTelecallerName?.trim().isNotEmpty == true ? lead.assignedTelecallerName! : '-'));
+    String leadTypeLabel = 'Properties Listing Lead';
+    final normType = lead.leadType.trim().toLowerCase();
+    if (normType.contains('property') || normType.contains('listing')) {
+      leadTypeLabel = 'Properties Listing Lead';
+    } else if (normType.contains('req')) {
+      leadTypeLabel = 'Requirement Lead';
+    } else {
+      leadTypeLabel = lead.leadType.isNotEmpty ? lead.leadType : 'Properties Listing Lead';
+    }
+
+    final assignedEmployee = lead.assignedToName?.trim().isNotEmpty == true ? lead.assignedToName!.trim() : null;
+    String markedBy = '-';
+    if (lead.notInterestedByName?.trim().isNotEmpty == true &&
+        !lead.notInterestedByName!.trim().toLowerCase().contains('admin')) {
+      markedBy = lead.notInterestedByName!.trim();
+    } else if (assignedEmployee != null && assignedEmployee.isNotEmpty) {
+      markedBy = assignedEmployee;
+    } else if (lead.notInterestedByName?.trim().isNotEmpty == true) {
+      markedBy = lead.notInterestedByName!.trim();
+    } else if (lead.statusUpdatedByName?.trim().isNotEmpty == true &&
+        !lead.statusUpdatedByName!.trim().toLowerCase().contains('admin')) {
+      markedBy = lead.statusUpdatedByName!.trim();
+    } else if (lead.assignedTelecallerName?.trim().isNotEmpty == true) {
+      markedBy = lead.assignedTelecallerName!.trim();
+    }
     final notInterestedReason = lead.notInterestedReason?.trim().isNotEmpty == true
         ? lead.notInterestedReason!.trim()
         : (lead.getStringValue('not_interested_reason').isNotEmpty
@@ -6439,16 +6478,16 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: (lead.leadType == 'Property Listing' ? const Color(0xFF0284C7) : const Color(0xFF10B981)).withValues(alpha: 0.15),
+                  color: (normType.contains('property') || normType.contains('listing') ? const Color(0xFF0284C7) : const Color(0xFF10B981)).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: (lead.leadType == 'Property Listing' ? const Color(0xFF0284C7) : const Color(0xFF10B981)).withValues(alpha: 0.4)),
+                  border: Border.all(color: (normType.contains('property') || normType.contains('listing') ? const Color(0xFF0284C7) : const Color(0xFF10B981)).withValues(alpha: 0.4)),
                 ),
                 child: Text(
-                  lead.leadType,
+                  leadTypeLabel,
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: lead.leadType == 'Property Listing' ? const Color(0xFF0284C7) : const Color(0xFF10B981),
+                    color: normType.contains('property') || normType.contains('listing') ? const Color(0xFF0284C7) : const Color(0xFF10B981),
                   ),
                 ),
               ),
@@ -6532,15 +6571,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
             ),
           ],
 
-          if (isRealAdmin && markedBy != '-') ...[
+          if (markedBy != '-') ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.support_agent_rounded, size: 14, color: Color(0xFF6366F1)),
+                  const Icon(Icons.person_outline_rounded, size: 14, color: Color(0xFF6366F1)),
                   const SizedBox(width: 6),
-                  Text('Marked by: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context))),
+                  Text('Employee: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context))),
                   Expanded(
                     child: Text(
                       markedBy,
@@ -6675,11 +6714,11 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
         children: [
           cell(const Text('#'), header: true),
           cell(const Text('Source'), header: true),
-          cell(const Text('Type'), header: true),
+          cell(const Text('Lead Type'), header: true),
           cell(const Text('Name'), header: true),
           cell(const Text('Phone'), header: true),
           cell(const Text('Email'), header: true),
-          if (isRealAdmin) cell(const Text('Telecaller'), header: true),
+          cell(const Text('Employee'), header: true),
           cell(const Text('Notes'), header: true),
           cell(const Text('Actions'), header: true),
         ],
@@ -6694,11 +6733,31 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ? lead.getStringValue('phone_number')
           : (lead.getStringValue('phone').isNotEmpty ? lead.getStringValue('phone') : '-');
       final email = lead.getStringValue('email').isNotEmpty ? lead.getStringValue('email') : '-';
-      final markedBy = lead.notInterestedByName?.trim().isNotEmpty == true
-          ? lead.notInterestedByName!
-          : (lead.statusUpdatedByName?.trim().isNotEmpty == true
-              ? lead.statusUpdatedByName!
-              : (lead.assignedTelecallerName?.trim().isNotEmpty == true ? lead.assignedTelecallerName! : '-'));
+      String leadTypeLabel = 'Properties Listing Lead';
+      final normType = lead.leadType.trim().toLowerCase();
+      if (normType.contains('property') || normType.contains('listing')) {
+        leadTypeLabel = 'Properties Listing Lead';
+      } else if (normType.contains('req')) {
+        leadTypeLabel = 'Requirement Lead';
+      } else {
+        leadTypeLabel = lead.leadType.isNotEmpty ? lead.leadType : 'Properties Listing Lead';
+      }
+
+      final assignedEmployee = lead.assignedToName?.trim().isNotEmpty == true ? lead.assignedToName!.trim() : null;
+      String markedBy = '-';
+      if (lead.notInterestedByName?.trim().isNotEmpty == true &&
+          !lead.notInterestedByName!.trim().toLowerCase().contains('admin')) {
+        markedBy = lead.notInterestedByName!.trim();
+      } else if (assignedEmployee != null && assignedEmployee.isNotEmpty) {
+        markedBy = assignedEmployee;
+      } else if (lead.notInterestedByName?.trim().isNotEmpty == true) {
+        markedBy = lead.notInterestedByName!.trim();
+      } else if (lead.statusUpdatedByName?.trim().isNotEmpty == true &&
+          !lead.statusUpdatedByName!.trim().toLowerCase().contains('admin')) {
+        markedBy = lead.statusUpdatedByName!.trim();
+      } else if (lead.assignedTelecallerName?.trim().isNotEmpty == true) {
+        markedBy = lead.assignedTelecallerName!.trim();
+      }
       final notInterestedNote = lead.notInterestedReason?.trim().isNotEmpty == true
           ? lead.notInterestedReason!.trim()
           : (lead.getStringValue('not_interested_reason').isNotEmpty
@@ -6725,7 +6784,15 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
               ),
             ),
           ),
-          cell(Text(lead.leadType)),
+          cell(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                leadTypeLabel,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
           cell(
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -6745,27 +6812,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           ),
           cell(Text(phone)),
           cell(Text(email)),
-          if (isRealAdmin)
-            cell(
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.support_agent_rounded, size: 14, color: Color(0xFF6366F1)),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      markedBy,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF6366F1),
-                      ),
-                      overflow: TextOverflow.ellipsis,
+          cell(
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person_outline_rounded, size: 14, color: Color(0xFF6366F1)),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    markedBy,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6366F1),
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
           cell(
             Align(
               alignment: Alignment.centerLeft,
@@ -6869,28 +6935,17 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: Table(
-        columnWidths: isRealAdmin
-            ? const {
-                0: FlexColumnWidth(0.4),
-                1: FlexColumnWidth(0.85),
-                2: FlexColumnWidth(0.95),
-                3: FlexColumnWidth(1.45),
-                4: FlexColumnWidth(1.15),
-                5: FlexColumnWidth(1.35),
-                6: FlexColumnWidth(1.15),
-                7: FlexColumnWidth(0.9),
-                8: FlexColumnWidth(0.6),
-              }
-            : const {
-                0: FlexColumnWidth(0.45),
-                1: FlexColumnWidth(0.9),
-                2: FlexColumnWidth(1.0),
-                3: FlexColumnWidth(1.6),
-                4: FlexColumnWidth(1.2),
-                5: FlexColumnWidth(1.4),
-                6: FlexColumnWidth(0.9),
-                7: FlexColumnWidth(0.6),
-              },
+        columnWidths: const {
+          0: FlexColumnWidth(0.35),
+          1: FlexColumnWidth(0.85),
+          2: FlexColumnWidth(1.4),
+          3: FlexColumnWidth(1.35),
+          4: FlexColumnWidth(1.1),
+          5: FlexColumnWidth(1.2),
+          6: FlexColumnWidth(1.2),
+          7: FlexColumnWidth(0.8),
+          8: FlexColumnWidth(0.55),
+        },
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         border: TableBorder(
           horizontalInside: BorderSide(color: CRMColors.borderOf(context)),

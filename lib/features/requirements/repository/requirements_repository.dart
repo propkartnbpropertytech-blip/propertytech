@@ -463,7 +463,9 @@ class RequirementsRepository {
       propertyTypeId: keep(incoming.propertyTypeId, submitted.propertyTypeId),
       propertyTypeName: keep(incoming.propertyTypeName, submitted.propertyTypeName),
       propertyTypeIds: incoming.propertyTypeIds.isNotEmpty ? incoming.propertyTypeIds : submitted.propertyTypeIds,
-      remarks: keep(incoming.remarks, submitted.remarks),
+      remarks: (submitted.remarks != null && submitted.remarks!.trim().isNotEmpty)
+          ? submitted.remarks
+          : (incoming.remarks ?? submitted.remarks),
       notes: keep(incoming.notes, submitted.notes),
       adminId: keep(incoming.adminId, submitted.adminId),
       createdBy: keep(incoming.createdBy, submitted.createdBy),
@@ -608,6 +610,9 @@ class RequirementsRepository {
   void _applyRequirementFieldPatch(RequirementLocal match, Map<String, dynamic> data) {
     if (data.containsKey('notes')) {
       match.notes = data['notes'] as String?;
+    }
+    if (data.containsKey('remarks')) {
+      match.remarks = data['remarks'] as String?;
     }
     if (data.containsKey('assigned_to')) {
       match.assignedTo = data['assigned_to'] as String?;
