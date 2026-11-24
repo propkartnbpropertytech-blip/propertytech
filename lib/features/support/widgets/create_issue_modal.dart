@@ -239,16 +239,18 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = ThemeManager().primaryColor;
     final screenSize = MediaQuery.of(context).size;
-    final modalWidth = math.min(screenSize.width - 32, 680.0);
-    final modalHeight = math.min(screenSize.height - 40, 760.0);
+    final isMobile = screenSize.width < 600;
+    final modalWidth = isMobile ? screenSize.width - 16 : math.min(screenSize.width - 32, 680.0);
+    final modalHeight = isMobile ? screenSize.height - 24 : math.min(screenSize.height - 40, 760.0);
 
     return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 40, vertical: isMobile ? 12 : 24),
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: modalWidth,
         height: modalHeight,
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(isMobile ? 14 : 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -965,22 +967,54 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
         const SizedBox(height: 16),
 
         // Priority Level Selector
-        Row(
-          children: [
-            const Text('Priority Level:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: SegmentedButton<String>(
-                segments: _priorities
-                    .map((p) => ButtonSegment<String>(value: p, label: Text(p, style: const TextStyle(fontSize: 12))))
-                    .toList(),
-                selected: {_priority},
-                onSelectionChanged: (val) {
-                  setState(() => _priority = val.first);
-                },
-              ),
-            ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 420;
+            if (isNarrow) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Priority Level:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      segments: _priorities
+                          .map((p) => ButtonSegment<String>(
+                                value: p,
+                                label: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(p, style: const TextStyle(fontSize: 11)),
+                                ),
+                              ))
+                          .toList(),
+                      selected: {_priority},
+                      onSelectionChanged: (val) {
+                        setState(() => _priority = val.first);
+                      },
+                    ),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                const Text('Priority Level:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: SegmentedButton<String>(
+                    segments: _priorities
+                        .map((p) => ButtonSegment<String>(value: p, label: Text(p, style: const TextStyle(fontSize: 12))))
+                        .toList(),
+                    selected: {_priority},
+                    onSelectionChanged: (val) {
+                      setState(() => _priority = val.first);
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
 
         const SizedBox(height: 16),
@@ -1732,16 +1766,19 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
   // FOOTER ACTIONS
   // ───────────────────────────────────────────────────────────────────────────
   Widget _buildFooter(bool isDark, Color primaryColor) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         if (_currentStep > 0 && _currentStep < 4)
           OutlinedButton.icon(
             onPressed: () => setState(() => _currentStep--),
-            icon: const Icon(Icons.arrow_back_rounded, size: 16),
-            label: const Text('Previous'),
+            icon: const Icon(Icons.arrow_back_rounded, size: 15),
+            label: Text(isMobile ? 'Back' : 'Previous', style: TextStyle(fontSize: isMobile ? 12 : 13)),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: isMobile ? 8 : 10),
+              visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
             ),
           )
         else
@@ -1753,9 +1790,13 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
             if (_currentStep < 4) ...[
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12, vertical: isMobile ? 8 : 10),
+                  visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
+                ),
+                child: Text('Cancel', style: TextStyle(fontSize: isMobile ? 12 : 13)),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: isMobile ? 6 : 8),
             ],
 
             if (_currentStep == 0)
@@ -1774,12 +1815,13 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
                     _currentStep = 1;
                   });
                 },
-                icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                label: const Text('Next Step'),
+                icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                label: Text('Next Step', style: TextStyle(fontSize: isMobile ? 12 : 13)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: isMobile ? 8 : 10),
+                  visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
                 ),
               )
             else if (_currentStep == 1)
@@ -1794,12 +1836,13 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
                     _currentStep = 2;
                   });
                 },
-                icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                label: const Text('Next Step'),
+                icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                label: Text('Next Step', style: TextStyle(fontSize: isMobile ? 12 : 13)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: isMobile ? 8 : 10),
+                  visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
                 ),
               )
             else if (_currentStep == 2)
@@ -1814,12 +1857,13 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
                     _currentStep = 3;
                   });
                 },
-                icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                label: const Text('Next Step'),
+                icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                label: Text('Next Step', style: TextStyle(fontSize: isMobile ? 12 : 13)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: isMobile ? 8 : 10),
+                  visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
                 ),
               )
             else if (_currentStep == 3)
@@ -1831,12 +1875,13 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
                         height: 14,
                         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                       )
-                    : const Icon(Icons.send_rounded, size: 16),
-                label: Text(_isSubmitting ? 'Submitting...' : 'Submit Ticket'),
+                    : const Icon(Icons.send_rounded, size: 15),
+                label: Text(_isSubmitting ? 'Submitting...' : 'Submit Ticket', style: TextStyle(fontSize: isMobile ? 12 : 13)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: isMobile ? 8 : 10),
+                  visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
                 ),
               )
             else
@@ -1845,9 +1890,10 @@ class _CreateIssueModalState extends State<CreateIssueModal> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 18, vertical: isMobile ? 8 : 10),
+                  visualDensity: isMobile ? VisualDensity.compact : VisualDensity.standard,
                 ),
-                child: const Text('Done / Close'),
+                child: Text('Done / Close', style: TextStyle(fontSize: isMobile ? 12 : 13)),
               ),
           ],
         ),

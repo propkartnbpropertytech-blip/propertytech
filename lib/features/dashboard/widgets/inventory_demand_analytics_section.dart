@@ -44,6 +44,10 @@ class _InventoryDemandAnalyticsSectionState
   String? _leadDemandError;
   List<AreaCountItem> _leadDemandItems = [];
 
+  // Mobile Collapsible Card States (collapsed by default)
+  bool _isAvailableInventoryExpanded = false;
+  bool _isLeadDemandExpanded = false;
+
   // Palette tokens
   static const List<Color> _segmentColors = [
     Color(0xFF2563EB), // Royal Blue
@@ -232,7 +236,8 @@ class _InventoryDemandAnalyticsSectionState
             final isDesktop = constraints.maxWidth >= 980;
 
             final mapCard = _buildLocalityMapCard(isDark);
-            final intelligenceCard = _buildDynamicIntelligenceCard(isDark);
+            final intelligenceCard =
+                _buildDynamicIntelligenceCard(isDark, isMobile: !isDesktop);
 
             if (isDesktop) {
               return Row(
@@ -259,7 +264,12 @@ class _InventoryDemandAnalyticsSectionState
         const SizedBox(height: 18),
 
         // BOTTOM SECTION: Preserved Lead Area Demand Card
-        _buildLeadDemandCard(isDark),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 980;
+            return _buildLeadDemandCard(isDark, isMobile: !isDesktop);
+          },
+        ),
       ],
     );
   }
@@ -1242,17 +1252,29 @@ class _InventoryDemandAnalyticsSectionState
   // 2. DYNAMIC INTELLIGENCE SIDE CARD
   // Changes dynamically based on _activeMode
   // ============================================================
-  Widget _buildDynamicIntelligenceCard(bool isDark) {
+  Widget _buildDynamicIntelligenceCard(bool isDark, {bool isMobile = false}) {
     if (_isLocalityLoading) {
       return Container(
-        height: 450,
+        height: (isMobile && !_isAvailableInventoryExpanded) ? null : 450,
         padding: const EdgeInsets.all(CRMSpacing.md),
         decoration: _cardBoxDecoration(isDark),
         child: Column(
           children: [
-            const CRMSkeleton(width: 180, height: 16, borderRadius: 4),
-            const SizedBox(height: 16),
-            Expanded(child: _buildSkeletonList()),
+            Row(
+              children: [
+                const CRMSkeleton(width: 180, height: 16, borderRadius: 4),
+                const Spacer(),
+                if (isMobile)
+                  _buildCollapsibleChevron(
+                      _isAvailableInventoryExpanded, isDark),
+              ],
+            ),
+            if (!isMobile || _isAvailableInventoryExpanded) ...[
+              const SizedBox(height: 16),
+              isMobile
+                  ? _buildSkeletonList()
+                  : Expanded(child: _buildSkeletonList()),
+            ],
           ],
         ),
       );
@@ -1260,7 +1282,7 @@ class _InventoryDemandAnalyticsSectionState
 
     if (_localityError != null) {
       return Container(
-        height: 450,
+        height: (isMobile && !_isAvailableInventoryExpanded) ? null : 450,
         padding: const EdgeInsets.all(CRMSpacing.md),
         decoration: _cardBoxDecoration(isDark),
         child: _buildErrorState(
@@ -1273,23 +1295,23 @@ class _InventoryDemandAnalyticsSectionState
 
     switch (_activeMode) {
       case 'all_leads':
-        return _buildAllLeadsIntelligence(isDark);
+        return _buildAllLeadsIntelligence(isDark, isMobile: isMobile);
       case 'deal_won':
-        return _buildDealWonIntelligence(isDark);
+        return _buildDealWonIntelligence(isDark, isMobile: isMobile);
       case 'listing':
-        return _buildListingLeadsIntelligence(isDark);
+        return _buildListingLeadsIntelligence(isDark, isMobile: isMobile);
       case 'requirement':
-        return _buildRequirementLeadsIntelligence(isDark);
+        return _buildRequirementLeadsIntelligence(isDark, isMobile: isMobile);
       case 'compare':
-        return _buildCompareIntelligence(isDark);
+        return _buildCompareIntelligence(isDark, isMobile: isMobile);
       case 'inventory':
       default:
-        return _buildInventoryIntelligence(isDark);
+        return _buildInventoryIntelligence(isDark, isMobile: isMobile);
     }
   }
 
   // A. INVENTORY MODE PANEL
-  Widget _buildInventoryIntelligence(bool isDark) {
+  Widget _buildInventoryIntelligence(bool isDark, {bool isMobile = false}) {
     final totalInventory = _localityData.totalInventory;
     final sorted = [..._localityData.localities]
       ..sort((a, b) => b.availableProperties.compareTo(a.availableProperties));
@@ -1298,203 +1320,247 @@ class _InventoryDemandAnalyticsSectionState
     final top5Sum = top5.fold<int>(0, (s, i) => s + i.availableProperties);
     final otherCount = totalInventory - top5Sum;
 
+    final headerContent = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.apartment_rounded,
+            size: 18,
+            color: Color(0xFF2563EB),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Available Inventory by Area',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Active stock (${widget.businessType})',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (sorted.isNotEmpty && (!isMobile || _isAvailableInventoryExpanded))
+          TextButton(
+            onPressed: () => _showAllLocalitiesDialog(
+              context: context,
+              title: 'Available Inventory by Area',
+              subtitle:
+                  'All ${widget.businessType} available properties ranked by locality ($totalInventory total)',
+              localities: sorted,
+              metricGetter: (item) => item.availableProperties,
+              barColor: const Color(0xFF2563EB),
+              tooltipSuffix: 'available properties',
+              isDark: isDark,
+              onItemTap: (item) => _openInventoryDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+                status: 'Available',
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFF2563EB),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'View All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 3),
+                Icon(Icons.arrow_forward_rounded, size: 13),
+              ],
+            ),
+          ),
+        if (isMobile) ...[
+          const SizedBox(width: 6),
+          _buildCollapsibleChevron(_isAvailableInventoryExpanded, isDark),
+        ],
+      ],
+    );
+
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isAvailableInventoryExpanded =
+                !_isAvailableInventoryExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: headerContent,
+          )
+        : headerContent;
+
+    final totalWidget = Tooltip(
+      message: 'Click to view all $totalInventory available properties',
+      child: InkWell(
+        onTap: () => _openInventoryDrilldown(status: 'Available'),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$totalInventory',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF2563EB),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Available Properties',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.arrow_forward_rounded,
+                  size: 14, color: Color(0xFF2563EB)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final distributionBarWidget = _buildStackedDistributionBar(
+      top5: top5,
+      otherCount: otherCount,
+      total: totalInventory,
+      metricGetter: (item) => item.availableProperties,
+      metricSuffix: 'available properties',
+      isDark: isDark,
+      onOtherTap: () => _openInventoryDrilldown(status: 'Available'),
+    );
+
+    final rankedListWidget = Column(
+      children: [
+        ...List.generate(top5.length, (index) {
+          final item = top5[index];
+          final color =
+              _segmentColors[index % _segmentColors.length];
+          final pct = totalInventory > 0
+              ? (item.availableProperties / totalInventory) * 100.0
+              : 0.0;
+
+          return _buildRankedRow(
+            name: item.areaName,
+            count: item.availableProperties,
+            percentage: pct,
+            color: color,
+            onTap: () {
+              setState(() => _selectedLocality = item);
+              _mapController.move(
+                LatLng(item.latitude, item.longitude),
+                12.5,
+              );
+              _openInventoryDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+                status: 'Available',
+              );
+            },
+            isDark: isDark,
+          );
+        }),
+        if (otherCount > 0) ...[
+          _buildRankedRow(
+            name: 'Other',
+            count: otherCount,
+            percentage: (otherCount / totalInventory) * 100.0,
+            color: _segmentColors.last,
+            onTap: () => _openInventoryDrilldown(status: 'Available'),
+            isDark: isDark,
+          ),
+        ],
+      ],
+    );
+
+    if (!isMobile) {
+      return Container(
+        height: 450,
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            totalWidget,
+            const SizedBox(height: 12),
+            distributionBarWidget,
+            const SizedBox(height: 14),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: rankedListWidget,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      height: 450,
       padding: const EdgeInsets.all(CRMSpacing.md),
       decoration: _cardBoxDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.apartment_rounded,
-                  size: 18,
-                  color: Color(0xFF2563EB),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Available Inventory by Area',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Active stock (${widget.businessType})',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (sorted.isNotEmpty)
-                TextButton(
-                  onPressed: () => _showAllLocalitiesDialog(
-                    context: context,
-                    title: 'Available Inventory by Area',
-                    subtitle:
-                        'All ${widget.businessType} available properties ranked by locality ($totalInventory total)',
-                    localities: sorted,
-                    metricGetter: (item) => item.availableProperties,
-                    barColor: const Color(0xFF2563EB),
-                    tooltipSuffix: 'available properties',
-                    isDark: isDark,
-                    onItemTap: (item) => _openInventoryDrilldown(
-                      areaId: item.areaId,
-                      areaName: item.areaName,
-                      status: 'Available',
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF2563EB),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View All',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 3),
-                      Icon(Icons.arrow_forward_rounded, size: 13),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Total count (Clickable to open all available inventory drilldown)
-          Tooltip(
-            message: 'Click to view all $totalInventory available properties',
-            child: InkWell(
-              onTap: () => _openInventoryDrilldown(status: 'Available'),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '$totalInventory',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: Color(0xFF2563EB),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Available Properties',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF2563EB)),
-                  ],
-                ),
-              ),
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 14),
+                totalWidget,
+                const SizedBox(height: 12),
+                distributionBarWidget,
+                const SizedBox(height: 14),
+                rankedListWidget,
+              ],
             ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // 100% Stacked Distribution Bar
-          _buildStackedDistributionBar(
-            top5: top5,
-            otherCount: otherCount,
-            total: totalInventory,
-            metricGetter: (item) => item.availableProperties,
-            metricSuffix: 'available properties',
-            isDark: isDark,
-            onOtherTap: () => _openInventoryDrilldown(status: 'Available'),
-          ),
-
-          const SizedBox(height: 14),
-
-          // Exact Ranked List (Top 5 + Other)
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: [
-                  ...List.generate(top5.length, (index) {
-                    final item = top5[index];
-                    final color =
-                        _segmentColors[index % _segmentColors.length];
-                    final pct = totalInventory > 0
-                        ? (item.availableProperties / totalInventory) * 100.0
-                        : 0.0;
-
-                    return _buildRankedRow(
-                      name: item.areaName,
-                      count: item.availableProperties,
-                      percentage: pct,
-                      color: color,
-                      onTap: () {
-                        setState(() => _selectedLocality = item);
-                        _mapController.move(
-                          LatLng(item.latitude, item.longitude),
-                          12.5,
-                        );
-                        _openInventoryDrilldown(
-                          areaId: item.areaId,
-                          areaName: item.areaName,
-                          status: 'Available',
-                        );
-                      },
-                      isDark: isDark,
-                    );
-                  }),
-                  if (otherCount > 0) ...[
-                    _buildRankedRow(
-                      name: 'Other',
-                      count: otherCount,
-                      percentage: (otherCount / totalInventory) * 100.0,
-                      color: _segmentColors.last,
-                      onTap: () => _openInventoryDrilldown(status: 'Available'),
-                      isDark: isDark,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            crossFadeState: _isAvailableInventoryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -1502,7 +1568,7 @@ class _InventoryDemandAnalyticsSectionState
   }
 
   // B. ALL LEADS MODE PANEL
-  Widget _buildAllLeadsIntelligence(bool isDark) {
+  Widget _buildAllLeadsIntelligence(bool isDark, {bool isMobile = false}) {
     final totalLeads = _localityData.totalLeads;
     final sorted = [..._localityData.localities]
       ..sort((a, b) => b.totalLeads.compareTo(a.totalLeads));
@@ -1511,201 +1577,245 @@ class _InventoryDemandAnalyticsSectionState
     final top5Sum = top5.fold<int>(0, (s, i) => s + i.totalLeads);
     final otherCount = totalLeads - top5Sum;
 
+    final headerContent = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.people_alt_rounded,
+            size: 18,
+            color: Color(0xFF0284C7),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'All Inbound Leads by Area',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'All channels & sources ($totalLeads total)',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (sorted.isNotEmpty && (!isMobile || _isAvailableInventoryExpanded))
+          TextButton(
+            onPressed: () => _showAllLocalitiesDialog(
+              context: context,
+              title: 'All Inbound Leads by Area',
+              subtitle:
+                  'All buyer & listing inquiries ranked by locality ($totalLeads total)',
+              localities: sorted,
+              metricGetter: (item) => item.totalLeads,
+              barColor: const Color(0xFF0284C7),
+              tooltipSuffix: 'leads',
+              isDark: isDark,
+              onItemTap: (item) => _openLeadsDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFF0284C7),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'View All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 3),
+                Icon(Icons.arrow_forward_rounded, size: 13),
+              ],
+            ),
+          ),
+        if (isMobile) ...[
+          const SizedBox(width: 6),
+          _buildCollapsibleChevron(_isAvailableInventoryExpanded, isDark),
+        ],
+      ],
+    );
+
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isAvailableInventoryExpanded =
+                !_isAvailableInventoryExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: headerContent,
+          )
+        : headerContent;
+
+    final totalWidget = Tooltip(
+      message: 'Click to view all $totalLeads inbound leads',
+      child: InkWell(
+        onTap: () => _openLeadsDrilldown(),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$totalLeads',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF0284C7),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Total Inbound Leads',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.arrow_forward_rounded,
+                  size: 14, color: Color(0xFF0284C7)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final distributionBarWidget = _buildStackedDistributionBar(
+      top5: top5,
+      otherCount: otherCount,
+      total: totalLeads,
+      metricGetter: (item) => item.totalLeads,
+      metricSuffix: 'leads',
+      isDark: isDark,
+      onOtherTap: () => _openLeadsDrilldown(),
+    );
+
+    final rankedListWidget = Column(
+      children: [
+        ...List.generate(top5.length, (index) {
+          final item = top5[index];
+          final color =
+              _segmentColors[index % _segmentColors.length];
+          final pct = totalLeads > 0
+              ? (item.totalLeads / totalLeads) * 100.0
+              : 0.0;
+
+          return _buildRankedRow(
+            name: item.areaName,
+            count: item.totalLeads,
+            percentage: pct,
+            color: color,
+            onTap: () {
+              setState(() => _selectedLocality = item);
+              _mapController.move(
+                LatLng(item.latitude, item.longitude),
+                12.5,
+              );
+              _openLeadsDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+              );
+            },
+            isDark: isDark,
+          );
+        }),
+        if (otherCount > 0) ...[
+          _buildRankedRow(
+            name: 'Other',
+            count: otherCount,
+            percentage: (otherCount / totalLeads) * 100.0,
+            color: _segmentColors.last,
+            onTap: () => _openLeadsDrilldown(),
+            isDark: isDark,
+          ),
+        ],
+      ],
+    );
+
+    if (!isMobile) {
+      return Container(
+        height: 450,
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            totalWidget,
+            const SizedBox(height: 12),
+            distributionBarWidget,
+            const SizedBox(height: 14),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: rankedListWidget,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      height: 450,
       padding: const EdgeInsets.all(CRMSpacing.md),
       decoration: _cardBoxDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0284C7).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.people_alt_rounded,
-                  size: 18,
-                  color: Color(0xFF0284C7),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'All Inbound Leads by Area',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'All channels & sources ($totalLeads total)',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (sorted.isNotEmpty)
-                TextButton(
-                  onPressed: () => _showAllLocalitiesDialog(
-                    context: context,
-                    title: 'All Inbound Leads by Area',
-                    subtitle:
-                        'All buyer & listing inquiries ranked by locality ($totalLeads total)',
-                    localities: sorted,
-                    metricGetter: (item) => item.totalLeads,
-                    barColor: const Color(0xFF0284C7),
-                    tooltipSuffix: 'leads',
-                    isDark: isDark,
-                    onItemTap: (item) => _openLeadsDrilldown(
-                      areaId: item.areaId,
-                      areaName: item.areaName,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF0284C7),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View All',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 3),
-                      Icon(Icons.arrow_forward_rounded, size: 13),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Total count (Clickable to open all leads drilldown)
-          Tooltip(
-            message: 'Click to view all $totalLeads inbound leads',
-            child: InkWell(
-              onTap: () => _openLeadsDrilldown(),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '$totalLeads',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: Color(0xFF0284C7),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total Inbound Leads',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF0284C7)),
-                  ],
-                ),
-              ),
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 14),
+                totalWidget,
+                const SizedBox(height: 12),
+                distributionBarWidget,
+                const SizedBox(height: 14),
+                rankedListWidget,
+              ],
             ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // 100% Stacked Distribution Bar
-          _buildStackedDistributionBar(
-            top5: top5,
-            otherCount: otherCount,
-            total: totalLeads,
-            metricGetter: (item) => item.totalLeads,
-            metricSuffix: 'leads',
-            isDark: isDark,
-            onOtherTap: () => _openLeadsDrilldown(),
-          ),
-
-          const SizedBox(height: 14),
-
-          // Exact Ranked List (Top 5 + Other)
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: [
-                  ...List.generate(top5.length, (index) {
-                    final item = top5[index];
-                    final color =
-                        _segmentColors[index % _segmentColors.length];
-                    final pct = totalLeads > 0
-                        ? (item.totalLeads / totalLeads) * 100.0
-                        : 0.0;
-
-                    return _buildRankedRow(
-                      name: item.areaName,
-                      count: item.totalLeads,
-                      percentage: pct,
-                      color: color,
-                      onTap: () {
-                        setState(() => _selectedLocality = item);
-                        _mapController.move(
-                          LatLng(item.latitude, item.longitude),
-                          12.5,
-                        );
-                        _openLeadsDrilldown(
-                          areaId: item.areaId,
-                          areaName: item.areaName,
-                        );
-                      },
-                      isDark: isDark,
-                    );
-                  }),
-                  if (otherCount > 0) ...[
-                    _buildRankedRow(
-                      name: 'Other',
-                      count: otherCount,
-                      percentage: (otherCount / totalLeads) * 100.0,
-                      color: _segmentColors.last,
-                      onTap: () => _openLeadsDrilldown(),
-                      isDark: isDark,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            crossFadeState: _isAvailableInventoryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -1713,191 +1823,239 @@ class _InventoryDemandAnalyticsSectionState
   }
 
   // C. DEALS WON MODE PANEL
-  Widget _buildDealWonIntelligence(bool isDark) {
+  Widget _buildDealWonIntelligence(bool isDark, {bool isMobile = false}) {
     final totalWon = _localityData.totalDealWonLeads;
     final sorted = [..._localityData.localities]
       ..sort((a, b) => b.dealWonLeads.compareTo(a.dealWonLeads));
 
     final wonLocalities = sorted.where((l) => l.dealWonLeads > 0).toList();
 
+    final headerContent = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.verified_rounded,
+            size: 18,
+            color: Color(0xFF10B981),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Deals Won by Area',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Successfully closed transactions ($totalWon won)',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (wonLocalities.isNotEmpty && (!isMobile || _isAvailableInventoryExpanded))
+          TextButton(
+            onPressed: () => _showAllLocalitiesDialog(
+              context: context,
+              title: 'Deals Won by Area',
+              subtitle:
+                  'All closed deals ranked by locality ($totalWon total)',
+              localities: wonLocalities,
+              metricGetter: (item) => item.dealWonLeads,
+              barColor: const Color(0xFF10B981),
+              tooltipSuffix: 'deals won',
+              isDark: isDark,
+              onItemTap: (item) => _openLeadsDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+                isDealWon: true,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFF10B981),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'View All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 3),
+                Icon(Icons.arrow_forward_rounded, size: 13),
+              ],
+            ),
+          ),
+        if (isMobile) ...[
+          const SizedBox(width: 6),
+          _buildCollapsibleChevron(_isAvailableInventoryExpanded, isDark),
+        ],
+      ],
+    );
+
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isAvailableInventoryExpanded =
+                !_isAvailableInventoryExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: headerContent,
+          )
+        : headerContent;
+
+    final totalWidget = Tooltip(
+      message: 'Click to view all $totalWon deals won',
+      child: InkWell(
+        onTap: () => _openLeadsDrilldown(isDealWon: true),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$totalWon',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Total Deals Won',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.arrow_forward_rounded,
+                  size: 14, color: Color(0xFF10B981)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final dealsListWidget = wonLocalities.isEmpty
+        ? _buildEmptyState(
+            message: 'No deals won recorded across localities',
+            isDark: isDark,
+          )
+        : Column(
+            children: wonLocalities.map((item) {
+              final pct = totalWon > 0
+                  ? (item.dealWonLeads / totalWon) * 100.0
+                  : 0.0;
+              final ratio = totalWon > 0
+                  ? (item.dealWonLeads / totalWon).clamp(0.05, 1.0)
+                  : 0.0;
+
+              return _buildMetricProgressBarRow(
+                name: item.areaName,
+                count: item.dealWonLeads,
+                ratio: ratio,
+                percentage: pct,
+                color: const Color(0xFF10B981),
+                onTap: () {
+                  setState(() => _selectedLocality = item);
+                  _mapController.move(
+                    LatLng(item.latitude, item.longitude),
+                    12.5,
+                  );
+                  _openLeadsDrilldown(
+                    areaId: item.areaId,
+                    areaName: item.areaName,
+                    isDealWon: true,
+                  );
+                },
+                isDark: isDark,
+              );
+            }).toList(),
+          );
+
+    if (!isMobile) {
+      return Container(
+        height: 450,
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            totalWidget,
+            const SizedBox(height: 14),
+            Expanded(
+              child: wonLocalities.isEmpty
+                  ? _buildEmptyState(
+                      message: 'No deals won recorded across localities',
+                      isDark: isDark,
+                    )
+                  : SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: dealsListWidget,
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      height: 450,
       padding: const EdgeInsets.all(CRMSpacing.md),
       decoration: _cardBoxDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.verified_rounded,
-                  size: 18,
-                  color: Color(0xFF10B981),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Deals Won by Area',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Successfully closed transactions ($totalWon won)',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (wonLocalities.isNotEmpty)
-                TextButton(
-                  onPressed: () => _showAllLocalitiesDialog(
-                    context: context,
-                    title: 'Deals Won by Area',
-                    subtitle:
-                        'All closed deals ranked by locality ($totalWon total)',
-                    localities: wonLocalities,
-                    metricGetter: (item) => item.dealWonLeads,
-                    barColor: const Color(0xFF10B981),
-                    tooltipSuffix: 'deals won',
-                    isDark: isDark,
-                    onItemTap: (item) => _openLeadsDrilldown(
-                      areaId: item.areaId,
-                      areaName: item.areaName,
-                      isDealWon: true,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF10B981),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View All',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 3),
-                      Icon(Icons.arrow_forward_rounded, size: 13),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Total count (Clickable to open all deals won drilldown)
-          Tooltip(
-            message: 'Click to view all $totalWon deals won',
-            child: InkWell(
-              onTap: () => _openLeadsDrilldown(isDealWon: true),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '$totalWon',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: Color(0xFF10B981),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total Deals Won',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF10B981)),
-                  ],
-                ),
-              ),
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 14),
+                totalWidget,
+                const SizedBox(height: 14),
+                dealsListWidget,
+              ],
             ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // List of localities with deals won
-          Expanded(
-            child: wonLocalities.isEmpty
-                ? _buildEmptyState(
-                    message: 'No deals won recorded across localities',
-                    isDark: isDark,
-                  )
-                : SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      children: wonLocalities.map((item) {
-                        final pct = totalWon > 0
-                            ? (item.dealWonLeads / totalWon) * 100.0
-                            : 0.0;
-                        final ratio = totalWon > 0
-                            ? (item.dealWonLeads / totalWon).clamp(0.05, 1.0)
-                            : 0.0;
-
-                        return _buildMetricProgressBarRow(
-                          name: item.areaName,
-                          count: item.dealWonLeads,
-                          ratio: ratio,
-                          percentage: pct,
-                          color: const Color(0xFF10B981),
-                          onTap: () {
-                            setState(() => _selectedLocality = item);
-                            _mapController.move(
-                              LatLng(item.latitude, item.longitude),
-                              12.5,
-                            );
-                            _openLeadsDrilldown(
-                              areaId: item.areaId,
-                              areaName: item.areaName,
-                              isDealWon: true,
-                            );
-                          },
-                          isDark: isDark,
-                        );
-                      }).toList(),
-                    ),
-                  ),
+            crossFadeState: _isAvailableInventoryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -1905,7 +2063,7 @@ class _InventoryDemandAnalyticsSectionState
   }
 
   // B. LISTING LEADS MODE PANEL
-  Widget _buildListingLeadsIntelligence(bool isDark) {
+  Widget _buildListingLeadsIntelligence(bool isDark, {bool isMobile = false}) {
     final totalListings = _localityData.totalListingLeads;
     final sorted = [..._localityData.localities]
       ..sort((a, b) => b.listingLeads.compareTo(a.listingLeads));
@@ -1913,183 +2071,231 @@ class _InventoryDemandAnalyticsSectionState
     final topItems = sorted.where((l) => l.listingLeads > 0).take(6).toList();
     final maxCount = topItems.isNotEmpty ? topItems.first.listingLeads : 1;
 
+    final headerContent = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.sell_outlined,
+            size: 18,
+            color: Color(0xFF0D9488),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Listing Leads by Area',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Seller & landlord listings',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (sorted.isNotEmpty && (!isMobile || _isAvailableInventoryExpanded))
+          TextButton(
+            onPressed: () => _showAllLocalitiesDialog(
+              context: context,
+              title: 'Listing Leads by Area',
+              subtitle:
+                  'All listing leads ranked by locality ($totalListings total)',
+              localities: sorted,
+              metricGetter: (item) => item.listingLeads,
+              barColor: const Color(0xFF0D9488),
+              tooltipSuffix: 'listing leads',
+              isDark: isDark,
+              onItemTap: (item) => _openLeadsDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+                leadType: 'Listing',
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFF0D9488),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'View All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 3),
+                Icon(Icons.arrow_forward_rounded, size: 13),
+              ],
+            ),
+          ),
+        if (isMobile) ...[
+          const SizedBox(width: 6),
+          _buildCollapsibleChevron(_isAvailableInventoryExpanded, isDark),
+        ],
+      ],
+    );
+
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isAvailableInventoryExpanded =
+                !_isAvailableInventoryExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: headerContent,
+          )
+        : headerContent;
+
+    final totalWidget = Tooltip(
+      message: 'Click to view all $totalListings listing leads',
+      child: InkWell(
+        onTap: () => _openLeadsDrilldown(leadType: 'Listing'),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$totalListings',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF0D9488),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Total Listing Leads',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.arrow_forward_rounded,
+                  size: 14, color: Color(0xFF0D9488)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final listWidget = topItems.isEmpty
+        ? _buildEmptyState(
+            message: 'No listing leads recorded by area',
+            isDark: isDark,
+          )
+        : Column(
+            children: topItems.map((item) {
+              final ratio =
+                  (item.listingLeads / maxCount).clamp(0.05, 1.0);
+              final pct = totalListings > 0
+                  ? (item.listingLeads / totalListings) * 100.0
+                  : 0.0;
+
+              return _buildMetricProgressBarRow(
+                name: item.areaName,
+                count: item.listingLeads,
+                ratio: ratio,
+                percentage: pct,
+                color: const Color(0xFF0D9488),
+                onTap: () {
+                  setState(() => _selectedLocality = item);
+                  _mapController.move(
+                    LatLng(item.latitude, item.longitude),
+                    12.5,
+                  );
+                  _openLeadsDrilldown(
+                    areaId: item.areaId,
+                    areaName: item.areaName,
+                    leadType: 'Listing',
+                  );
+                },
+                isDark: isDark,
+              );
+            }).toList(),
+          );
+
+    if (!isMobile) {
+      return Container(
+        height: 450,
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            totalWidget,
+            const SizedBox(height: 14),
+            Expanded(
+              child: topItems.isEmpty
+                  ? _buildEmptyState(
+                      message: 'No listing leads recorded by area',
+                      isDark: isDark,
+                    )
+                  : SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: listWidget,
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      height: 450,
       padding: const EdgeInsets.all(CRMSpacing.md),
       decoration: _cardBoxDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D9488).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.sell_outlined,
-                  size: 18,
-                  color: Color(0xFF0D9488),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Listing Leads by Area',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Seller & landlord listings',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (sorted.isNotEmpty)
-                TextButton(
-                  onPressed: () => _showAllLocalitiesDialog(
-                    context: context,
-                    title: 'Listing Leads by Area',
-                    subtitle:
-                        'All listing leads ranked by locality ($totalListings total)',
-                    localities: sorted,
-                    metricGetter: (item) => item.listingLeads,
-                    barColor: const Color(0xFF0D9488),
-                    tooltipSuffix: 'listing leads',
-                    isDark: isDark,
-                    onItemTap: (item) => _openLeadsDrilldown(
-                      areaId: item.areaId,
-                      areaName: item.areaName,
-                      leadType: 'Listing',
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF0D9488),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View All',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 3),
-                      Icon(Icons.arrow_forward_rounded, size: 13),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Total count (Clickable to open all listing leads drilldown)
-          Tooltip(
-            message: 'Click to view all $totalListings listing leads',
-            child: InkWell(
-              onTap: () => _openLeadsDrilldown(leadType: 'Listing'),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '$totalListings',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: Color(0xFF0D9488),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total Listing Leads',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF0D9488)),
-                  ],
-                ),
-              ),
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 14),
+                totalWidget,
+                const SizedBox(height: 14),
+                listWidget,
+              ],
             ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // Ranked list with proportional bars
-          Expanded(
-            child: topItems.isEmpty
-                ? _buildEmptyState(
-                    message: 'No listing leads recorded by area',
-                    isDark: isDark,
-                  )
-                : SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      children: topItems.map((item) {
-                        final ratio =
-                            (item.listingLeads / maxCount).clamp(0.05, 1.0);
-                        final pct = totalListings > 0
-                            ? (item.listingLeads / totalListings) * 100.0
-                            : 0.0;
-
-                        return _buildMetricProgressBarRow(
-                          name: item.areaName,
-                          count: item.listingLeads,
-                          ratio: ratio,
-                          percentage: pct,
-                          color: const Color(0xFF0D9488),
-                          onTap: () {
-                            setState(() => _selectedLocality = item);
-                            _mapController.move(
-                              LatLng(item.latitude, item.longitude),
-                              12.5,
-                            );
-                            _openLeadsDrilldown(
-                              areaId: item.areaId,
-                              areaName: item.areaName,
-                              leadType: 'Listing',
-                            );
-                          },
-                          isDark: isDark,
-                        );
-                      }).toList(),
-                    ),
-                  ),
+            crossFadeState: _isAvailableInventoryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -2097,7 +2303,7 @@ class _InventoryDemandAnalyticsSectionState
   }
 
   // C. REQUIREMENT LEADS MODE PANEL
-  Widget _buildRequirementLeadsIntelligence(bool isDark) {
+  Widget _buildRequirementLeadsIntelligence(bool isDark, {bool isMobile = false}) {
     final totalRequirements = _localityData.totalRequirementLeads;
     final sorted = [..._localityData.localities]
       ..sort((a, b) => b.requirementLeads.compareTo(a.requirementLeads));
@@ -2105,183 +2311,231 @@ class _InventoryDemandAnalyticsSectionState
     final topItems = sorted.where((l) => l.requirementLeads > 0).take(6).toList();
     final maxCount = topItems.isNotEmpty ? topItems.first.requirementLeads : 1;
 
+    final headerContent = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.person_search_outlined,
+            size: 18,
+            color: Color(0xFF7C3AED),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Requirement Leads by Area',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Buyer & tenant demand inquiries',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (sorted.isNotEmpty && (!isMobile || _isAvailableInventoryExpanded))
+          TextButton(
+            onPressed: () => _showAllLocalitiesDialog(
+              context: context,
+              title: 'Requirement Leads by Area',
+              subtitle:
+                  'All requirement leads ranked by locality ($totalRequirements total)',
+              localities: sorted,
+              metricGetter: (item) => item.requirementLeads,
+              barColor: const Color(0xFF7C3AED),
+              tooltipSuffix: 'requirement leads',
+              isDark: isDark,
+              onItemTap: (item) => _openLeadsDrilldown(
+                areaId: item.areaId,
+                areaName: item.areaName,
+                leadType: 'Requirement',
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFF7C3AED),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'View All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 3),
+                Icon(Icons.arrow_forward_rounded, size: 13),
+              ],
+            ),
+          ),
+        if (isMobile) ...[
+          const SizedBox(width: 6),
+          _buildCollapsibleChevron(_isAvailableInventoryExpanded, isDark),
+        ],
+      ],
+    );
+
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isAvailableInventoryExpanded =
+                !_isAvailableInventoryExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: headerContent,
+          )
+        : headerContent;
+
+    final totalWidget = Tooltip(
+      message: 'Click to view all $totalRequirements requirement leads',
+      child: InkWell(
+        onTap: () => _openLeadsDrilldown(leadType: 'Requirement'),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$totalRequirements',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF7C3AED),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Total Requirement Leads',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.arrow_forward_rounded,
+                  size: 14, color: Color(0xFF7C3AED)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final listWidget = topItems.isEmpty
+        ? _buildEmptyState(
+            message: 'No requirement leads recorded by area',
+            isDark: isDark,
+          )
+        : Column(
+            children: topItems.map((item) {
+              final ratio =
+                  (item.requirementLeads / maxCount).clamp(0.05, 1.0);
+              final pct = totalRequirements > 0
+                  ? (item.requirementLeads / totalRequirements) * 100.0
+                  : 0.0;
+
+              return _buildMetricProgressBarRow(
+                name: item.areaName,
+                count: item.requirementLeads,
+                ratio: ratio,
+                percentage: pct,
+                color: const Color(0xFF7C3AED),
+                onTap: () {
+                  setState(() => _selectedLocality = item);
+                  _mapController.move(
+                    LatLng(item.latitude, item.longitude),
+                    12.5,
+                  );
+                  _openLeadsDrilldown(
+                    areaId: item.areaId,
+                    areaName: item.areaName,
+                    leadType: 'Requirement',
+                  );
+                },
+                isDark: isDark,
+              );
+            }).toList(),
+          );
+
+    if (!isMobile) {
+      return Container(
+        height: 450,
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            totalWidget,
+            const SizedBox(height: 14),
+            Expanded(
+              child: topItems.isEmpty
+                  ? _buildEmptyState(
+                      message: 'No requirement leads recorded by area',
+                      isDark: isDark,
+                    )
+                  : SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: listWidget,
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      height: 450,
       padding: const EdgeInsets.all(CRMSpacing.md),
       decoration: _cardBoxDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.person_search_outlined,
-                  size: 18,
-                  color: Color(0xFF7C3AED),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Requirement Leads by Area',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Buyer & tenant demand inquiries',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (sorted.isNotEmpty)
-                TextButton(
-                  onPressed: () => _showAllLocalitiesDialog(
-                    context: context,
-                    title: 'Requirement Leads by Area',
-                    subtitle:
-                        'All requirement leads ranked by locality ($totalRequirements total)',
-                    localities: sorted,
-                    metricGetter: (item) => item.requirementLeads,
-                    barColor: const Color(0xFF7C3AED),
-                    tooltipSuffix: 'requirement leads',
-                    isDark: isDark,
-                    onItemTap: (item) => _openLeadsDrilldown(
-                      areaId: item.areaId,
-                      areaName: item.areaName,
-                      leadType: 'Requirement',
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF7C3AED),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View All',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 3),
-                      Icon(Icons.arrow_forward_rounded, size: 13),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Total count (Clickable to open all requirement leads drilldown)
-          Tooltip(
-            message: 'Click to view all $totalRequirements requirement leads',
-            child: InkWell(
-              onTap: () => _openLeadsDrilldown(leadType: 'Requirement'),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '$totalRequirements',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: Color(0xFF7C3AED),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total Requirement Leads',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF7C3AED)),
-                  ],
-                ),
-              ),
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 14),
+                totalWidget,
+                const SizedBox(height: 14),
+                listWidget,
+              ],
             ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // Ranked list with proportional bars
-          Expanded(
-            child: topItems.isEmpty
-                ? _buildEmptyState(
-                    message: 'No requirement leads recorded by area',
-                    isDark: isDark,
-                  )
-                : SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      children: topItems.map((item) {
-                        final ratio =
-                            (item.requirementLeads / maxCount).clamp(0.05, 1.0);
-                        final pct = totalRequirements > 0
-                            ? (item.requirementLeads / totalRequirements) * 100.0
-                            : 0.0;
-
-                        return _buildMetricProgressBarRow(
-                          name: item.areaName,
-                          count: item.requirementLeads,
-                          ratio: ratio,
-                          percentage: pct,
-                          color: const Color(0xFF7C3AED),
-                          onTap: () {
-                            setState(() => _selectedLocality = item);
-                            _mapController.move(
-                              LatLng(item.latitude, item.longitude),
-                              12.5,
-                            );
-                            _openLeadsDrilldown(
-                              areaId: item.areaId,
-                              areaName: item.areaName,
-                              leadType: 'Requirement',
-                            );
-                          },
-                          isDark: isDark,
-                        );
-                      }).toList(),
-                    ),
-                  ),
+            crossFadeState: _isAvailableInventoryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -2289,7 +2543,7 @@ class _InventoryDemandAnalyticsSectionState
   }
 
   // D. COMPARE MODE PANEL
-  Widget _buildCompareIntelligence(bool isDark) {
+  Widget _buildCompareIntelligence(bool isDark, {bool isMobile = false}) {
     final localities = [..._localityData.localities];
     localities.sort((a, b) {
       // Sort by high requirement leads or demand ratio
@@ -2298,334 +2552,389 @@ class _InventoryDemandAnalyticsSectionState
 
     final selected = _selectedLocality;
 
-    return Container(
-      height: 450,
-      padding: const EdgeInsets.all(CRMSpacing.md),
-      decoration: _cardBoxDecoration(isDark),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header
-          Row(
+    final headerContent = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.insights_rounded,
+            size: 18,
+            color: Color(0xFF6366F1),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.insights_rounded,
-                  size: 18,
-                  color: Color(0xFF6366F1),
+              Text(
+                'Locality Demand vs Supply',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 2),
+              Text(
+                'Supply vs Buyer Requirement Ratio',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (localities.isNotEmpty && (!isMobile || _isAvailableInventoryExpanded))
+          TextButton(
+            onPressed: () => _showCompareTableDialog(
+              context: context,
+              localities: localities,
+              isDark: isDark,
+            ),
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFF6366F1),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Compare Table',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 3),
+                Icon(Icons.arrow_forward_rounded, size: 13),
+              ],
+            ),
+          ),
+        if (isMobile) ...[
+          const SizedBox(width: 6),
+          _buildCollapsibleChevron(_isAvailableInventoryExpanded, isDark),
+        ],
+      ],
+    );
+
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isAvailableInventoryExpanded =
+                !_isAvailableInventoryExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: headerContent,
+          )
+        : headerContent;
+
+    final compareListWidget = Column(
+      children: localities.take(selected != null ? 3 : 5).map((loc) {
+        final isCurrentSelected =
+            selected?.areaName.toLowerCase() == loc.areaName.toLowerCase();
+
+        return GestureDetector(
+          onTap: () {
+            setState(() => _selectedLocality = loc);
+            _mapController.move(
+              LatLng(loc.latitude, loc.longitude),
+              12.5,
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            decoration: BoxDecoration(
+              color: isCurrentSelected
+                  ? (isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFEEF2FF))
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isCurrentSelected
+                    ? const Color(0xFF6366F1)
+                    : Colors.transparent,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    loc.areaName,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFF1F5F9)
+                          : const Color(0xFF1E293B),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '🏠 ${loc.availableProperties}  🎯 ${loc.requirementLeads}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildStatusBadge(loc.demandStatus),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+
+    final detailCard = selected != null
+        ? Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF0F172A)
+                  : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFF334155)
+                    : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Locality Demand vs Supply',
+                      selected.areaName,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                         color: isDark
                             ? const Color(0xFFF8FAFC)
                             : const Color(0xFF0F172A),
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Supply vs Buyer Requirement Ratio',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
+                    Row(
+                      children: [
+                        _buildStatusBadge(selected.demandStatus),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _selectedLocality = null),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildCompactKpiBox(
+                        label: 'Available',
+                        value: '${selected.availableProperties}',
+                        color: const Color(0xFF2563EB),
+                        icon: Icons.apartment_rounded,
+                        isDark: isDark,
+                        onTap: () => _openInventoryDrilldown(
+                          areaId: selected.areaId,
+                          areaName: selected.areaName,
+                          status: 'Available',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildCompactKpiBox(
+                        label: 'Listings',
+                        value: '${selected.listingLeads}',
+                        color: const Color(0xFF0D9488),
+                        icon: Icons.sell_outlined,
+                        isDark: isDark,
+                        onTap: () => _openLeadsDrilldown(
+                          areaId: selected.areaId,
+                          areaName: selected.areaName,
+                          leadType: 'Listing',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildCompactKpiBox(
+                        label: 'Demand',
+                        value: '${selected.requirementLeads}',
+                        color: const Color(0xFF7C3AED),
+                        icon: Icons.person_search_outlined,
+                        isDark: isDark,
+                        onTap: () => _openLeadsDrilldown(
+                          areaId: selected.areaId,
+                          areaName: selected.areaName,
+                          leadType: 'Requirement',
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              if (localities.isNotEmpty)
-                TextButton(
-                  onPressed: () => _showCompareTableDialog(
-                    context: context,
-                    localities: localities,
-                    isDark: isDark,
-                  ),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF6366F1),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Compare Table',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(width: 3),
-                      Icon(Icons.arrow_forward_rounded, size: 13),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Detail Card if locality is selected
-          if (selected != null) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF0F172A)
-                    : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF334155)
-                      : const Color(0xFFE2E8F0),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        selected.areaName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: isDark
-                              ? const Color(0xFFF8FAFC)
-                              : const Color(0xFF0F172A),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          _buildStatusBadge(selected.demandStatus),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () => setState(() => _selectedLocality = null),
-                            child: Icon(
-                              Icons.close_rounded,
-                              size: 16,
-                              color: isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildCompactKpiBox(
-                          label: 'Available',
-                          value: '${selected.availableProperties}',
-                          color: const Color(0xFF2563EB),
-                          icon: Icons.apartment_rounded,
-                          isDark: isDark,
-                          onTap: () => _openInventoryDrilldown(
-                            areaId: selected.areaId,
-                            areaName: selected.areaName,
-                            status: 'Available',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildCompactKpiBox(
-                          label: 'Listings',
-                          value: '${selected.listingLeads}',
-                          color: const Color(0xFF0D9488),
-                          icon: Icons.sell_outlined,
-                          isDark: isDark,
-                          onTap: () => _openLeadsDrilldown(
-                            areaId: selected.areaId,
-                            areaName: selected.areaName,
-                            leadType: 'Listing',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildCompactKpiBox(
-                          label: 'Demand',
-                          value: '${selected.requirementLeads}',
-                          color: const Color(0xFF7C3AED),
-                          icon: Icons.person_search_outlined,
-                          isDark: isDark,
-                          onTap: () => _openLeadsDrilldown(
-                            areaId: selected.areaId,
-                            areaName: selected.areaName,
-                            leadType: 'Requirement',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: (selected.demandStatus == 'High Demand'
-                              ? const Color(0xFFEA580C)
-                              : (selected.demandStatus == 'Balanced'
-                                  ? const Color(0xFF0D9488)
-                                  : const Color(0xFF2563EB)))
-                          .withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      selected.demandStatus == 'High Demand'
-                          ? '⚡ High buyer demand (${selected.demandRatio.toStringAsFixed(1)}x ratio). Urgent need for new property listings!'
-                          : (selected.demandStatus == 'Balanced'
-                              ? '⚖️ Balanced market (${selected.demandRatio.toStringAsFixed(1)}x ratio). Supply matches buyer demand well.'
-                              : '📦 Ample inventory (${selected.demandRatio.toStringAsFixed(1)}x ratio). Focus on generating buyer requirements.'),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: selected.demandStatus == 'High Demand'
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (selected.demandStatus == 'High Demand'
                             ? const Color(0xFFEA580C)
                             : (selected.demandStatus == 'Balanced'
                                 ? const Color(0xFF0D9488)
-                                : const Color(0xFF2563EB)),
-                      ),
+                                : const Color(0xFF2563EB)))
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    selected.demandStatus == 'High Demand'
+                        ? '⚡ High buyer demand (${selected.demandRatio.toStringAsFixed(1)}x ratio). Urgent need for new property listings!'
+                        : (selected.demandStatus == 'Balanced'
+                            ? '⚖️ Balanced market (${selected.demandRatio.toStringAsFixed(1)}x ratio). Supply matches buyer demand well.'
+                            : '📦 Ample inventory (${selected.demandRatio.toStringAsFixed(1)}x ratio). Focus on generating buyer requirements.'),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: selected.demandStatus == 'High Demand'
+                          ? const Color(0xFFEA580C)
+                          : (selected.demandStatus == 'Balanced'
+                              ? const Color(0xFF0D9488)
+                              : const Color(0xFF2563EB)),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            Text(
-              'Other Top Localities',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: isDark
-                    ? const Color(0xFF94A3B8)
-                    : const Color(0xFF64748B),
-              ),
+          )
+        : Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
             ),
-            const SizedBox(height: 6),
-          ] else ...[
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.touch_app_outlined,
-                    size: 16,
-                    color: Color(0xFF6366F1),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Click any bubble on the map or row below to view detailed intelligence.',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: isDark
-                            ? const Color(0xFFCBD5E1)
-                            : const Color(0xFF334155),
-                      ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.touch_app_outlined,
+                  size: 16,
+                  color: Color(0xFF6366F1),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Click any bubble on the map or row below to view detailed intelligence.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? const Color(0xFFCBD5E1)
+                          : const Color(0xFF334155),
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+          );
+
+    if (!isMobile) {
+      return Container(
+        height: 450,
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 12),
+            detailCard,
+            const SizedBox(height: 10),
+            if (selected != null) ...[
+              Text(
+                'Other Top Localities',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: compareListWidget,
               ),
             ),
-            const SizedBox(height: 10),
           ],
+        ),
+      );
+    }
 
-          // Ranked localities comparison rows
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: localities.take(selected != null ? 3 : 5).map((loc) {
-                  final isCurrentSelected =
-                      selected?.areaName.toLowerCase() == loc.areaName.toLowerCase();
-
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() => _selectedLocality = loc);
-                      _mapController.move(
-                        LatLng(loc.latitude, loc.longitude),
-                        12.5,
-                      );
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isCurrentSelected
-                            ? (isDark
-                                ? const Color(0xFF334155)
-                                : const Color(0xFFEEF2FF))
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isCurrentSelected
-                              ? const Color(0xFF6366F1)
-                              : Colors.transparent,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              loc.areaName,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? const Color(0xFFF1F5F9)
-                                    : const Color(0xFF1E293B),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text(
-                            '🏠 ${loc.availableProperties}  🎯 ${loc.requirementLeads}',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _buildStatusBadge(loc.demandStatus),
-                        ],
-                      ),
+    return Container(
+      padding: const EdgeInsets.all(CRMSpacing.md),
+      decoration: _cardBoxDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                detailCard,
+                const SizedBox(height: 10),
+                if (selected != null) ...[
+                  Text(
+                    'Other Top Localities',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                compareListWidget,
+              ],
             ),
+            crossFadeState: _isAvailableInventoryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -2635,7 +2944,7 @@ class _InventoryDemandAnalyticsSectionState
   // ============================================================
   // 3. LEAD AREA DEMAND CARD (Preserved with Listing/Requirement toggle)
   // ============================================================
-  Widget _buildLeadDemandCard(bool isDark) {
+  Widget _buildLeadDemandCard(bool isDark, {bool isMobile = false}) {
     final isListing = _selectedLeadDemandType == 'listing';
     final accentColor = isListing
         ? const Color(0xFF0D9488) // Teal
@@ -2643,117 +2952,120 @@ class _InventoryDemandAnalyticsSectionState
 
     final totalLeads = _leadDemandItems.fold<int>(0, (s, i) => s + i.count);
 
-    return Container(
-      padding: const EdgeInsets.all(CRMSpacing.md),
-      decoration: _cardBoxDecoration(isDark),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header + Segmented Toggle
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 500;
+    final toggleWidget = FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xFF0F172A)
+              : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark
+                ? const Color(0xFF334155)
+                : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildTogglePill(
+              label: 'Listing',
+              isSelected: isListing,
+              activeColor: const Color(0xFF0D9488),
+              onTap: () {
+                if (_selectedLeadDemandType != 'listing') {
+                  setState(() => _selectedLeadDemandType = 'listing');
+                  _fetchLeadDemand();
+                }
+              },
+              isDark: isDark,
+            ),
+            _buildTogglePill(
+              label: 'Requirement',
+              isSelected: !isListing,
+              activeColor: const Color(0xFF7C3AED),
+              onTap: () {
+                if (_selectedLeadDemandType != 'requirement') {
+                  setState(() => _selectedLeadDemandType = 'requirement');
+                  _fetchLeadDemand();
+                }
+              },
+              isDark: isDark,
+            ),
+          ],
+        ),
+      ),
+    );
 
-              final toggleWidget = FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  height: 30,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
+    final titleContent = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: accentColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            isListing
+                ? Icons.sell_outlined
+                : Icons.person_search_outlined,
+            size: 18,
+            color: accentColor,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Lead Area Demand',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
                   color: isDark
-                      ? const Color(0xFF0F172A)
-                      : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildTogglePill(
-                      label: 'Listing',
-                      isSelected: isListing,
-                      activeColor: const Color(0xFF0D9488),
-                      onTap: () {
-                        if (_selectedLeadDemandType != 'listing') {
-                          setState(() => _selectedLeadDemandType = 'listing');
-                          _fetchLeadDemand();
-                        }
-                      },
-                      isDark: isDark,
-                    ),
-                    _buildTogglePill(
-                      label: 'Requirement',
-                      isSelected: !isListing,
-                      activeColor: const Color(0xFF7C3AED),
-                      onTap: () {
-                        if (_selectedLeadDemandType != 'requirement') {
-                          setState(() => _selectedLeadDemandType = 'requirement');
-                          _fetchLeadDemand();
-                        }
-                      },
-                      isDark: isDark,
-                    ),
-                  ],
+                      ? const Color(0xFFF8FAFC)
+                      : const Color(0xFF0F172A),
                 ),
               ),
-            );
+              const SizedBox(height: 2),
+              Text(
+                isListing
+                    ? 'Localities with top seller/landlord listings'
+                    : 'Localities with top buyer/tenant requirements',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
 
-              final titleContent = Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      isListing
-                          ? Icons.sell_outlined
-                          : Icons.person_search_outlined,
-                      size: 18,
-                      color: accentColor,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Lead Area Demand',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: isDark
-                                ? const Color(0xFFF8FAFC)
-                                : const Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          isListing
-                              ? 'Localities with top seller/landlord listings'
-                              : 'Localities with top buyer/tenant requirements',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: isDark
-                                ? const Color(0xFF94A3B8)
-                                : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-
+    final header = isMobile
+        ? InkWell(
+            onTap: () => setState(() => _isLeadDemandExpanded = !_isLeadDemandExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: Row(
+              children: [
+                Expanded(child: titleContent),
+                const SizedBox(width: 8),
+                _buildCollapsibleChevron(_isLeadDemandExpanded, isDark),
+              ],
+            ),
+          )
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 500;
               if (isNarrow) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2774,87 +3086,126 @@ class _InventoryDemandAnalyticsSectionState
                 );
               }
             },
-          ),
-          const SizedBox(height: 12),
+          );
 
-          // Sub-header with View All
-          if (!_isLeadDemandLoading &&
-              _leadDemandError == null &&
-              _leadDemandItems.length > 6)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => _showAllAreasDialog(
-                  context: context,
-                  title: isListing
-                      ? 'Listing Leads by Area'
-                      : 'Requirement Leads by Area',
-                  subtitle:
-                      'All ${isListing ? "Listing" : "Requirement"} leads ranked by locality ($totalLeads total)',
-                  items: _leadDemandItems,
-                  barColor: accentColor,
-                  tooltipSuffix:
-                      isListing ? 'listing leads' : 'requirement leads',
-                  isDark: isDark,
-                  onItemTap: (item) => _openLeadsDrilldown(
-                    areaId: item.areaId,
-                    areaName: item.area,
-                    leadType: isListing ? 'Listing' : 'Requirement',
-                  ),
-                ),
-                style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: accentColor,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'View All (${_leadDemandItems.length})',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 3),
-                    const Icon(Icons.arrow_forward_rounded, size: 13),
-                  ],
+    final viewAllButton = (!_isLeadDemandLoading &&
+            _leadDemandError == null &&
+            _leadDemandItems.length > 6)
+        ? Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => _showAllAreasDialog(
+                context: context,
+                title: isListing
+                    ? 'Listing Leads by Area'
+                    : 'Requirement Leads by Area',
+                subtitle:
+                    'All ${isListing ? "Listing" : "Requirement"} leads ranked by locality ($totalLeads total)',
+                items: _leadDemandItems,
+                barColor: accentColor,
+                tooltipSuffix:
+                    isListing ? 'listing leads' : 'requirement leads',
+                isDark: isDark,
+                onItemTap: (item) => _openLeadsDrilldown(
+                  areaId: item.areaId,
+                  areaName: item.area,
+                  leadType: isListing ? 'Listing' : 'Requirement',
                 ),
               ),
-            )
-          else
-            const SizedBox(height: 4),
-
-          // Content body
-          if (_isLeadDemandLoading)
-            _buildSkeletonList()
-          else if (_leadDemandError != null)
-            _buildErrorState(
-              error: _leadDemandError!,
-              onRetry: _fetchLeadDemand,
-              isDark: isDark,
-            )
-          else if (_leadDemandItems.isEmpty)
-            _buildEmptyState(
-              message:
-                  'No ${isListing ? "listing" : "requirement"} leads found',
-              isDark: isDark,
-            )
-          else
-            _buildHorizontalBars(
-              items: _leadDemandItems.take(6).toList(),
-              barColor: accentColor,
-              tooltipSuffix:
-                  isListing ? 'listing leads' : 'requirement leads',
-              isDark: isDark,
-              onItemTap: (item) => _openLeadsDrilldown(
-                areaId: item.areaId,
-                areaName: item.area,
-                leadType: isListing ? 'Listing' : 'Requirement',
+              style: TextButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                visualDensity: VisualDensity.compact,
+                foregroundColor: accentColor,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'View All (${_leadDemandItems.length})',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  const Icon(Icons.arrow_forward_rounded, size: 13),
+                ],
               ),
             ),
+          )
+        : const SizedBox(height: 4);
+
+    final contentBody = (_isLeadDemandLoading)
+        ? _buildSkeletonList()
+        : (_leadDemandError != null)
+            ? _buildErrorState(
+                error: _leadDemandError!,
+                onRetry: _fetchLeadDemand,
+                isDark: isDark,
+              )
+            : (_leadDemandItems.isEmpty)
+                ? _buildEmptyState(
+                    message:
+                        'No ${isListing ? "listing" : "requirement"} leads found',
+                    isDark: isDark,
+                  )
+                : _buildHorizontalBars(
+                    items: _leadDemandItems.take(6).toList(),
+                    barColor: accentColor,
+                    tooltipSuffix:
+                        isListing ? 'listing leads' : 'requirement leads',
+                    isDark: isDark,
+                    onItemTap: (item) => _openLeadsDrilldown(
+                      areaId: item.areaId,
+                      areaName: item.area,
+                      leadType: isListing ? 'Listing' : 'Requirement',
+                    ),
+                  );
+
+    if (!isMobile) {
+      return Container(
+        padding: const EdgeInsets.all(CRMSpacing.md),
+        decoration: _cardBoxDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            header,
+            const SizedBox(height: 12),
+            viewAllButton,
+            contentBody,
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(CRMSpacing.md),
+      decoration: _cardBoxDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                toggleWidget,
+                const SizedBox(height: 8),
+                viewAllButton,
+                contentBody,
+              ],
+            ),
+            crossFadeState: _isLeadDemandExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
+          ),
         ],
       ),
     );
@@ -2863,6 +3214,29 @@ class _InventoryDemandAnalyticsSectionState
   // ============================================================
   // REUSABLE HELPER WIDGETS
   // ============================================================
+  Widget _buildCollapsibleChevron(bool isExpanded, bool isDark) {
+    return AnimatedRotation(
+      turns: isExpanded ? 0.5 : 0.0,
+      duration: const Duration(milliseconds: 250),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xFF334155).withValues(alpha: 0.5)
+              : const Color(0xFFF1F5F9),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          size: 18,
+          color: isDark
+              ? const Color(0xFF94A3B8)
+              : const Color(0xFF64748B),
+        ),
+      ),
+    );
+  }
+
   BoxDecoration _cardBoxDecoration(bool isDark) {
     return BoxDecoration(
       color: isDark ? const Color(0xFF1E293B) : Colors.white,

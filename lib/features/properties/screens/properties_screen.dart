@@ -79,6 +79,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   String _activeCategoryTab = 'Residential';
   String? _activeBhkFilter;
   bool _hasAutoOpenedAdd = false;
+  String? _lastAutoOpenedActionKey;
   String? _lastOpenedKey;
   String? _selectedCategory;
   final List<String> _selectedConfigurations = [];
@@ -1011,14 +1012,201 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         .where((p) => _selectedPropertyIds.contains(p.id))
         .toList();
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600 || MobileLayout.isMobileShell(screenWidth);
+    final isDark = Theme.of(context).brightness == Brightness.dark || ThemeManager().isDarkMode;
+
+    if (isMobile) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: CRMSpacing.m),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : CRMColors.primaryOf(context).withOpacity(0.08),
+          borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : CRMColors.primaryOf(context).withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: CRMColors.primaryOf(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${selectedProps.length} Selected',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedPropertyIds.clear();
+                    });
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    'Deselect All',
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFF38BDF8) : CRMColors.primaryOf(context),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (_can('page.properties.share')) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CRMColors.primaryOf(context),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: const Icon(Icons.share_outlined, size: 15),
+                      label: const Text(
+                        'Share Property',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: () {
+                        _showSharePropertiesDialogForSelectedProperties(selectedProps);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E88E5),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: const Icon(Icons.compare_arrows_rounded, size: 15, color: Colors.white),
+                      label: const Text(
+                        'Compare Property',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: () {
+                        _showComparePropertiesDialog(selectedProps);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: CRMColors.danger,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    minimumSize: const Size(0, 36),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 15),
+                  label: const Text(
+                    'Move to Bin',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: () {
+                    _showBulkDeleteConfirmDialog(selectedProps);
+                  },
+                ),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E88E5),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: const Icon(Icons.compare_arrows_rounded, size: 15, color: Colors.white),
+                      label: const Text(
+                        'Compare Property',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: () {
+                        _showComparePropertiesDialog(selectedProps);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CRMColors.danger,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 15),
+                      label: const Text(
+                        'Move to Bin',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: () {
+                        _showBulkDeleteConfirmDialog(selectedProps);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: CRMSpacing.m),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: CRMColors.primaryOf(context).withOpacity(0.08),
+        color: isDark ? const Color(0xFF1E293B) : CRMColors.primaryOf(context).withOpacity(0.08),
         borderRadius: BorderRadius.circular(CRMBorderRadius.m),
         border: Border.all(
-          color: CRMColors.primaryOf(context).withOpacity(0.3),
+          color: isDark ? const Color(0xFF334155) : CRMColors.primaryOf(context).withOpacity(0.3),
           width: 1,
         ),
       ),
@@ -1054,7 +1242,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     _selectedPropertyIds.clear();
                   });
                 },
-                child: const Text('Deselect All'),
+                child: Text(
+                  'Deselect All',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF38BDF8) : CRMColors.primaryOf(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
@@ -3167,7 +3361,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       ],
                     ),
                     const SizedBox(height: CRMSpacing.s),
-                    const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                    Divider(height: 1, color: (Theme.of(context).brightness == Brightness.dark || ThemeManager().isDarkMode) ? const Color(0xFF334155) : const Color(0xFFEEEEEE)),
                     const SizedBox(height: CRMSpacing.s),
                     Row(
                       children: [
@@ -3392,11 +3586,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
           if (rawLoadedList.isNotEmpty) {
 properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metadata);
-            final action =
-                GoRouterState.of(context).uri.queryParameters['action'];
+            final action = GoRouterState.of(context).uri.queryParameters['action'];
+            final actionT = GoRouterState.of(context).uri.queryParameters['t'];
+            final actionKey = action != null ? '${action}_$actionT' : null;
             if (action == 'add' &&
-                !_hasAutoOpenedAdd &&
+                _lastAutoOpenedActionKey != actionKey &&
                 metadata != null) {
+              _lastAutoOpenedActionKey = actionKey;
               _hasAutoOpenedAdd = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _showAddEditPropertyDialog(context, metadata!);
@@ -3973,6 +4169,7 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
         child: Row(
           children: categories.map((cat) {
             final isSelected = _activeCategoryTab == cat;
+            final isDark = Theme.of(context).brightness == Brightness.dark || ThemeManager().isDarkMode;
             return Padding(
               padding: const EdgeInsets.only(right: CRMSpacing.s),
               child: ChoiceChip(
@@ -3982,14 +4179,16 @@ properties = _getEffectiveFilteredProperties(currentUserId, rawLoadedList, metad
                   style: TextStyle(
                     color: isSelected
                         ? Colors.white
-                        : CRMColors.textSecondaryOf(context),
+                        : (isDark ? const Color(0xFFE2E8F0) : CRMColors.textSecondaryOf(context)),
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                     fontSize: 13,
                   ),
                 ),
                 selected: isSelected,
                 selectedColor: CRMColors.primary,
-                backgroundColor: CRMColors.backgroundOf(context).withOpacity(0.5),
+                backgroundColor: isDark
+                    ? const Color(0xFF1E293B)
+                    : CRMColors.backgroundOf(context).withOpacity(0.5),
                 onSelected: (selected) {
                   if (selected) {
                     setState(() {
@@ -6839,6 +7038,7 @@ _recomputeFilteredProperties();
   }
 
   Widget _buildMobileTabButton(String label, bool isActive, Color activeColor) {
+    final isDark = Theme.of(context).brightness == Brightness.dark || ThemeManager().isDarkMode;
     return GestureDetector(
       onTap: () {
         if (_activeListingTab != label) {
@@ -6854,7 +7054,7 @@ _recomputeFilteredProperties();
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
+          color: isActive ? (isDark ? const Color(0xFF1E293B) : Colors.white) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: isActive
               ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))]
@@ -6865,7 +7065,7 @@ _recomputeFilteredProperties();
           style: TextStyle(
             fontSize: 12,
             fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-            color: isActive ? activeColor : const Color(0xFF64748B),
+            color: isActive ? activeColor : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF64748B)),
           ),
         ),
       ),

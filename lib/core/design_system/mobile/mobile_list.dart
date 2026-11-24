@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_spacing.dart';
 import '../tokens/app_typography.dart';
@@ -154,12 +155,14 @@ class MobileListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark || ThemeManager().isDarkMode;
     final primary = CRMColors.primaryOf(context);
     final effectiveIconColor = iconColor ?? primary;
     final effectiveTitleColor = titleColor ??
         (enabled
-            ? CRMColors.textOf(context)
-            : CRMColors.textMutedOf(context));
+            ? (isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D))
+            : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)));
+    final effectiveSubtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A);
     final label = [
       title,
       if (subtitle != null && subtitle!.isNotEmpty) subtitle!,
@@ -211,7 +214,7 @@ class MobileListItem extends StatelessWidget {
                           Text(
                             subtitle!,
                             style: CRMTypography.caption.copyWith(
-                              color: CRMColors.textSecondaryOf(context),
+                              color: effectiveSubtitleColor,
                             ),
                           ),
                       ],
@@ -230,7 +233,7 @@ class MobileListItem extends StatelessWidget {
                     child: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
-                      color: CRMColors.textSecondaryOf(context),
+                      color: effectiveSubtitleColor,
                     ),
                   ),
               ],

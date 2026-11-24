@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/theme_manager.dart';
 import '../tokens/app_colors.dart';
 import '../tokens/app_spacing.dart';
 import '../tokens/app_typography.dart';
@@ -41,7 +42,9 @@ class MobileSheet extends StatelessWidget {
       useSafeArea: true,
       isDismissible: isDismissible,
       enableDrag: isDismissible,
-      backgroundColor: CRMColors.surfaceOf(context),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: false,
       shape: _sheetShape(),
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * maxHeightFactor,
@@ -52,81 +55,99 @@ class MobileSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeManager = ThemeManager();
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final bottomSafe = MediaQuery.viewPaddingOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: keyboard),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: CRMSpacing.xs),
-          ExcludeSemantics(
-            child: Container(
-              width: 32,
-              height: 4,
-              decoration: BoxDecoration(
-                color: CRMColors.borderOf(context),
-                borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: CRMSpacing.m),
-            child: Row(
+
+    return ListenableBuilder(
+      listenable: themeManager,
+      builder: (context, _) {
+        final isDark = themeManager.isDarkMode || Theme.of(context).brightness == Brightness.dark;
+        final sheetBg = isDark ? const Color(0xFF1E293B) : Colors.white;
+        final sheetText = isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D);
+        final sheetBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE8ECF2);
+
+        return Material(
+          color: sheetBg,
+          shape: _sheetShape(),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: keyboard),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: Semantics(
-                    header: true,
-                    child: Text(
-                      title,
-                      style: CRMTypography.sectionTitle.copyWith(
-                        color: CRMColors.textOf(context),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                const SizedBox(height: CRMSpacing.xs),
+                ExcludeSemantics(
+                  child: Container(
+                    width: 32,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: sheetBorder,
+                      borderRadius: BorderRadius.circular(CRMBorderRadius.round),
                     ),
                   ),
                 ),
-                MobileIconAction(
-                  icon: Icons.close_rounded,
-                  label: 'Close',
-                  onPressed: () => Navigator.of(context).maybePop(),
+                Padding(
+                  padding: const EdgeInsets.only(left: CRMSpacing.m),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Semantics(
+                          header: true,
+                          child: Text(
+                            title,
+                            style: CRMTypography.sectionTitle.copyWith(
+                              color: sheetText,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      MobileIconAction(
+                        icon: Icons.close_rounded,
+                        label: 'Close',
+                        color: sheetText,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                    ],
+                  ),
                 ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
+                    child: child,
+                  ),
+                ),
+                if (actions.isNotEmpty)
+                  Container(
+                    padding: EdgeInsets.fromLTRB(
+                      CRMSpacing.m,
+                      CRMSpacing.s,
+                      CRMSpacing.m,
+                      CRMSpacing.s + (keyboard > 0 ? 0 : bottomSafe),
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: sheetBorder),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < actions.length; i++) ...[
+                          if (i > 0) const SizedBox(width: CRMSpacing.s),
+                          Expanded(child: actions[i]),
+                        ],
+                      ],
+                    ),
+                  )
+                else
+                  SizedBox(height: CRMSpacing.m + bottomSafe),
               ],
             ),
           ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m),
-              child: child,
-            ),
-          ),
-          if (actions.isNotEmpty)
-            Container(
-              padding: EdgeInsets.fromLTRB(
-                CRMSpacing.m,
-                CRMSpacing.s,
-                CRMSpacing.m,
-                CRMSpacing.s + (keyboard > 0 ? 0 : bottomSafe),
-              ),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: CRMColors.borderOf(context)),
-                ),
-              ),
-              child: Row(
-                children: [
-                  for (var i = 0; i < actions.length; i++) ...[
-                    if (i > 0) const SizedBox(width: CRMSpacing.s),
-                    Expanded(child: actions[i]),
-                  ],
-                ],
-              ),
-            )
-          else
-            SizedBox(height: CRMSpacing.m + bottomSafe),
-        ],
-      ),
+        );
+      },
     );
   }
 }

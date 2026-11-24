@@ -32,6 +32,7 @@ class PipelineFunnelBar extends StatefulWidget {
 
 class _PipelineFunnelBarState extends State<PipelineFunnelBar> {
   String? _hoveredStageKey;
+  bool _isMobileExpanded = false;
 
   static Color _parseColor(dynamic rawColor) {
     if (rawColor is Color) return rawColor;
@@ -76,10 +77,163 @@ class _PipelineFunnelBarState extends State<PipelineFunnelBar> {
   @override
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
     final validStages = widget.stages.where((s) => (s['count'] as num? ?? 0) > 0).toList();
     final int displayTotal = widget.totalLeads > 0
         ? widget.totalLeads
         : widget.stages.fold<int>(0, (sum, s) => sum + (s['count'] as num? ?? 0).toInt());
+
+    Widget header = LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 420;
+
+        final titleContent = Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.account_tree_rounded,
+                size: 18,
+                color: Color(0xFF3B82F6),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Lead Lifecycle Pipeline',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                    ),
+                  ),
+                  Text(
+                    '100% Complete Distribution Engine',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+
+        final pillWidget = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.15 : 0.08),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.35 : 0.25),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.verified_rounded,
+                size: 13,
+                color: Color(0xFF10B981),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Total: ',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              AnimatedCountRoll(
+                value: displayTotal,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+              const Text(
+                ' Leads',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final trailingControls = isMobile
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  pillWidget,
+                  const SizedBox(width: 6),
+                  AnimatedRotation(
+                    turns: _isMobileExpanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155).withValues(alpha: 0.5) : const Color(0xFFF1F5F9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : pillWidget;
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              titleContent,
+              const SizedBox(height: 8),
+              trailingControls,
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: titleContent),
+            const SizedBox(width: 8),
+            trailingControls,
+          ],
+        );
+      },
+    );
+
+    if (isMobile) {
+      header = InkWell(
+        onTap: () => setState(() => _isMobileExpanded = !_isMobileExpanded),
+        borderRadius: BorderRadius.circular(10),
+        child: header,
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -100,125 +254,13 @@ class _PipelineFunnelBarState extends State<PipelineFunnelBar> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Responsive Header
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 420;
-
-              final titleContent = Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.2 : 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.account_tree_rounded,
-                      size: 18,
-                      color: Color(0xFF3B82F6),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Lead Lifecycle Pipeline',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                          ),
-                        ),
-                        Text(
-                          '100% Complete Distribution Engine',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-
-              final pillWidget = Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.15 : 0.08),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.35 : 0.25),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.verified_rounded,
-                      size: 13,
-                      color: Color(0xFF10B981),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Total: ',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                      ),
-                    ),
-                    AnimatedCountRoll(
-                      value: displayTotal,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF10B981),
-                      ),
-                    ),
-                    const Text(
-                      ' Leads',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF10B981),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-
-              if (isNarrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    titleContent,
-                    const SizedBox(height: 8),
-                    pillWidget,
-                  ],
-                );
-              }
-
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(child: titleContent),
-                  const SizedBox(width: 8),
-                  pillWidget,
-                ],
-              );
-            },
-          ),
-
-          const SizedBox(height: 14),
+          header,
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 14),
 
           // Proportional Stacked Funnel Bar
           if (widget.isLoading)
@@ -503,7 +545,15 @@ class _PipelineFunnelBarState extends State<PipelineFunnelBar> {
             ),
           ],
         ],
-      ),
-    );
-  }
+              ),
+              crossFadeState: (isMobile && !_isMobileExpanded)
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              duration: const Duration(milliseconds: 300),
+              sizeCurve: Curves.easeInOut,
+            ),
+          ],
+        ),
+      );
+    }
 }

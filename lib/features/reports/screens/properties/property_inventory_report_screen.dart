@@ -211,6 +211,7 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
   Widget build(BuildContext context) {
     final isDark = ThemeManager().isDarkMode;
     final primaryColor = CRMColors.primary;
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
       backgroundColor: CRMColors.backgroundOf(context),
@@ -219,32 +220,32 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
         color: primaryColor,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(CRMSpacing.l),
+          padding: EdgeInsets.all(isMobile ? 12 : CRMSpacing.l),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header & Subtitle
-              _buildHeader(isDark, primaryColor),
-              const SizedBox(height: 18),
+              _buildHeader(isDark, primaryColor, isMobile: isMobile),
+              SizedBox(height: isMobile ? 14 : 18),
 
               // 1. Main Tabs: Rent & Resale
               _buildMainTabs(isDark, primaryColor),
-              const SizedBox(height: 16),
+              SizedBox(height: isMobile ? 12 : 16),
 
               // 2. Category Filters Bar
               _buildCategoryFilters(isDark, primaryColor),
-              const SizedBox(height: 14),
+              SizedBox(height: isMobile ? 10 : 14),
 
               // 4. Date Filters Bar
               _buildDateFilters(isDark, primaryColor),
-              const SizedBox(height: 20),
+              SizedBox(height: isMobile ? 16 : 20),
 
               // 3. Property Performance KPI Cards
               _buildKpiCards(isDark, primaryColor),
-              const SizedBox(height: 24),
+              SizedBox(height: isMobile ? 18 : 24),
 
               // 5. Detailed Records Section
-              _buildRecordsSection(isDark, primaryColor),
+              _buildRecordsSection(isDark, primaryColor, isMobile: isMobile),
             ],
           ),
         ),
@@ -252,38 +253,46 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
     );
   }
 
-  Widget _buildHeader(bool isDark, Color primaryColor) {
+  Widget _buildHeader(bool isDark, Color primaryColor, {bool isMobile = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Property Reports',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.4,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Property Reports',
+                style: TextStyle(
+                  fontSize: isMobile ? 20 : 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.4,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Executive overview of inventory availability, media readiness, and property performance.',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              const SizedBox(height: 4),
+              Text(
+                'Executive overview of inventory availability, media readiness, and property performance.',
+                style: TextStyle(
+                  fontSize: isMobile ? 12 : 13,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
               ),
-            ),
-          ],
-        ),
-        if (_isLoading)
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor),
+            ],
           ),
+        ),
+        if (_isLoading) ...[
+          const SizedBox(width: 12),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -292,38 +301,41 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
     final rentCount = _data?.tabs.rentCount ?? 0;
     final resaleCount = _data?.tabs.resaleCount ?? 0;
 
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          ),
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildTabPill(
-            title: 'Rent',
-            count: rentCount,
-            isSelected: _activeTab == 'Rent',
-            icon: Icons.key_rounded,
-            isDark: isDark,
-            primaryColor: primaryColor,
-            onTap: () => _onTabChanged('Rent'),
-          ),
-          const SizedBox(width: 4),
-          _buildTabPill(
-            title: 'Resale',
-            count: resaleCount,
-            isSelected: _activeTab == 'Resale',
-            icon: Icons.real_estate_agent_rounded,
-            isDark: isDark,
-            primaryColor: primaryColor,
-            onTap: () => _onTabChanged('Resale'),
-          ),
-        ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildTabPill(
+              title: 'Rent',
+              count: rentCount,
+              isSelected: _activeTab == 'Rent',
+              icon: Icons.key_rounded,
+              isDark: isDark,
+              primaryColor: primaryColor,
+              onTap: () => _onTabChanged('Rent'),
+            ),
+            const SizedBox(width: 4),
+            _buildTabPill(
+              title: 'Resale',
+              count: resaleCount,
+              isSelected: _activeTab == 'Resale',
+              icon: Icons.real_estate_agent_rounded,
+              isDark: isDark,
+              primaryColor: primaryColor,
+              onTap: () => _onTabChanged('Resale'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -736,7 +748,7 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
     );
   }
 
-  Widget _buildRecordsSection(bool isDark, Color primaryColor) {
+  Widget _buildRecordsSection(bool isDark, Color primaryColor, {bool isMobile = false}) {
     final rows = _data?.rows ?? const [];
     final totalCount = _data?.filteredCount ?? rows.length;
 
@@ -764,22 +776,23 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
         children: [
           // Section Title & Controls Bar
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                Row(
+            padding: EdgeInsets.all(isMobile ? 12 : 16),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 580;
+
+                final titleWidget = Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      sectionTitle,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    Flexible(
+                      child: Text(
+                        sectionTitle,
+                        style: TextStyle(
+                          fontSize: isMobile ? 14.5 : 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -799,96 +812,120 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
                       ),
                     ),
                   ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Search box
-                    SizedBox(
-                      width: 240,
-                      height: 38,
-                      child: TextField(
-                        controller: _searchController,
-                        onSubmitted: (val) {
-                          setState(() => _searchQuery = val);
-                          _fetchReport();
-                        },
-                        style: const TextStyle(fontSize: 12.5),
-                        decoration: InputDecoration(
-                          hintText: 'Search code, title, locality...',
-                          hintStyle: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                          ),
-                          prefixIcon: const Icon(Icons.search_rounded, size: 16),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 14),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                    _fetchReport();
-                                  },
-                                )
-                              : null,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                          filled: true,
-                          fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
+                );
 
-                    // Cards vs Table Toggle
-                    Container(
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                final searchBox = SizedBox(
+                  height: 38,
+                  child: TextField(
+                    controller: _searchController,
+                    onSubmitted: (val) {
+                      setState(() => _searchQuery = val);
+                      _fetchReport();
+                    },
+                    style: const TextStyle(fontSize: 12.5),
+                    decoration: InputDecoration(
+                      hintText: 'Search code, title, locality...',
+                      hintStyle: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                      ),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 14),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                                _fetchReport();
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
+                        borderSide: BorderSide(
                           color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.table_chart_rounded, size: 16),
-                            color: _isTableView
-                                ? primaryColor
-                                : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
-                            tooltip: 'Table View',
-                            onPressed: () => setState(() => _isTableView = true),
-                            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                            padding: EdgeInsets.zero,
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.grid_view_rounded, size: 16),
-                            color: !_isTableView
-                                ? primaryColor
-                                : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
-                            tooltip: 'Cards View',
-                            onPressed: () => setState(() => _isTableView = false),
-                            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ],
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                        ),
                       ),
                     ),
+                  ),
+                );
+
+                final toggleView = Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.table_chart_rounded, size: 16),
+                        color: _isTableView
+                            ? primaryColor
+                            : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                        tooltip: 'Table View',
+                        onPressed: () => setState(() => _isTableView = true),
+                        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                        padding: EdgeInsets.zero,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.grid_view_rounded, size: 16),
+                        color: !_isTableView
+                            ? primaryColor
+                            : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                        tooltip: 'Cards View',
+                        onPressed: () => setState(() => _isTableView = false),
+                        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                );
+
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      titleWidget,
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: searchBox),
+                          const SizedBox(width: 8),
+                          toggleView,
+                        ],
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    titleWidget,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(width: 240, child: searchBox),
+                        const SizedBox(width: 10),
+                        toggleView,
+                      ],
+                    ),
                   ],
-                ),
-              ],
+                );
+              },
             ),
           ),
           const Divider(height: 1),
@@ -1254,6 +1291,7 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isSingleColumn = constraints.maxWidth < 650;
+          final isNarrowScreen = constraints.maxWidth < 420;
           final crossAxisCount = isSingleColumn ? 1 : 2;
 
           return GridView.builder(
@@ -1262,7 +1300,7 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
             itemCount: items.length,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: crossAxisCount,
-              mainAxisExtent: 160,
+              mainAxisExtent: isSingleColumn ? 165 : 160,
               crossAxisSpacing: 14,
               mainAxisSpacing: 14,
             ),
@@ -1289,14 +1327,14 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
                         child: item.coverImageUrl != null && item.coverImageUrl!.isNotEmpty
                             ? Image.network(
                                 item.coverImageUrl!,
-                                width: 100,
-                                height: 136,
+                                width: isNarrowScreen ? 90 : 100,
+                                height: isNarrowScreen ? 141 : 136,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) => _buildCardImagePlaceholder(isDark, item),
                               )
                             : _buildCardImagePlaceholder(isDark, item),
                       ),
-                      const SizedBox(width: 14),
+                      SizedBox(width: isNarrowScreen ? 10 : 14),
 
                       // Details
                       Expanded(
@@ -1307,7 +1345,9 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
                                   children: [
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1324,7 +1364,6 @@ class _PropertyInventoryReportScreenState extends State<PropertyInventoryReportS
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(

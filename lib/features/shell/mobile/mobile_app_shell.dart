@@ -343,6 +343,7 @@ class _MobileAppShellState extends State<MobileAppShell> {
                     subtitle: isDark ? 'Tap to switch to light theme' : 'Tap to switch to dark theme',
                     showChevron: false,
                     iconColor: isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B),
+                    titleColor: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
                     trailing: Switch.adaptive(
                       value: isDark,
                       activeTrackColor: const Color(0xFF059669),
@@ -363,8 +364,8 @@ class _MobileAppShellState extends State<MobileAppShell> {
                     trailing: a.trailing,
                     badgeCount: a.badgeCount,
                     showChevron: false,
-                    iconColor: a.color,
-                    titleColor: a.color,
+                    iconColor: a.color ?? (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                    titleColor: a.color ?? (isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D)),
                     onTap: () => Navigator.of(sheetContext).pop(a.id),
                   ),
             ],

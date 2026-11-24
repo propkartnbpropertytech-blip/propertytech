@@ -1094,58 +1094,14 @@ class _ModernTopBarState extends State<ModernTopBar> {
             ],
           ),
         ),
-        PopupMenuItem<String>(
-          value: 'visit',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.calendar_month_rounded,
-                  color: Color(0xFF8B5CF6),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Schedule Site Visit',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF14213D),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Book client inspection appointment',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF68738A),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
       ],
     ).then((value) {
-      if (!context.mounted) return;
+      if (!context.mounted || value == null) return;
+      final t = DateTime.now().millisecondsSinceEpoch.toString();
       if (value == 'property') {
-        context.go('/properties');
+        context.go('/properties?action=add&t=$t');
       } else if (value == 'requirement') {
-        context.go('/requirements');
-      } else if (value == 'visit') {
-        context.go('/dashboard');
+        context.go('/requirements?action=add&t=$t');
       }
     });
   }

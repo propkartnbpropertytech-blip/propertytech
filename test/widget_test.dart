@@ -25,8 +25,8 @@ void main() {
     PackageInfo.setMockInitialValues(
       appName: 'PropKart',
       packageName: 'com.propkart.app',
-      version: '1.1.5',
-      buildNumber: '7',
+      version: '1.1.6',
+      buildNumber: '8',
       buildSignature: '',
     );
     SharedPreferences.setMockInitialValues({});

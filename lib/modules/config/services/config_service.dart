@@ -46,7 +46,7 @@ class AppConfigModel {
           : 'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart',
       iosLink: json['ios_link'] ?? 'comingsoon',
       minVersion: json['min_version'] ?? '1.0.0',
-      maxVersion: json['max_version'] ?? '1.1.5',
+      maxVersion: json['max_version'] ?? '1.1.6',
       latestTermsVersion: json['latest_terms_version'] ?? 1,
       latestPrivacyVersion: json['latest_privacy_version'] ?? 1,
       enableAi: json['enable_ai'] ?? true,
@@ -90,7 +90,7 @@ class ConfigService {
           androidLink: 'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart',
           iosLink: 'comingsoon',
           minVersion: '1.0.0',
-          maxVersion: '1.1.5',
+          maxVersion: '1.1.6',
           latestTermsVersion: 1,
           latestPrivacyVersion: 1,
           enableAi: true,
@@ -136,7 +136,7 @@ class ConfigService {
         final recalculatedStatus = _calculateVersionStatus(
           currentVersion: currentVersion,
           minVersion: payload['min_version']?.toString() ?? '1.0.0',
-          maxVersion: payload['max_version']?.toString() ?? '1.1.5',
+          maxVersion: payload['max_version']?.toString() ?? '1.1.6',
         );
         payload['versionStatus'] = recalculatedStatus;
 
@@ -172,7 +172,7 @@ class ConfigService {
       androidLink: 'https://play.google.com/store/apps/details?id=com.nbpropertytech.propkart',
       iosLink: 'comingsoon',
       minVersion: '1.0.0',
-      maxVersion: '1.1.5',
+      maxVersion: '1.1.6',
       latestTermsVersion: 1,
       latestPrivacyVersion: 1,
       enableAi: true,

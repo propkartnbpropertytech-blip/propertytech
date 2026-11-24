@@ -1103,6 +1103,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
   bool _isTableView = false;
   bool _isLoadingMetadata = true;
   bool _hasAutoOpenedAdd = false;
+  String? _lastAutoOpenedActionKey;
   bool _isMobileFiltersExpanded = false;
   late Future<List<dynamic>> _followupsFuture;
   /// Last loaded follow-ups data, shown while the Follow-ups tab reloads instead of a spinner.
@@ -1310,7 +1311,10 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       if (mounted) {
         final uri = GoRouterState.of(context).uri;
         final action = uri.queryParameters['action'];
-        if (action == 'add' && !_hasAutoOpenedAdd) {
+        final actionT = uri.queryParameters['t'];
+        final actionKey = action != null ? '${action}_$actionT' : null;
+        if (action == 'add' && _lastAutoOpenedActionKey != actionKey) {
+          _lastAutoOpenedActionKey = actionKey;
           _hasAutoOpenedAdd = true;
           _showAddEditDialog();
         }
@@ -1352,6 +1356,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
         }
         final subTabParam = uri.queryParameters['subTab'];
         if (subTabParam != null && subTabParam.isNotEmpty) {
+          final sLower = subTabParam.toLowerCase();
+          if (sLower.contains('property') || sLower.contains('listing')) {
+            if (_salesCampaignSubTab != 'Property Listing') {
+              setState(() {
+                _salesCampaignSubTab = 'Property Listing';
+              });
+            }
+          } else if (sLower.contains('requirement')) {
+            if (_salesCampaignSubTab != 'Requirement') {
+              setState(() {
+                _salesCampaignSubTab = 'Requirement';
+              });
+            }
+          }
           final targetSubTab = _normalizeFollowupSubTab(subTabParam);
           if (_selectedFollowupSubTab != targetSubTab) {
             setState(() {
@@ -1542,6 +1560,16 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     super.didChangeDependencies();
     try {
       final uri = GoRouterState.of(context).uri;
+      final action = uri.queryParameters['action'];
+      final actionT = uri.queryParameters['t'];
+      final actionKey = action != null ? '${action}_$actionT' : null;
+      if (action == 'add' && _lastAutoOpenedActionKey != actionKey) {
+        _lastAutoOpenedActionKey = actionKey;
+        _hasAutoOpenedAdd = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showAddEditDialog();
+        });
+      }
       // Route parameters apply once per link; later theme or layout changes must not undo the user's tab choice.
       if (_appliedRouteParamsKey == uri.toString()) return;
       _appliedRouteParamsKey = uri.toString();
@@ -1583,6 +1611,20 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
       }
       final subTabParam = uri.queryParameters['subTab'];
       if (subTabParam != null && subTabParam.isNotEmpty) {
+        final sLower = subTabParam.toLowerCase();
+        if (sLower.contains('property') || sLower.contains('listing')) {
+          if (_salesCampaignSubTab != 'Property Listing') {
+            setState(() {
+              _salesCampaignSubTab = 'Property Listing';
+            });
+          }
+        } else if (sLower.contains('requirement')) {
+          if (_salesCampaignSubTab != 'Requirement') {
+            setState(() {
+              _salesCampaignSubTab = 'Requirement';
+            });
+          }
+        }
         final targetSubTab = _normalizeFollowupSubTab(subTabParam);
         if (_selectedFollowupSubTab != targetSubTab) {
           setState(() {
@@ -1662,7 +1704,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     _appliedRouteSearchKey = key;
     final wonTab = _activeMainTab == 'Won' || _activeMainTab == 'My Won';
     setState(() {
-      if (openId.isNotEmpty) {
+      if (openId.isNotEmpty || uri.queryParameters['t'] != null) {
         _selectedConfigIds.clear();
         _selectedCategoryId = null;
         _selectedSalesFilterId = 'All';
@@ -3312,7 +3354,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
     RequirementModel req,
     UserModel? currentUser,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark || ThemeManager().isDarkMode;
     final primary = CRMColors.primaryOf(context);
     final rawBudget = (req.minBudget > 0 || req.maxBudget > 0)
         ? '${BudgetFormatter.format(req.minBudget)} - ${BudgetFormatter.format(req.maxBudget)}'
@@ -3498,7 +3540,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               dateText,
                               style: TextStyle(
                                 fontSize: 11.5,
-                                color: Colors.grey.shade600,
+                                color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -3506,13 +3548,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.phone_outlined, size: 12, color: Colors.grey.shade600),
+                                  Icon(Icons.phone_outlined, size: 12, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                                   const SizedBox(width: 3),
                                   SelectableText(
                                     req.clientMobile,
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.grey.shade800,
+                                      color: isDark ? const Color(0xFFF1F5F9) : Colors.grey.shade800,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -3587,7 +3629,11 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       ),
                       child: Text(
                         specsStr,
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                        ),
                       ),
                     ),
                   Container(
@@ -3637,14 +3683,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
+                  Icon(Icons.location_on_outlined, size: 14, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade500),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
                       areasStr,
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: Colors.grey.shade800,
+                        color: isDark ? const Color(0xFFE2E8F0) : Colors.grey.shade800,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -3659,7 +3705,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.support_agent_rounded, size: 14, color: Colors.orange.shade700),
+                    Icon(Icons.support_agent_rounded, size: 14, color: isDark ? const Color(0xFFFBBF24) : Colors.orange.shade700),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
@@ -3669,7 +3715,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: Colors.orange.shade800,
+                          color: isDark ? const Color(0xFFFDE68A) : Colors.orange.shade800,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -3684,14 +3730,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    Icon(_isDirectSalesAllocatedLead(req) ? Icons.auto_mode_rounded : Icons.person_add_alt_1_outlined, size: 13, color: Colors.blueGrey.shade600),
+                    Icon(_isDirectSalesAllocatedLead(req) ? Icons.auto_mode_rounded : Icons.person_add_alt_1_outlined, size: 13, color: isDark ? const Color(0xFF94A3B8) : Colors.blueGrey.shade600),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         _getAddedByDisplayLine(req),
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.blueGrey.shade700,
+                          color: isDark ? const Color(0xFFCBD5E1) : Colors.blueGrey.shade700,
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 1,
@@ -3703,7 +3749,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                       Icon(
                         req.isCampaignLead ? Icons.campaign_rounded : Icons.hub_outlined,
                         size: 13,
-                        color: req.isCampaignLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade600,
+                        color: req.isCampaignLead ? const Color(0xFF1877F2) : (isDark ? const Color(0xFF94A3B8) : Colors.blueGrey.shade600),
                       ),
                       const SizedBox(width: 3),
                       Text(
@@ -3711,7 +3757,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: req.isCampaignLead ? const Color(0xFF1877F2) : Colors.blueGrey.shade700,
+                          color: req.isCampaignLead ? const Color(0xFF1877F2) : (isDark ? const Color(0xFFCBD5E1) : Colors.blueGrey.shade700),
                         ),
                       ),
                     ],
@@ -3724,13 +3770,13 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.person_outline_rounded, size: 14, color: Colors.blueGrey.shade600),
+                    Icon(Icons.person_outline_rounded, size: 14, color: isDark ? const Color(0xFF94A3B8) : Colors.blueGrey.shade600),
                     const SizedBox(width: 4),
                     Text(
                       'Assign: ',
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: Colors.blueGrey.shade800,
+                        color: isDark ? const Color(0xFFCBD5E1) : Colors.blueGrey.shade800,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -3764,7 +3810,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                           _getSalesmanName(req, currentUser),
                           style: TextStyle(
                             fontSize: 11.5,
-                            color: Colors.blueGrey.shade700.withValues(alpha: isClosed ? 0.7 : 1.0),
+                            color: (isDark ? const Color(0xFFCBD5E1) : Colors.blueGrey.shade700).withValues(alpha: isClosed ? 0.7 : 1.0),
                             fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
@@ -3791,14 +3837,14 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.notes_rounded, size: 13, color: Colors.blueGrey.shade500),
+                        Icon(Icons.notes_rounded, size: 13, color: isDark ? const Color(0xFF94A3B8) : Colors.blueGrey.shade500),
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
                             (hasNotes ? userNote! : effectiveRemarks ?? 'View Notes & Follow-up History').trim(),
                             style: TextStyle(
                               fontSize: 11,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
                               fontStyle: FontStyle.italic,
                             ),
                             maxLines: 2,
@@ -3845,7 +3891,7 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
                   MobileIconAction(
                     icon: Icons.edit_outlined,
                     label: 'Edit',
-                    color: Colors.grey.shade700,
+                    color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700,
                     onPressed: () => _showAddEditDialog(req, 0, true),
                   ),
                 ],
@@ -4063,36 +4109,65 @@ class _RequirementsScreenState extends State<RequirementsScreen> {
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  style: CRMTypography.body.copyWith(color: CRMColors.text),
-                  decoration: InputDecoration(
-                    hintText: 'Search by client name, mobile, specs, remarks...',
-                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMuted),
-                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMuted),
-                    filled: true,
-                    fillColor: CRMColors.background,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: CRMColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: CRMColors.border),
-                    ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  onChanged: (val) {
-                    AuditTelemetryService.instance.trackSearch(
-                      query: val,
-                      module: 'Leads',
-                    );
-                    _onSearchChangedDebounced();
-                  },
-                  onSubmitted: (val) {
-                    _searchDebounceTimer?.cancel();
-                    _currentPage = 1;
-                    _recomputeFilteredRequirements();
-                  },
+                  child: TextField(
+                    controller: _searchController,
+                    style: CRMTypography.body.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search by client name, mobile, specs, remarks...',
+                      hintStyle: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      prefixIcon: Icon(Icons.search_rounded, color: CRMColors.primaryOf(context), size: 22),
+                      filled: true,
+                      fillColor: CRMColors.cardBgOf(context),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
+                          width: 1.6,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
+                          width: 1.6,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: CRMColors.primaryOf(context),
+                          width: 2.0,
+                        ),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      AuditTelemetryService.instance.trackSearch(
+                        query: val,
+                        module: 'Leads',
+                      );
+                      _onSearchChangedDebounced();
+                    },
+                    onSubmitted: (val) {
+                      _searchDebounceTimer?.cancel();
+                      _currentPage = 1;
+                      _recomputeFilteredRequirements();
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),
@@ -12566,22 +12641,52 @@ _recomputeFilteredRequirements();
 
   /// Search for the Property Listing spreadsheet views, which filter on the shared search text.
   Widget _buildCampaignListingSearchField() {
-    return TextField(
-      controller: _searchController,
-      onChanged: (_) => setState(() {}),
-      decoration: InputDecoration(
-        isDense: true,
-        prefixIcon: const Icon(Icons.search_rounded, size: 20),
-        hintText: 'Search by client name, mobile, location, campaign...',
-        filled: true,
-        fillColor: CRMColors.cardBgOf(context),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        style: CRMTypography.body.copyWith(
+          color: CRMColors.textOf(context),
+          fontWeight: FontWeight.w500,
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: CRMColors.borderOf(context)),
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: Icon(Icons.search_rounded, color: CRMColors.primaryOf(context), size: 20),
+          hintText: 'Search by client name, mobile, location, campaign...',
+          hintStyle: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+          filled: true,
+          fillColor: CRMColors.cardBgOf(context),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
+              width: 1.6,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
+              width: 1.6,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: CRMColors.primaryOf(context),
+              width: 2.0,
+            ),
+          ),
         ),
       ),
     );
@@ -12963,25 +13068,54 @@ _recomputeFilteredRequirements();
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  style: CRMTypography.body.copyWith(color: CRMColors.text),
-                  decoration: InputDecoration(
-                    hintText: 'Search by client name, mobile, location, campaign...',
-                    hintStyle: CRMTypography.body.copyWith(color: CRMColors.textMuted),
-                    prefixIcon: Icon(Icons.search_rounded, color: CRMColors.textMuted),
-                    filled: true,
-                    fillColor: CRMColors.background,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: CRMColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-                      borderSide: BorderSide(color: CRMColors.border),
-                    ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  onChanged: (_) => setState(() => _selectedCampaignLeadIds.clear()),
+                  child: TextField(
+                    controller: _searchController,
+                    style: CRMTypography.body.copyWith(
+                      color: CRMColors.textOf(context),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search by client name, mobile, location, campaign...',
+                      hintStyle: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
+                      prefixIcon: Icon(Icons.search_rounded, color: CRMColors.primaryOf(context), size: 22),
+                      filled: true,
+                      fillColor: CRMColors.cardBgOf(context),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
+                          width: 1.6,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: CRMColors.primaryOf(context).withValues(alpha: 0.6),
+                          width: 1.6,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: CRMColors.primaryOf(context),
+                          width: 2.0,
+                        ),
+                      ),
+                    ),
+                    onChanged: (_) => setState(() => _selectedCampaignLeadIds.clear()),
+                  ),
                 ),
               ),
               const SizedBox(width: CRMSpacing.s),

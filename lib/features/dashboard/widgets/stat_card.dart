@@ -32,7 +32,7 @@ class _StatCardState extends State<StatCard> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = ThemeManager().isDarkMode;
+    final isDark = ThemeManager().isDarkMode || Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
     final bool compact = widget.isCompact || screenWidth < 600;
     final bool isVeryNarrow = screenWidth < 360;
@@ -111,7 +111,7 @@ class _StatCardState extends State<StatCard> {
                             widget.title,
                             style: TextStyle(
                               color: isDark
-                                  ? const Color(0xFF94A3B8)
+                                  ? const Color(0xFFE2E8F0)
                                   : const Color(0xFF68738A),
                               fontSize: compact ? (isVeryNarrow ? 10 : 11) : 12,
                               fontWeight: FontWeight.w500,
@@ -138,7 +138,7 @@ class _StatCardState extends State<StatCard> {
                               widget.subtitle!,
                               style: TextStyle(
                                 color: isDark
-                                    ? const Color(0xFF94A3B8)
+                                    ? const Color(0xFFCBD5E1)
                                     : const Color(0xFF64748B),
                                 fontSize: compact ? 10 : 11,
                                 fontWeight: FontWeight.w500,

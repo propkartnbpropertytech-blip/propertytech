@@ -810,8 +810,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: CRMSpacing.m),
-              headerControls,
             ],
           )
         : Row(
@@ -887,127 +885,146 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             pageHeader,
             const SizedBox(height: CRMSpacing.m),
             if (_selectedTab == 'Properties') ...[
-              Row(
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: CRMSpacing.s,
+                runSpacing: CRMSpacing.s,
                 children: [
-                  ChoiceChip(
-                    label: const Text('Rent'),
-                    selected: _propertiesSubTab == 'Rent',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _propertiesSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _propertiesSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _propertiesSubTab = 'Rent';
-                          _currentPropertiesPage = 1;
-                        });
-                      }
-                    },
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Rent'),
+                        selected: _propertiesSubTab == 'Rent',
+                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: _propertiesSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                          fontWeight: _propertiesSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _propertiesSubTab = 'Rent';
+                              _currentPropertiesPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(width: CRMSpacing.s),
+                      ChoiceChip(
+                        label: const Text('Re-sale'),
+                        selected: _propertiesSubTab == 'Re-sale',
+                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: _propertiesSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                          fontWeight: _propertiesSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _propertiesSubTab = 'Re-sale';
+                              _currentPropertiesPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: CRMSpacing.s),
-                  ChoiceChip(
-                    label: const Text('Re-sale'),
-                    selected: _propertiesSubTab == 'Re-sale',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _propertiesSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _propertiesSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _propertiesSubTab = 'Re-sale';
-                          _currentPropertiesPage = 1;
-                        });
-                      }
-                    },
-                  ),
+                  if (isMobile) headerControls,
                 ],
               ),
             ] else ...[
               Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: CRMSpacing.s,
                 runSpacing: CRMSpacing.s,
                 children: [
-                  ChoiceChip(
-                    label: const Text('Bin'),
-                    selected: _requirementsSubTab == 'Bin',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _requirementsSubTab == 'Bin' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _requirementsSubTab == 'Bin' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _requirementsSubTab = 'Bin';
-                          _currentRequirementsPage = 1;
-                        });
-                        _fetchBinRequirements();
-                      }
-                    },
+                  Wrap(
+                    spacing: CRMSpacing.s,
+                    runSpacing: CRMSpacing.s,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Bin'),
+                        selected: _requirementsSubTab == 'Bin',
+                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: _requirementsSubTab == 'Bin' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                          fontWeight: _requirementsSubTab == 'Bin' ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _requirementsSubTab = 'Bin';
+                              _currentRequirementsPage = 1;
+                            });
+                            _fetchBinRequirements();
+                          }
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Not Interested'),
+                        selected: _requirementsSubTab == 'Not Interested',
+                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: _requirementsSubTab == 'Not Interested' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                          fontWeight: _requirementsSubTab == 'Not Interested' ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _requirementsSubTab = 'Not Interested';
+                              _currentRequirementsPage = 1;
+                            });
+                            _fetchBinRequirements();
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Rent'),
+                        selected: _requirementsListingSubTab == 'Rent',
+                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: _requirementsListingSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                          fontWeight: _requirementsListingSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _requirementsListingSubTab = 'Rent';
+                              _currentRequirementsPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Re-sale'),
+                        selected: _requirementsListingSubTab == 'Re-sale',
+                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
+                        labelStyle: TextStyle(
+                          color: _requirementsListingSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
+                          fontWeight: _requirementsListingSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _requirementsListingSubTab = 'Re-sale';
+                              _currentRequirementsPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    ],
                   ),
-                  ChoiceChip(
-                    label: const Text('Not Interested'),
-                    selected: _requirementsSubTab == 'Not Interested',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _requirementsSubTab == 'Not Interested' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _requirementsSubTab == 'Not Interested' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _requirementsSubTab = 'Not Interested';
-                          _currentRequirementsPage = 1;
-                        });
-                        _fetchBinRequirements();
-                      }
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Rent'),
-                    selected: _requirementsListingSubTab == 'Rent',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _requirementsListingSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _requirementsListingSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _requirementsListingSubTab = 'Rent';
-                          _currentRequirementsPage = 1;
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Re-sale'),
-                    selected: _requirementsListingSubTab == 'Re-sale',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _requirementsListingSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _requirementsListingSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _requirementsListingSubTab = 'Re-sale';
-                          _currentRequirementsPage = 1;
-                        });
-                      }
-                    },
-                  ),
+                  if (isMobile) headerControls,
                 ],
               ),
             ],

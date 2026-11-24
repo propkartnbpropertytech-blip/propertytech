@@ -55,7 +55,7 @@ class AiSearchRoutes {
     return _uri('/properties', params);
   }
 
-  /// Opens the exact lead on the Leads page: the tab, listing mode and search that show it, plus the drawer.
+  /// Opens the exact lead on the Leads page: the tab, listing mode and search that show it.
   static String requirement(Map<String, dynamic> row, {String? role}) {
     final status = _text(row['status']).toLowerCase();
     final tab = (status == 'won' || status == 'closed' || status == 'deal won')
@@ -65,19 +65,27 @@ class AiSearchRoutes {
             : 'leads';
     final name = _text(row['customer_name']);
     final search = name.isNotEmpty && name.toLowerCase() != 'client' ? name : _digits(row['mobile']);
+    final leadType = _text(row['lead_type']).toLowerCase();
+    final isPropertyListing = leadType.contains('property') ||
+        leadType.contains('listing') ||
+        row['is_property_listing'] == true;
+    final subTab = isPropertyListing ? 'Property Listing' : 'Requirement';
+    final mode = listingParam(row['listing_type']);
+
     if (row['is_direct_sales_campaign'] == true) {
       return _uri('/my-campaign-leads', {
-        'openId': _text(row['id']),
         'search': search,
+        'subTab': subTab,
         if (tab == 'rejected') 'tab': tab,
+        if (mode.isNotEmpty) 'mode': mode,
         't': _stamp(),
       });
     }
     return _uri('/requirements', {
-      'openId': _text(row['id']),
       'search': search,
       'tab': tab,
-      'mode': listingParam(row['listing_type']),
+      'subTab': subTab,
+      if (mode.isNotEmpty) 'mode': mode,
       'status': 'All',
       if (RoleGuard.isSales(role)) 'group': 'all',
       't': _stamp(),
@@ -140,15 +148,19 @@ class AiSearchRoutes {
     final name = rawName.isEmpty || rawName.toLowerCase() == 'lead' ? _digits(row['phone']) : rawName;
     final queue = _text(row['queue']);
     if (RoleGuard.isSales(role)) {
-      final requirementId = _text(row['requirement_id']).isNotEmpty ? _text(row['requirement_id']) : _text(row['id']);
-      final open = {'openId': requirementId, 't': _stamp()};
+      final listing = _text(row['lead_type']).toLowerCase() == 'property listing';
+      final subTab = listing ? 'Property Listing' : 'Requirement';
+      final mode = listingParam(row['listing_type']);
+      final params = {
+        'search': name,
+        'subTab': subTab,
+        if (mode.isNotEmpty) 'mode': mode,
+        't': _stamp(),
+      };
       if (row['is_campaign'] == true) {
-        final listing = _text(row['lead_type']).toLowerCase() == 'property listing';
-        return listing
-            ? [_uri('/my-campaign-leads', {'search': name}), _uri('/requirements', {'search': name})]
-            : [_uri('/my-campaign-leads', open), _uri('/requirements', open)];
+        return [_uri('/my-campaign-leads', params), _uri('/requirements', params)];
       }
-      return [_uri('/requirements', open)];
+      return [_uri('/requirements', params)];
     }
     final leadType = _text(row['lead_type']);
     final section = leadType == 'Property Listing' || leadType == 'Requirement' ? leadType : '';
