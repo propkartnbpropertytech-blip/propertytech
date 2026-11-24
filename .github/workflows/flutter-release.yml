@@ -65,9 +65,6 @@ jobs:
                           }
                       }
                   }
-                  settings.dependencyResolutionManagement.repositoriesMode.set(
-                      org.gradle.api.initialization.resolve.RepositoriesMode.PREFER_SETTINGS
-                  )
               } catch (Throwable ignored) {}
           }
 
