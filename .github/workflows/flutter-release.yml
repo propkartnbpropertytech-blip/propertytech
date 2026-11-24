@@ -40,6 +40,57 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Configure Global Gradle Mirror & Rate-Limit Defense
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/init.d/mirror.init.gradle
+          gradle.beforeSettings { settings ->
+              settings.pluginManagement.repositories.all { repo ->
+                  if (repo instanceof MavenArtifactRepository) {
+                      def urlStr = repo.url.toString()
+                      if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org")) {
+                          repo.url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
+                  }
+              }
+          }
+
+          gradle.settingsEvaluated { settings ->
+              try {
+                  settings.dependencyResolutionManagement.repositories.all { repo ->
+                      if (repo instanceof MavenArtifactRepository) {
+                          def urlStr = repo.url.toString()
+                          if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org")) {
+                              repo.url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                          }
+                      }
+                  }
+              } catch (Throwable ignored) {}
+          }
+
+          allprojects {
+              buildscript.repositories.all { repo ->
+                  if (repo instanceof MavenArtifactRepository) {
+                      def urlStr = repo.url.toString()
+                      if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org")) {
+                          repo.url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
+                  }
+              }
+              repositories.all { repo ->
+                  if (repo instanceof MavenArtifactRepository) {
+                      def urlStr = repo.url.toString()
+                      if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org")) {
+                          repo.url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
         with:
@@ -53,7 +104,17 @@ jobs:
       - name: Build Android Release APK
         run: |
           echo "Building Android release APK..."
-          flutter build apk --release --dart-define=APP_ENV=production
+          for i in 1 2 3; do
+            echo "Attempt $i: Running flutter build apk..."
+            if flutter build apk --release --dart-define=APP_ENV=production; then
+              echo "Android release APK built successfully."
+              exit 0
+            fi
+            echo "Build attempt $i failed. Retrying in 15 seconds..."
+            sleep 15
+          done
+          echo "Failed to build Android release APK after 3 attempts."
+          exit 1
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
