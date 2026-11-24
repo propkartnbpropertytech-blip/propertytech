@@ -45,12 +45,6 @@ jobs:
           mkdir -p ~/.gradle/init.d
           cat << 'EOF' > ~/.gradle/init.d/mirror.init.gradle
           gradle.beforeSettings { settings ->
-              settings.pluginManagement.repositories {
-                  maven {
-                      name = "GoogleMirrorMavenCentralPlugin"
-                      url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
-                  }
-              }
               settings.pluginManagement.repositories.all { repo ->
                   if (repo instanceof MavenArtifactRepository) {
                       def urlStr = repo.url.toString()
@@ -61,15 +55,9 @@ jobs:
               }
           }
 
-          allprojects {
-              buildscript {
-                  repositories {
-                      maven {
-                          name = "GoogleMirrorMavenCentralBuildscript"
-                          url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
-                      }
-                  }
-                  repositories.all { repo ->
+          gradle.settingsEvaluated { settings ->
+              try {
+                  settings.dependencyResolutionManagement.repositories.all { repo ->
                       if (repo instanceof MavenArtifactRepository) {
                           def urlStr = repo.url.toString()
                           if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org")) {
@@ -77,11 +65,19 @@ jobs:
                           }
                       }
                   }
-              }
-              repositories {
-                  maven {
-                      name = "GoogleMirrorMavenCentralAll"
-                      url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                  settings.dependencyResolutionManagement.repositoriesMode.set(
+                      org.gradle.api.initialization.resolve.RepositoriesMode.PREFER_SETTINGS
+                  )
+              } catch (Throwable ignored) {}
+          }
+
+          allprojects {
+              buildscript.repositories.all { repo ->
+                  if (repo instanceof MavenArtifactRepository) {
+                      def urlStr = repo.url.toString()
+                      if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org")) {
+                          repo.url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                      }
                   }
               }
               repositories.all { repo ->
