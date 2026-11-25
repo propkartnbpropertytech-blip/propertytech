@@ -272,12 +272,11 @@ class RbInfoBanner extends StatelessWidget {
   }
 }
 
-/// Lead-kind selector cards (listing / requirement / not interested).
+/// Lead-kind selector cards (listing / requirement).
 class RbLeadKindCards extends StatelessWidget {
-  final String selected; // list | req | ni
+  final String selected; // list | req
   final int listingCount;
   final int requirementCount;
-  final int notInterestedCount;
   final String listingSubtitle;
   final String requirementSubtitle;
   final ValueChanged<String> onChanged;
@@ -287,7 +286,6 @@ class RbLeadKindCards extends StatelessWidget {
     required this.selected,
     required this.listingCount,
     required this.requirementCount,
-    required this.notInterestedCount,
     required this.listingSubtitle,
     required this.requirementSubtitle,
     required this.onChanged,
@@ -312,14 +310,6 @@ class RbLeadKindCards extends StatelessWidget {
         title: 'Requirement leads',
         count: requirementCount,
         subtitle: requirementSubtitle,
-      ),
-      _card(
-        context,
-        keyName: 'ni',
-        icon: Icons.thumb_down_alt_outlined,
-        title: 'Not Interested',
-        count: notInterestedCount,
-        subtitle: 'Leads marked not interested',
       ),
     ];
 

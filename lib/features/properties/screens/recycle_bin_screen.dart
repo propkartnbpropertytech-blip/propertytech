@@ -69,13 +69,12 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   String _kind = 'prop';
   /// Rent | Re-sale | All
   String _typeFilter = 'Rent';
-  /// list | req | ni  (leads only)
+  /// list | req  (leads only)
   String _leadKind = 'list';
   int _autoDeleteDays = 30;
 
   List<PropertyModel> _binProperties = [];
   List<RequirementModel> _binRequirements = [];
-  List<RequirementModel> _notInterestedRequirements = [];
   final Map<String, String> _binDeletedFrom = {};
   final Map<String, DateTime> _deletedAtById = {};
   final Map<String, user_settings_model.UserModel> _usersMap = {};
@@ -158,19 +157,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   List<RequirementModel> get _binRequirementLeads =>
       _binRequirements.where((r) => !_isListingLead(r)).where(_matchesTypeRequirement).where(_requirementMatchesSearch).toList();
 
-  List<RequirementModel> get _visibleNotInterested =>
-      _notInterestedRequirements.where(_matchesTypeRequirement).where(_requirementMatchesSearch).toList();
-
-  List<RequirementModel> get _visibleLeads {
-    switch (_leadKind) {
-      case 'list':
-        return _binListingLeads;
-      case 'ni':
-        return _visibleNotInterested;
-      default:
-        return _binRequirementLeads;
-    }
-  }
+  List<RequirementModel> get _visibleLeads =>
+      _leadKind == 'list' ? _binListingLeads : _binRequirementLeads;
 
   bool _propertyMatchesSearch(PropertyModel p) {
     final q = _searchQuery;
@@ -330,25 +318,21 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       final results = await Future.wait([
         _propertiesService.getBinProperties(search: query),
         _requirementsService.getBinRequirements(search: query),
-        _requirementsService.getRequirements(status: 'Not Interested'),
       ]);
 
       if (!mounted || request != _binSearchRequest) return;
 
       final propRes = results[0];
       final reqRes = results[1];
-      final niRes = results[2];
 
       final propList = (propRes['data'] as Map<String, dynamic>? ?? {})['properties'] as List? ?? [];
       final reqList = (reqRes['data'] as Map<String, dynamic>? ?? {})['requirements'] as List? ?? [];
-      final niList = (niRes['data'] as Map<String, dynamic>? ?? {})['requirements'] as List? ?? [];
 
       propList.sort(_compareDeletedDesc);
       reqList.sort(_compareDeletedDesc);
-      niList.sort(_compareDeletedDesc);
 
       final deletedAt = <String, DateTime>{};
-      for (final raw in [...propList, ...reqList, ...niList]) {
+      for (final raw in [...propList, ...reqList]) {
         final id = raw is Map ? raw['id']?.toString() : null;
         final at = _parseDeletedAt(raw);
         if (id != null && at != null) deletedAt[id] = at;
@@ -361,14 +345,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       };
 
       var parsedReqs = reqList.map((r) => RequirementModel.fromJson(r)).toList();
-      var parsedNi = niList.map((r) => RequirementModel.fromJson(r)).toList();
       parsedReqs = _filterRequirementsForRole(parsedReqs);
-      parsedNi = _filterRequirementsForRole(parsedNi);
 
       setState(() {
         _binProperties = propList.map((p) => PropertyModel.fromJson(p)).toList();
         _binRequirements = parsedReqs;
-        _notInterestedRequirements = parsedNi;
         _binDeletedFrom
           ..clear()
           ..addAll(deletedFrom);
@@ -381,8 +362,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
         _selectedIds.removeWhere(
           (id) =>
               !_binProperties.any((p) => p.id == id) &&
-              !_binRequirements.any((r) => r.id == id) &&
-              !_notInterestedRequirements.any((r) => r.id == id),
+              !_binRequirements.any((r) => r.id == id),
         );
       });
     } catch (e) {
@@ -484,13 +464,8 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _restoreRequirement(RequirementModel r) async {
-    final fromBin = _leadKind != 'ni';
     setState(() {
-      if (fromBin) {
-        _binRequirements.removeWhere((item) => item.id == r.id);
-      } else {
-        _notInterestedRequirements.removeWhere((item) => item.id == r.id);
-      }
+      _binRequirements.removeWhere((item) => item.id == r.id);
       _selectedIds.remove(r.id);
       _restoredSession.insert(
         0,
@@ -498,17 +473,14 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       );
     });
 
-    final String newStatus = fromBin
-        ? r.status
-        : (r.status == 'Bin' || r.status.startsWith('Rejected') ? 'Follow-up' : (r.status.isEmpty ? 'Active' : r.status));
-    final restoredReq = r.copyWith(status: newStatus);
+    final restoredReq = r.copyWith(status: r.status);
     try {
       await RepositoryCoordinator().requirementLocal.saveRequirements([restoredReq.toLocal()]);
       RepositoryCoordinator().refreshRequirements();
       RepositoryCoordinator().refreshDashboard();
     } catch (_) {}
 
-    final source = fromBin ? _binDeletedFrom.remove(r.id) : null;
+    final source = _binDeletedFrom.remove(r.id);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -524,35 +496,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     }
 
     try {
-      if (fromBin) {
-        await _requirementsService.restoreRequirement(r.id);
-      } else {
-        await _requirementsService.updateRequirement(r.id, {'status': newStatus});
-      }
+      await _requirementsService.restoreRequirement(r.id);
     } catch (e) {
       debugPrint('⚠️ Restore requirement API error: $e');
-    }
-  }
-
-  Future<void> _deleteRequirementToBin(RequirementModel r) async {
-    setState(() {
-      _notInterestedRequirements.removeWhere((item) => item.id == r.id);
-      _selectedIds.remove(r.id);
-    });
-    try {
-      await _requirementsService.deleteRequirement(r.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Requirement moved to Recycle Bin'), backgroundColor: CRMColors.success),
-        );
-      }
-      await _fetchAllBinData();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete requirement: $e'), backgroundColor: CRMColors.danger),
-        );
-      }
     }
   }
 
@@ -651,7 +597,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     setState(() {
       _binRequirements.removeWhere((r) => r.id == id);
-      _notInterestedRequirements.removeWhere((r) => r.id == id);
       _selectedIds.remove(id);
     });
 
@@ -722,11 +667,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     } else {
       final items = _visibleLeads.where((r) => ids.contains(r.id)).toList();
       for (final r in items) {
-        if (_leadKind == 'ni') {
-          await _restoreRequirement(r);
-        } else {
-          await _restoreRequirement(r);
-        }
+        await _restoreRequirement(r);
       }
     }
   }
@@ -757,7 +698,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       for (final id in ids) {
         setState(() {
           _binRequirements.removeWhere((r) => r.id == id);
-          _notInterestedRequirements.removeWhere((r) => r.id == id);
           _selectedIds.remove(id);
         });
         try {
@@ -780,11 +720,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (_kind == 'prop') {
       return 'Properties · ${_typeFilter == 'All' ? 'All' : _typeFilter}';
     }
-    final kindLabel = switch (_leadKind) {
-      'list' => 'Property listing',
-      'ni' => 'Not Interested',
-      _ => 'Requirement',
-    };
+    final kindLabel = _leadKind == 'list' ? 'Property listing' : 'Requirement';
     return 'Leads · ${_typeFilter == 'All' ? 'All' : _typeFilter} · $kindLabel';
   }
 
@@ -792,11 +728,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (_kind == 'prop') {
       return 'Deleted properties · ${_typeFilter == 'All' ? 'Rent & re-sale' : _typeFilter}';
     }
-    final noun = switch (_leadKind) {
-      'list' => 'property listing leads',
-      'ni' => 'not interested leads',
-      _ => 'requirement leads',
-    };
+    final noun = _leadKind == 'list' ? 'property listing leads' : 'requirement leads';
     return 'Deleted $noun · ${_typeFilter == 'All' ? 'Rent & re-sale' : _typeFilter}';
   }
 
@@ -825,7 +757,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     final isMobile = CRMBreakpoints.isPhone(context);
     final wide = CRMBreakpoints.widthOf(context) >= 1200;
-    final hasData = _kind == 'prop' ? _binProperties.isNotEmpty : (_leadKind == 'ni' ? _notInterestedRequirements.isNotEmpty : _binRequirements.isNotEmpty);
+    final hasData = _kind == 'prop' ? _binProperties.isNotEmpty : _binRequirements.isNotEmpty;
 
     final body = _buildPageBody(
       context: context,
@@ -868,7 +800,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }) {
     final listingCount = _binRequirements.where(_isListingLead).where(_matchesTypeRequirement).length;
     final requirementCount = _binRequirements.where((r) => !_isListingLead(r)).where(_matchesTypeRequirement).length;
-    final niCount = _notInterestedRequirements.where(_matchesTypeRequirement).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -887,7 +818,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             selected: _leadKind,
             listingCount: listingCount,
             requirementCount: requirementCount,
-            notInterestedCount: niCount,
             listingSubtitle: _leadListingSubtitle,
             requirementSubtitle: _leadRequirementSubtitle,
             onChanged: (v) {
@@ -1101,7 +1031,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
         RbKindSegment(
           selected: _kind,
           propertyCount: _binProperties.length,
-          leadCount: _binRequirements.length + _notInterestedRequirements.length,
+          leadCount: _binRequirements.length,
           onChanged: (v) {
             setState(() {
               _kind = v;
@@ -1227,16 +1157,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                   : null,
               onDelete: (_kind == 'prop'
                       ? canPermanentlyDeleteProps
-                      : (isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete') && _leadKind != 'ni'))
+                      : (isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')))
                   ? _deleteSelectedForever
-                  : (_leadKind == 'ni' && _can('page.recycle_bin.requirements_delete')
-                      ? () async {
-                          for (final id in _selectedIds.toList()) {
-                            final r = _visibleLeads.firstWhereOrNull((e) => e.id == id);
-                            if (r != null) await _deleteRequirementToBin(r);
-                          }
-                        }
-                      : null),
+                  : null,
             ),
           ),
           if (_isLoading)
@@ -1248,9 +1171,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
             RbEmptyState(
               noun: _kind == 'prop'
                   ? 'properties'
-                  : (_leadKind == 'list'
-                      ? 'property listing leads'
-                      : (_leadKind == 'ni' ? 'not interested leads' : 'requirement leads')),
+                  : (_leadKind == 'list' ? 'property listing leads' : 'requirement leads'),
               typeLabel: _typeFilter,
             )
           else if (_kind == 'prop')
@@ -1326,17 +1247,16 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                     background: RbTokens.green,
                     foreground: Colors.white,
                   ),
-                  RbBadge(
-                    label: _leadKind == 'ni' ? 'Not Interested' : 'Deleted',
-                    background: const Color(0xFFFEE2E2),
-                    foreground: const Color(0xFFB91C1C),
+                  const RbBadge(
+                    label: 'Deleted',
+                    background: Color(0xFFFEE2E2),
+                    foreground: Color(0xFFB91C1C),
                   ),
-                  if (_leadKind != 'ni')
-                    RbBadge(
-                      label: '$days days left',
-                      background: days <= 7 ? RbTokens.amberBg : const Color(0xFFE5E7EB),
-                      foreground: days <= 7 ? RbTokens.amber : RbTokens.ink2(context),
-                    ),
+                  RbBadge(
+                    label: '$days days left',
+                    background: days <= 7 ? RbTokens.amberBg : const Color(0xFFE5E7EB),
+                    foreground: days <= 7 ? RbTokens.amber : RbTokens.ink2(context),
+                  ),
                   if (source != null) RbBadge(label: RecycleBinSource.label(source)),
                 ],
                 title: r.clientName.isNotEmpty ? r.clientName : 'Lead',
@@ -1350,15 +1270,9 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                 price: config,
                 priceHint: isListing ? 'listing' : 'requirement',
                 canRestore: _can('page.recycle_bin.requirements_restore'),
-                canDeleteForever: _leadKind == 'ni'
-                    ? _can('page.recycle_bin.requirements_delete')
-                    : (isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')),
-                restoreLabel: _leadKind == 'ni' ? 'Make active' : 'Restore',
-                deleteLabel: _leadKind == 'ni' ? 'Move to bin' : 'Delete forever',
+                canDeleteForever: isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete'),
                 onRestore: () => _restoreRequirement(r),
-                onDeleteForever: _leadKind == 'ni'
-                    ? () => _deleteRequirementToBin(r)
-                    : () => _permanentDeleteRequirement(r.id),
+                onDeleteForever: () => _permanentDeleteRequirement(r.id),
               );
             }),
           _buildPager(context, totalItems: totalItems, totalPages: totalPages, currentPage: safePage),
