@@ -96,17 +96,20 @@ class _UsersScreenState extends State<UsersScreen> {
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoadingResets = true;
     });
     try {
       final response = await DioClient.dio.get('/users/password-resets');
       final data = response.data['data']['resets'] as List? ?? [];
+      if (!mounted) return;
       setState(() {
         _passwordResets = data;
         _isLoadingResets = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingResets = false;
       });
@@ -715,6 +718,7 @@ class _UsersScreenState extends State<UsersScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: BlocListener<UsersBloc, UsersState>(
         listener: (context, state) {
+          if (!mounted) return;
           if (state is UsersOperationSuccess) {
             AppStatusSnackBar.show(
               context,
@@ -722,6 +726,7 @@ class _UsersScreenState extends State<UsersScreen> {
               isSuccess: true,
             );
             _triggerFetch();
+            _fetchPasswordResets();
           } else if (state is UsersError) {
             AppStatusSnackBar.show(
               context,
@@ -782,40 +787,49 @@ class _UsersScreenState extends State<UsersScreen> {
     return users.where((u) => u.id != selfId).toList();
   }
 
-  void _applyRoleChip(String roleName, List<RoleModel> roles) {
+  void _applyFilters({
+    String? roleChip,
+    String? loginChip,
+    List<RoleModel> roles = const [],
+  }) {
+    if (!mounted) return;
     final authState = context.read<AuthBloc>().state;
     final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
     setState(() {
-      _roleChip = roleName;
-      if (roleName.isEmpty) {
-        _selectedRoleId = null;
-      } else {
-        final match = roles.where((r) => r.name.toLowerCase() == roleName.toLowerCase());
-        _selectedRoleId = match.isEmpty ? null : match.first.id;
+      if (roleChip != null) {
+        _roleChip = roleChip;
+        if (roleChip.isEmpty) {
+          _selectedRoleId = null;
+        } else {
+          final match = roles.where((r) => r.name.toLowerCase() == roleChip.toLowerCase());
+          _selectedRoleId = match.isEmpty ? null : match.first.id;
+        }
       }
-      // Super Admin splits Sales/Tele vs Admins across roster tabs.
-      if (isSuperAdmin && roleName.toLowerCase() == 'admin') {
+      if (loginChip != null) {
+        _loginChip = loginChip;
+        if (loginChip == '1') {
+          _selectedStatus = 'Active';
+        } else if (loginChip == '0') {
+          _selectedStatus = 'Inactive';
+        } else {
+          _selectedStatus = 'All';
+        }
+      }
+      if (isSuperAdmin && _roleChip.toLowerCase() == 'admin') {
         _activeTabIndex = 2;
-      } else {
+      } else if (_activeTabIndex != 1) {
         _activeTabIndex = 0;
       }
     });
     _triggerFetch();
   }
 
+  void _applyRoleChip(String roleName, List<RoleModel> roles) {
+    _applyFilters(roleChip: roleName, roles: roles);
+  }
+
   void _applyLoginChip(String login) {
-    setState(() {
-      _loginChip = login;
-      if (login == '1') {
-        _selectedStatus = 'Active';
-      } else if (login == '0') {
-        _selectedStatus = 'Inactive';
-      } else {
-        _selectedStatus = 'All';
-      }
-      _activeTabIndex = 0;
-    });
-    _triggerFetch();
+    _applyFilters(loginChip: login);
   }
 
   Future<void> _callUser(UserModel user) async {
@@ -834,54 +848,69 @@ class _UsersScreenState extends State<UsersScreen> {
     final authState = context.read<AuthBloc>().state;
     final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
     final canLeadAlloc = _can('page.lead_allocation');
+    final narrow = MediaQuery.of(context).size.width < 900;
+
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isSuperAdmin ? 'Users' : 'Employees',
+          style: CRMTypography.pageTitle.copyWith(color: EmTokens.ink(context)),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Your team, their roles, who can log in, and the work each person is carrying.',
+          style: CRMTypography.body.copyWith(color: EmTokens.muted(context), fontSize: 13.5),
+        ),
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: narrow ? WrapAlignment.start : WrapAlignment.end,
+      children: [
+        if (canLeadAlloc)
+          OutlinedButton(
+            onPressed: () => context.go('/admin/lead-allocation'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: EmTokens.ink(context),
+              side: BorderSide(color: EmTokens.line(context)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+            child: const Text('Lead allocation rules'),
+          ),
+        if (_can('page.employees.add'))
+          FilledButton.icon(
+            onPressed: () => _showAddEditUserDialog(),
+            style: FilledButton.styleFrom(
+              backgroundColor: EmTokens.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add Employee'),
+          ),
+      ],
+    );
+
+    if (narrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          title,
+          const SizedBox(height: 12),
+          actions,
+        ],
+      );
+    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isSuperAdmin ? 'Users' : 'Employees',
-                style: CRMTypography.pageTitle.copyWith(color: EmTokens.ink(context)),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Your team, their roles, who can log in, and the work each person is carrying.',
-                style: CRMTypography.body.copyWith(color: EmTokens.muted(context), fontSize: 13.5),
-              ),
-            ],
-          ),
-        ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.end,
-          children: [
-            if (canLeadAlloc)
-              OutlinedButton(
-                onPressed: () => context.go('/admin/lead-allocation'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: EmTokens.ink(context),
-                  side: BorderSide(color: EmTokens.line(context)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                ),
-                child: const Text('Lead allocation rules'),
-              ),
-            if (_can('page.employees.add'))
-              FilledButton.icon(
-                onPressed: () => _showAddEditUserDialog(),
-                style: FilledButton.styleFrom(
-                  backgroundColor: EmTokens.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                ),
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Add Employee'),
-              ),
-          ],
-        ),
+        Expanded(child: title),
+        const SizedBox(width: 12),
+        actions,
       ],
     );
   }
@@ -917,10 +946,7 @@ class _UsersScreenState extends State<UsersScreen> {
             hint: 'Everyone on the team',
             dot: EmTokens.gray,
             selected: _roleChip.isEmpty && _loginChip.isEmpty,
-            onTap: () {
-              _applyRoleChip('', roles);
-              _applyLoginChip('');
-            },
+            onTap: () => _applyFilters(roleChip: '', loginChip: '', roles: roles),
           ),
           EmKpiCard(
             label: 'Can log in',
@@ -928,10 +954,7 @@ class _UsersScreenState extends State<UsersScreen> {
             hint: '${total - canLogin} with login off',
             dot: EmTokens.greenBright,
             selected: _loginChip == '1' && _roleChip.isEmpty,
-            onTap: () {
-              _applyRoleChip('', roles);
-              _applyLoginChip('1');
-            },
+            onTap: () => _applyFilters(roleChip: '', loginChip: '1', roles: roles),
           ),
           EmKpiCard(
             label: 'Sales',
@@ -939,10 +962,7 @@ class _UsersScreenState extends State<UsersScreen> {
             hint: 'Handle leads & site visits',
             dot: EmTokens.green,
             selected: _roleChip == 'Sales',
-            onTap: () {
-              _applyLoginChip('');
-              _applyRoleChip('Sales', roles);
-            },
+            onTap: () => _applyFilters(roleChip: 'Sales', loginChip: '', roles: roles),
           ),
           EmKpiCard(
             label: 'Telecallers',
@@ -950,10 +970,7 @@ class _UsersScreenState extends State<UsersScreen> {
             hint: 'First call on new leads',
             dot: EmTokens.violet,
             selected: _roleChip == 'Telecaller',
-            onTap: () {
-              _applyLoginChip('');
-              _applyRoleChip('Telecaller', roles);
-            },
+            onTap: () => _applyFilters(roleChip: 'Telecaller', loginChip: '', roles: roles),
           ),
           EmKpiCard(
             label: 'Administrators',
@@ -961,22 +978,24 @@ class _UsersScreenState extends State<UsersScreen> {
             hint: 'Besides Propkart Admin',
             dot: EmTokens.red,
             selected: _roleChip == 'Admin',
-            onTap: () {
-              _applyLoginChip('');
-              _applyRoleChip('Admin', roles);
-            },
+            onTap: () => _applyFilters(roleChip: 'Admin', loginChip: '', roles: roles),
           ),
         ];
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final cardW = columns == 1
+            final maxW = constraints.maxWidth.isFinite
                 ? constraints.maxWidth
-                : (constraints.maxWidth - gap * (columns - 1)) / columns;
+                : MediaQuery.sizeOf(context).width;
+            final cardW = columns == 1
+                ? maxW
+                : (maxW - gap * (columns - 1)) / columns;
             return Wrap(
               spacing: gap,
               runSpacing: gap,
-              children: cards.map((c) => SizedBox(width: cardW, child: c)).toList(),
+              children: cards
+                  .map((c) => SizedBox(width: cardW.isFinite ? cardW : maxW, child: c))
+                  .toList(),
             );
           },
         );
@@ -996,10 +1015,7 @@ class _UsersScreenState extends State<UsersScreen> {
           padding: const EdgeInsets.only(bottom: 4),
           child: EmLoginOffBanner(
             names: '$names$more',
-            onShow: () {
-              _applyRoleChip('', state.roles);
-              _applyLoginChip('0');
-            },
+            onShow: () => _applyFilters(roleChip: '', loginChip: '0', roles: state.roles),
           ),
         );
       },
@@ -1060,46 +1076,43 @@ class _UsersScreenState extends State<UsersScreen> {
               selected: _loginChip == '0',
               onTap: () => _applyLoginChip('0'),
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 220, maxWidth: 340),
-              child: SizedBox(
-                width: 340,
-                child: TextField(
-                  controller: _searchController,
-                  style: CRMTypography.body.copyWith(color: EmTokens.ink(context)),
-                  decoration: InputDecoration(
-                    hintText: 'Name, email or phone number',
-                    hintStyle: CRMTypography.body.copyWith(color: EmTokens.muted(context)),
-                    prefixIcon: Icon(Icons.search_rounded, color: EmTokens.muted(context)),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.clear_rounded, color: EmTokens.muted(context)),
-                            onPressed: () {
-                              _searchController.clear();
-                              _triggerFetch();
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: EmTokens.panelBg(context),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: EmTokens.line(context)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: EmTokens.line(context)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: EmTokens.green, width: 1.5),
-                    ),
+            SizedBox(
+              width: (MediaQuery.sizeOf(context).width - 48).clamp(200.0, 340.0),
+              child: TextField(
+                controller: _searchController,
+                style: CRMTypography.body.copyWith(color: EmTokens.ink(context)),
+                decoration: InputDecoration(
+                  hintText: 'Name, email or phone number',
+                  hintStyle: CRMTypography.body.copyWith(color: EmTokens.muted(context)),
+                  prefixIcon: Icon(Icons.search_rounded, color: EmTokens.muted(context)),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear_rounded, color: EmTokens.muted(context)),
+                          onPressed: () {
+                            _searchController.clear();
+                            _triggerFetch();
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: EmTokens.panelBg(context),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: EmTokens.line(context)),
                   ),
-                  onChanged: (_) => _searchGate.schedule((_) {
-                    if (mounted) _triggerFetch();
-                  }),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: EmTokens.line(context)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: EmTokens.green, width: 1.5),
+                  ),
                 ),
+                onChanged: (_) => _searchGate.schedule((_) {
+                  if (mounted) _triggerFetch();
+                }),
               ),
             ),
           ],
@@ -1114,19 +1127,22 @@ class _UsersScreenState extends State<UsersScreen> {
       return _buildEmployeesTable();
     }
     return BlocBuilder<UsersBloc, UsersState>(
+      buildWhen: (prev, next) =>
+          next is UsersLoaded || next is UsersLoading || next is UsersError,
       builder: (context, state) {
+        if (state is! UsersLoaded) {
+          return _buildEmployeesTable();
+        }
+        final list = _teamWithoutSelf(state.users);
         UserModel? focused;
-        if (state is UsersLoaded) {
-          final list = _teamWithoutSelf(state.users);
-          if (list.isNotEmpty) {
-            for (final u in list) {
-              if (u.id == _focusedUserId) {
-                focused = u;
-                break;
-              }
+        if (list.isNotEmpty) {
+          for (final u in list) {
+            if (u.id == _focusedUserId) {
+              focused = u;
+              break;
             }
-            focused ??= list.first;
           }
+          focused ??= list.first;
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1137,6 +1153,7 @@ class _UsersScreenState extends State<UsersScreen> {
               SizedBox(
                 width: 340,
                 child: EmDetailPanel(
+                  key: ValueKey('em-det-${focused.id}'),
                   user: focused,
                   canEdit: _can('page.employees.edit'),
                   canDelete: _can('page.employees.delete'),
@@ -1526,6 +1543,7 @@ class _UsersScreenState extends State<UsersScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Switch(
+                      key: ValueKey('em-login-table-${user.id}'),
                       value: user.isActive,
                       activeTrackColor: CRMColors.primary,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,

@@ -58,61 +58,49 @@ class _LibraryMainScreenState extends State<LibraryMainScreen> {
     String vault = 'rental';
     final propertyCtrl = TextEditingController();
 
-    final ok = await showDialog<bool>(
+    final ok = await showLibDialog(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Upload document'),
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Vault', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx))),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: vault,
-                      items: const [
-                        DropdownMenuItem(value: 'rental', child: Text('Rental')),
-                        DropdownMenuItem(value: 'resale', child: Text('Re-sale')),
-                        DropdownMenuItem(value: 'service', child: Text('Service agents')),
-                      ],
-                      onChanged: (v) => setLocal(() => vault = v ?? 'rental'),
-                      decoration: const InputDecoration(border: OutlineInputBorder()),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('Property or person', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx))),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: propertyCtrl,
-                      decoration: const InputDecoration(
-                        hintText: 'e.g. PR-1261 or Harsh Singh',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Opens the selected vault upload dialog so the file is saved with the existing library flow.',
-                      style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx)),
-                    ),
-                  ],
+      title: 'Upload document',
+      subtitle: 'Opens the vault upload flow so the file is saved properly.',
+      icon: Icons.upload_rounded,
+      okLabel: 'Upload',
+      body: StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Vault', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx), fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: vault,
+                items: const [
+                  DropdownMenuItem(value: 'rental', child: Text('Rental')),
+                  DropdownMenuItem(value: 'resale', child: Text('Re-sale')),
+                  DropdownMenuItem(value: 'service', child: Text('Service agents')),
+                ],
+                onChanged: (v) => setLocal(() => vault = v ?? 'rental'),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: FilledButton.styleFrom(backgroundColor: LibTokens.green),
-                  child: const Text('Upload'),
+              const SizedBox(height: 12),
+              Text('Property or person', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx), fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: propertyCtrl,
+                decoration: InputDecoration(
+                  hintText: 'e.g. PR-1261 or Harsh Singh',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-              ],
-            );
-          },
-        );
-      },
+              ),
+              const SizedBox(height: 12),
+              LibDropzoneHint(
+                onTap: () => setLocal(() {}),
+              ),
+            ],
+          );
+        },
+      ),
     );
 
     final name = propertyCtrl.text;
@@ -140,71 +128,55 @@ class _LibraryMainScreenState extends State<LibraryMainScreen> {
     final phoneCtrl = TextEditingController();
     String need = 'Tenant ID proof + rent agreement';
 
-    final ok = await showDialog<bool>(
+    final ok = await showLibDialog(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Request documents'),
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'We’ll open WhatsApp with a checklist for the client.',
-                      style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx)),
-                    ),
-                    const SizedBox(height: 14),
-                    Text('Client mobile', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx))),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: phoneCtrl,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        hintText: '+91 98250 12345',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('What do you need?', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx))),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: need,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Tenant ID proof + rent agreement',
-                          child: Text('Tenant ID proof + rent agreement'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Owner ID proof + property papers',
-                          child: Text('Owner ID proof + property papers'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Vendor Aadhaar + GST',
-                          child: Text('Vendor Aadhaar + GST'),
-                        ),
-                      ],
-                      onChanged: (v) => setLocal(() => need = v ?? need),
-                      decoration: const InputDecoration(border: OutlineInputBorder()),
-                    ),
-                  ],
+      title: 'Request documents',
+      subtitle: 'We’ll send a WhatsApp checklist to the client',
+      icon: Icons.chat_rounded,
+      okLabel: 'Send on WhatsApp',
+      body: StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Client mobile', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx), fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  hintText: '+91 98250 12345',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: FilledButton.styleFrom(backgroundColor: LibTokens.green),
-                  child: const Text('Send on WhatsApp'),
+              const SizedBox(height: 12),
+              Text('What do you need?', style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx), fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: need,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Tenant ID proof + rent agreement',
+                    child: Text('Tenant ID proof + rent agreement'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Owner ID proof + property papers',
+                    child: Text('Owner ID proof + property papers'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Vendor Aadhaar + GST',
+                    child: Text('Vendor Aadhaar + GST'),
+                  ),
+                ],
+                onChanged: (v) => setLocal(() => need = v ?? need),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-              ],
-            );
-          },
-        );
-      },
+              ),
+            ],
+          );
+        },
+      ),
     );
 
     final rawPhone = phoneCtrl.text;
@@ -245,63 +217,62 @@ class _LibraryMainScreenState extends State<LibraryMainScreen> {
     required String route,
     required List<String> previewNames,
   }) async {
-    await showDialog<void>(
+    final ok = await showLibDialog(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text(folderLabel),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '$vaultTitle vault · open to manage files',
-                  style: CRMTypography.caption.copyWith(color: LibTokens.muted(ctx)),
-                ),
-                const SizedBox(height: 12),
-                if (previewNames.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(
-                      'No files yet — upload the first one in the vault.',
-                      textAlign: TextAlign.center,
-                      style: CRMTypography.body.copyWith(color: LibTokens.muted(ctx)),
+      title: folderLabel,
+      subtitle: '$vaultTitle vault · ${previewNames.length} file${previewNames.length == 1 ? '' : 's'}',
+      icon: Icons.folder_rounded,
+      okLabel: 'Upload to this folder',
+      cancelLabel: 'Close',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (previewNames.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Text(
+                'No files yet — upload the first one',
+                textAlign: TextAlign.center,
+                style: CRMTypography.body.copyWith(color: LibTokens.muted(context), fontSize: 13),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: previewNames.length.clamp(0, 8),
+                separatorBuilder: (_, _) => Divider(height: 1, color: LibTokens.line(context)),
+                itemBuilder: (_, i) {
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('PDF', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
                     ),
-                  )
-                else
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: previewNames.length.clamp(0, 8),
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.description_outlined, size: 20),
-                          title: Text(previewNames[i], maxLines: 1, overflow: TextOverflow.ellipsis),
-                        );
-                      },
+                    title: Text(
+                      previewNames[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: CRMTypography.body.copyWith(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
-                  ),
-              ],
+                  );
+                },
+              ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-            FilledButton(
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
               onPressed: () {
-                Navigator.pop(ctx);
-                _openVault(route, upload: true);
-              },
-              style: FilledButton.styleFrom(backgroundColor: LibTokens.green),
-              child: const Text('Upload to this folder'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
+                Navigator.pop(context, false);
                 _openVault(route);
               },
               child: Text(
@@ -309,10 +280,13 @@ class _LibraryMainScreenState extends State<LibraryMainScreen> {
                 style: TextStyle(color: LibTokens.green, fontWeight: FontWeight.w600),
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
+    if (ok == true && mounted) {
+      _openVault(route, upload: route != '/service-agent-library');
+    }
   }
 
   Widget _buildBody(BuildContext context, {required bool isPhone}) {

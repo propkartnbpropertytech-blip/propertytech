@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:math';
 import '../../properties/services/properties_service.dart';
 import '../../../core/api/dio_client.dart';
@@ -8,15 +9,15 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/crm_status_chips.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
-import '../../../core/design_system/widgets/empty_state.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/security/role_guard.dart';
 import '../models/document_model.dart';
 import '../models/area_item.dart';
 import '../repository/library_repository.dart';
+import '../widgets/library_vault/library_vault_tokens.dart';
+import '../widgets/library_vault/library_vault_widgets.dart';
 import 'library_widgets.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
 
@@ -46,7 +47,6 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
   String _selectedArea = 'All';
   String _selectedStatus = 'All';
   DateTimeRange? _selectedDateRange;
-  bool _showOtherTypesKpis = false;
   bool _isLoading = false;
 
   List<AreaItem> _dbAreasList = [];
@@ -94,6 +94,7 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     super.initState();
     _loadDocuments();
     _fetchAreas();
+    if (_isAdminOrSuperAdmin) _loadPendingDocuments();
   }
 
   @override
@@ -1283,771 +1284,443 @@ class _ServiceAgentLibraryScreenState extends State<ServiceAgentLibraryScreen> {
     );
   }
 
-  Widget _buildPendingView() {
-    if (_isLoadingPending) return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
-    if (_pendingDocuments.isEmpty) return const CRMEmptyState(title: 'No Pending Submissions', description: 'There are no service agent submissions awaiting approval.');
+  // ───────────────────────── New_UI vault shell ─────────────────────────────
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: CRMSpacing.m),
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+  /// Selected KPI card (0 total, 1 waiting for approval, 2 verified).
+  int? _selectedKpi;
+
+  void _onResetAll() {
+    setState(() => _selectedKpi = null);
+    _resetFilters();
+  }
+
+  Future<void> _setPendingView(bool pending) async {
+    if (pending && !_isAdminOrSuperAdmin) return;
+    if (pending) await _loadPendingDocuments();
+    if (!mounted) return;
+    setState(() {
+      _showPendingView = pending;
+      if (pending) {
+        _selectedKpi = 1;
+      } else if (_selectedKpi == 1) {
+        _selectedKpi = null;
+      }
+    });
+  }
+
+  Future<void> _onKpiTap(int index) async {
+    final deselect = _selectedKpi == index;
+    switch (index) {
+      case 0:
+        setState(() {
+          _showPendingView = false;
+          _selectedKpi = deselect ? null : 0;
+          _selectedStatus = 'All';
+        });
+        _applyFiltersAndSort();
+        break;
+      case 1:
+        if (!_isAdminOrSuperAdmin) return;
+        await _setPendingView(!deselect);
+        break;
+      case 2:
+        setState(() {
+          _showPendingView = false;
+          _selectedKpi = deselect ? null : 2;
+          _selectedStatus = deselect ? 'All' : 'Active';
+        });
+        _applyFiltersAndSort();
+        break;
+    }
+  }
+
+  Future<void> _callAgent(ServiceAgentDocument doc) async {
+    final number = doc.mobileNumber.replaceAll(RegExp(r'[^\d+]'), '');
+    void notify(String message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: CRMColors.danger,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+
+    if (number.isEmpty) {
+      notify('No mobile number on file for ${doc.agentName}.');
+      return;
+    }
+    try {
+      final launched = await launchUrl(Uri(scheme: 'tel', path: number));
+      if (!launched) notify('Could not start a call to ${doc.mobileNumber}.');
+    } catch (e) {
+      notify('Could not start a call to ${doc.mobileNumber}.');
+    }
+  }
+
+  String _displayUploader(String raw) {
+    final text = raw.trim();
+    final lower = text.toLowerCase();
+    if (lower == 'admin' || lower == 'admin@nbdeveloper.com') return 'Admin';
+    if (lower == 'super admin' || lower == 'super_admin') return 'Super Admin';
+    if (text.contains('@')) {
+      final name = text.split('@').first;
+      if (name.isNotEmpty) return name[0].toUpperCase() + name.substring(1);
+    }
+    return text;
+  }
+
+  /// Pending submissions narrowed by the search box and role dropdown.
+  List<ServiceAgentDocument> get _visiblePending {
+    final q = _searchController.text.trim().toLowerCase();
+    return _pendingDocuments.where((d) {
+      if (_selectedServiceType != 'All' && d.serviceType != _selectedServiceType) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      return d.agentName.toLowerCase().contains(q) ||
+          d.documentName.toLowerCase().contains(q) ||
+          d.documentType.toLowerCase().contains(q) ||
+          d.mobileNumber.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  Widget _buildAgentCard(ServiceAgentDocument doc, {required bool pending}) {
+    final verified = doc.status == DocumentStatus.active;
+    final statusLabel = pending
+        ? 'Pending'
+        : (verified ? 'Verified' : doc.status.displayName);
+    final metaParts = <String>[
+      if (doc.dateOfBirth != null && doc.dateOfBirth!.trim().isNotEmpty)
+        'DOB ${_formatDob(doc.dateOfBirth)}',
+      'by ${_displayUploader(doc.uploadedBy)}',
+      DateFormat('dd MMM yyyy').format(doc.uploadDate),
+    ];
+
+    return LvAgentCard(
+      name: doc.agentName.isNotEmpty ? doc.agentName : doc.documentName,
+      role: doc.serviceType,
+      mobile: doc.mobileNumber,
+      imageUrl: doc.agentImageUrl,
+      statusLabel: statusLabel,
+      areas: doc.area,
+      badges: [if (doc.documentType.trim().isNotEmpty) doc.documentType],
+      meta: metaParts.join(' · '),
+      actions: [
+        LvAgentAction(
+          label: 'Call',
+          icon: Icons.call_outlined,
+          onTap: () => _callAgent(doc),
         ),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.pending_actions_rounded, color: Colors.orange.shade800, size: 20),
+        if (pending) ...[
+          LvAgentAction(
+            label: 'Approve',
+            icon: Icons.check_rounded,
+            kind: LvActionKind.primary,
+            onTap: () => _approveAgent(doc),
           ),
-          const SizedBox(width: CRMSpacing.m),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                'Pending Submissions (${_pendingDocuments.length})',
-                style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: Colors.orange.shade900),
-              ),
-              Text(
-                'Review and verify service agent registrations before approving them into the active directory.',
-                style: CRMTypography.caption.copyWith(color: Colors.orange.shade800),
-              ),
-            ]),
+          LvAgentAction(
+            label: 'Reject',
+            icon: Icons.close_rounded,
+            kind: LvActionKind.danger,
+            onTap: () => _rejectAgent(doc),
           ),
-        ]),
-      ),
-      ..._pendingDocuments.map((doc) => _buildPendingCard(doc)),
-    ]);
-  }
-
-  Widget _buildPendingCard(ServiceAgentDocument doc) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-      child: CRMCard(
-        padding: const EdgeInsets.all(CRMSpacing.m),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Top Row: Circular Avatar + Name/Role + Pending Badge
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(color: CRMColors.primaryOf(context).withOpacity(0.3), width: 1.5),
-                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+        ],
+        LvAgentAction(
+          label: 'Documents',
+          icon: Icons.folder_open_outlined,
+          onTap: () => _showInScreenDocumentViewer(context, doc),
+        ),
+      ],
+      menu: pending
+          ? [
+              LvMenuAction(
+                label: 'View details',
+                icon: Icons.visibility_outlined,
+                onTap: () => _viewDocument(doc),
               ),
-              child: ClipOval(
-                child: doc.agentImageUrl != null && doc.agentImageUrl!.isNotEmpty
-                    ? CrmNetworkImage(
-                        url: doc.agentImageUrl!,
-                        width: 52,
-                        height: 52,
-                        cacheLogicalWidth: 52,
-                        cacheLogicalHeight: 52,
-                        fit: BoxFit.cover,
-                        error: (context) => _agentAvatarPlaceholder(doc),
-                      )
-                    : _agentAvatarPlaceholder(doc),
+            ]
+          : [
+              LvMenuAction(
+                label: 'View details',
+                icon: Icons.visibility_outlined,
+                onTap: () => _viewDocument(doc),
               ),
-            ),
-            const SizedBox(width: CRMSpacing.m),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  doc.agentName,
-                  style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, fontSize: 16, color: CRMColors.textOf(context)),
-                ),
-                const SizedBox(height: 2),
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: CRMColors.primaryOf(context).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      doc.serviceType,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.primaryOf(context)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(Icons.phone_rounded, size: 13, color: CRMColors.textSecondaryOf(context)),
-                  const SizedBox(width: 4),
-                  Text(
-                    doc.mobileNumber,
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w500),
-                  ),
-                ]),
-              ]),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              LvMenuAction(
+                label: 'Download',
+                icon: Icons.file_download_outlined,
+                onTap: () => _downloadDocument(doc),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.hourglass_top_rounded, size: 13, color: Colors.orange.shade800),
-                const SizedBox(width: 4),
-                Text('Pending Approval', style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold, fontSize: 11.5)),
-              ]),
-            ),
-          ]),
-
-          // Target Area(s) - Button / Chip Type UI
-          if (doc.area.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4, right: 8),
-                child: Text(
-                  'Target Area(s):',
-                  style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context), fontSize: 12),
-                ),
+              LvMenuAction(
+                label: 'Edit',
+                icon: Icons.edit_outlined,
+                onTap: () => _showUploadEditDialog(doc),
               ),
-              Expanded(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: doc.area.map((areaName) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: CRMColors.primaryOf(context).withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: CRMColors.primaryOf(context).withOpacity(0.25),
-                          width: 1,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.location_on_rounded,
-                            size: 13,
-                            color: CRMColors.primaryOf(context),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            areaName,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: CRMColors.primaryOf(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
+              LvMenuAction(
+                label: 'Share',
+                icon: Icons.share_outlined,
+                onTap: () => _shareDocument(doc),
               ),
-            ]),
-          ],
-
-          const SizedBox(height: 12),
-          // Bottom Container: Identity Info & Action Buttons
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: CRMColors.backgroundOf(context),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6)),
-            ),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-              Expanded(
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Expanded(
-                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      _buildPendingDetail('Identity Doc', doc.documentType),
-                      if (doc.dateOfBirth != null && doc.dateOfBirth!.isNotEmpty)
-                        _buildPendingDetail('Date of Birth', doc.dateOfBirth!),
-                    ]),
-                  ),
-                  const SizedBox(width: CRMSpacing.m),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      _buildPendingDetail('Submitted By', doc.uploadedBy),
-                      _buildPendingDetail('Submission Date', DateFormat('dd MMM yyyy').format(doc.uploadDate)),
-                    ]),
-                  ),
-                ]),
+              LvMenuAction(
+                label: 'Delete',
+                icon: Icons.delete_outline_rounded,
+                danger: true,
+                onTap: () => _deleteDocument(doc),
               ),
-              const SizedBox(width: CRMSpacing.m),
-              // Action Buttons Column
-              Column(mainAxisSize: MainAxisSize.min, children: [
-                SizedBox(
-                  width: 125,
-                  height: 32,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: CRMColors.primaryOf(context),
-                      side: BorderSide(color: CRMColors.primaryOf(context).withOpacity(0.6), width: 1.1),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    ),
-                    icon: const Icon(Icons.visibility_outlined, size: 14),
-                    label: const Text('View Document', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    onPressed: () => _showInScreenDocumentViewer(context, doc),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: 125,
-                  height: 32,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: CRMColors.success,
-                      foregroundColor: Colors.white,
-                      elevation: 1,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    ),
-                    icon: const Icon(Icons.check_rounded, size: 15),
-                    label: const Text('Approve', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    onPressed: () => _approveAgent(doc),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: 125,
-                  height: 32,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: CRMColors.danger,
-                      side: const BorderSide(color: CRMColors.danger, width: 1.2),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    ),
-                    icon: const Icon(Icons.close_rounded, size: 15),
-                    label: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    onPressed: () => _rejectAgent(doc),
-                  ),
-                ),
-              ]),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _agentAvatarPlaceholder(ServiceAgentDocument doc) {
-    return Container(width: 52, height: 52,
-      decoration: BoxDecoration(color: CRMColors.primaryOf(context).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-      child: Icon(Icons.person_rounded, color: CRMColors.primaryOf(context)));
-  }
-
-  Widget _buildPendingDetail(String label, String value) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(children: [
-        Text('$label: ', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-        Flexible(child: Text(value, style: CRMTypography.caption.copyWith(color: CRMColors.textOf(context)), overflow: TextOverflow.ellipsis)),
-      ]));
-  }
-
-  Widget _tableAvatarPlaceholder(BuildContext context) {
-    return Container(width: 36, height: 36,
-      decoration: BoxDecoration(color: CRMColors.primaryOf(context).withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-      child: Icon(Icons.person_rounded, color: CRMColors.primaryOf(context), size: 20));
-  }
-
-  Widget _buildFilterDropdown(String label, String currentValue, List<String> items, void Function(String?) onChanged, double width) {
-    return SizedBox(width: width, child: DropdownButtonFormField<String>(
-      value: currentValue, isExpanded: true,
-      dropdownColor: CRMColors.cardBgOf(context),
-      decoration: InputDecoration(
-        labelText: label, labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
-        filled: true, fillColor: CRMColors.backgroundOf(context),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s), borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s), borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.s), borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5)),
-      ),
-      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontSize: 13),
-      items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, style: TextStyle(fontSize: 13, color: CRMColors.textOf(context)), overflow: TextOverflow.ellipsis))).toList(),
-      onChanged: onChanged,
-    ));
-  }
-
-  Widget _buildMobileDocumentCard(ServiceAgentDocument doc) {
-    return Padding(padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-      child: CRMCard(padding: const EdgeInsets.all(CRMSpacing.m), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          doc.agentImageUrl != null && doc.agentImageUrl!.isNotEmpty
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: CrmNetworkImage(
-                    url: doc.agentImageUrl!,
-                    width: 40,
-                    height: 40,
-                    cacheLogicalWidth: 40,
-                    cacheLogicalHeight: 40,
-                    fit: BoxFit.cover,
-                    error: (context) => FileIconHelper.getIconForExtension(doc.fileExtension, size: 24),
-                  ),
-                )
-              : FileIconHelper.getIconForExtension(doc.fileExtension, size: 24),
-          const SizedBox(width: CRMSpacing.s),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(doc.documentType, style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)), maxLines: 2, overflow: TextOverflow.ellipsis),
-            Text('${doc.fileSize} \u2022 ${doc.agentName}', style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-          ])),
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: CRMColors.textSecondaryOf(context)),
-            padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-            onSelected: (val) {
-              switch (val) {
-                case 'view': _viewDocument(doc); break;
-                case 'download': _downloadDocument(doc); break;
-                case 'edit': _showUploadEditDialog(doc); break;
-                case 'share': _shareDocument(doc); break;
-                case 'delete': _deleteDocument(doc); break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'view', child: Row(children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')])),
-              const PopupMenuItem(value: 'download', child: Row(children: [Icon(Icons.download_rounded, size: 18), SizedBox(width: 8), Text('Download')])),
-              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')])),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))])),
             ],
-          ),
-        ]),
-        const SizedBox(height: CRMSpacing.m),
-        const Divider(height: 1),
-        const SizedBox(height: CRMSpacing.s),
-        _buildMobileDetailItem('Agent Name', doc.agentName),
-        _buildMobileDetailItem('Role', doc.serviceType),
-        _buildMobileDetailItem('Mobile Number', doc.mobileNumber),
-        if (doc.dateOfBirth != null && doc.dateOfBirth!.isNotEmpty) _buildMobileDetailItem('DOB', doc.dateOfBirth!),
-        if (doc.area.isNotEmpty) _buildMobileDetailItem('Area', doc.area.join(', ')),
-        _buildMobileDetailItem('Uploaded By', doc.uploadedBy),
-        _buildMobileDetailItem('Upload Date', DateFormat('dd MMM yyyy').format(doc.uploadDate)),
-        const SizedBox(height: CRMSpacing.m),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          CRMStatusChip(status: doc.status.displayName),
-          Text(doc.fileExtension.toUpperCase(), style: CRMTypography.captionBold.copyWith(color: CRMColors.textMutedOf(context))),
-        ]),
-      ])),
     );
   }
 
-  Widget _buildMobileDetailItem(String label, String value) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 3.0),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-        const SizedBox(width: CRMSpacing.m),
-        Expanded(child: Text(value, textAlign: TextAlign.end,
-            style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context), fontSize: 12.5, fontWeight: FontWeight.w500),
-            overflow: TextOverflow.ellipsis)),
-      ]));
+  List<LvKpiItem> _buildKpis() {
+    final verifiedCount =
+        _allDocuments.where((d) => d.status == DocumentStatus.active).length;
+    final areasCount = _dynamicAreas.length - 1;
+    return [
+      LvKpiItem(
+        icon: Icons.groups_outlined,
+        label: 'Total agents',
+        value: '$_totalCount',
+        hint: 'Ready when you need them',
+        selected: _selectedKpi == 0,
+        onTap: () => _onKpiTap(0),
+      ),
+      LvKpiItem(
+        icon: Icons.hourglass_empty_rounded,
+        label: 'Waiting for approval',
+        value: '${_pendingDocuments.length}',
+        hint: 'Submitted by your team',
+        selected: _selectedKpi == 1,
+        onTap: _isAdminOrSuperAdmin ? () => _onKpiTap(1) : null,
+      ),
+      LvKpiItem(
+        icon: Icons.verified_outlined,
+        label: 'Verified',
+        value: '$verifiedCount',
+        hint: 'ID and documents checked',
+        selected: _selectedKpi == 2,
+        onTap: () => _onKpiTap(2),
+      ),
+      LvKpiItem(
+        icon: Icons.place_outlined,
+        label: 'Areas covered',
+        value: '${areasCount < 0 ? 0 : areasCount}',
+        hint: 'Across your service zones',
+      ),
+    ];
   }
 
-  Widget _buildMobilePagination() {
-    if (_totalPages <= 1) return const SizedBox.shrink();
-    return Padding(padding: const EdgeInsets.only(top: CRMSpacing.s, bottom: CRMSpacing.l),
-      child: CRMCard(padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Page $_currentPage of $_totalPages', style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context))),
-          Row(children: [
-            IconButton(icon: const Icon(Icons.chevron_left_rounded), onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null),
-            IconButton(icon: const Icon(Icons.chevron_right_rounded), onPressed: _currentPage < _totalPages ? () => setState(() => _currentPage++) : null),
-          ]),
-        ])));
+  List<LvChecklistItem> _buildChecklist() {
+    final types = _allDocuments.map((d) => d.documentType).toList();
+    return [
+      LvChecklistItem(
+        label: 'Aadhaar / ID proof',
+        count: lvCountByKeywords(types, [
+          'aadhaar',
+          'aadhar',
+          'id proof',
+          'identity',
+          'voter',
+          'driving',
+          'pan card',
+        ]),
+      ),
+      LvChecklistItem(
+        label: 'GST certificate',
+        count: lvCountByKeywords(types, ['gst']),
+      ),
+      LvChecklistItem(
+        label: 'Service agreement (SLA)',
+        count: lvCountByKeywords(types, ['agreement', 'sla']),
+      ),
+      LvChecklistItem(
+        label: 'Price list & quotation',
+        count: lvCountByKeywords(types, ['price', 'catalog', 'quotation', 'quote']),
+      ),
+      LvChecklistItem(
+        label: 'Invoices & work photos',
+        count: lvCountByKeywords(types, ['invoice', 'work', 'photo']),
+      ),
+    ];
+  }
+
+  Widget _buildMainPanel() {
+    final admin = _isAdminOrSuperAdmin;
+    final pendingMode = _showPendingView && admin;
+
+    final filterBar = LvFilterBar(
+      leading: admin
+          ? LvSegment(
+              labels: [
+                'All agents',
+                'Waiting for approval (${_pendingDocuments.length})',
+              ],
+              selected: pendingMode ? 1 : 0,
+              onChanged: (i) => _setPendingView(i == 1),
+            )
+          : null,
+      searchController: _searchController,
+      searchHint: 'Agent, mobile or document',
+      onSearchChanged: (_) {
+        if (pendingMode) {
+          setState(() {});
+        } else {
+          _applyFiltersAndSort();
+        }
+      },
+      dropdowns: [
+        LvDropdownField(
+          label: 'Role',
+          value: _selectedServiceType,
+          items: _serviceTypes,
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() => _selectedServiceType = v);
+            _applyFiltersAndSort();
+          },
+        ),
+        if (!pendingMode) ...[
+          LvDropdownField(
+            label: 'Area',
+            value: _selectedArea,
+            items: _dynamicAreas,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _selectedArea = v);
+              _applyFiltersAndSort();
+            },
+          ),
+          LvDropdownField(
+            label: 'Document type',
+            value: _selectedDocType,
+            items: _dynamicDocTypes,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _selectedDocType = v);
+              _applyFiltersAndSort();
+            },
+          ),
+        ],
+      ],
+      onReset: _onResetAll,
+    );
+
+    if (pendingMode) {
+      final pending = _visiblePending;
+      Widget body;
+      if (_isLoadingPending) {
+        body = const LvLoading();
+      } else if (pending.isEmpty) {
+        body = const LvEmpty(
+          title: 'No pending submissions',
+          message: 'Nothing is waiting for approval.',
+        );
+      } else {
+        body = LvAgentGrid(
+          children: [
+            for (final doc in pending) _buildAgentCard(doc, pending: true),
+          ],
+        );
+      }
+      return LvPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            filterBar,
+            body,
+            LvPanelFooter(
+              label: 'Showing ${pending.length} of ${_pendingDocuments.length} waiting for approval',
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget body;
+    if (_isLoading) {
+      body = const LvLoading();
+    } else if (_filteredDocuments.isEmpty) {
+      body = LvEmpty(
+        title: _allDocuments.isEmpty ? 'No service agents yet' : 'No agents match',
+        message: _allDocuments.isEmpty
+            ? 'Add your first electrician, plumber or vendor.'
+            : 'Try another role, area or document type.',
+        actionLabel: _allDocuments.isEmpty ? null : 'Reset filters',
+        onAction: _allDocuments.isEmpty ? null : _onResetAll,
+      );
+    } else {
+      body = LvAgentGrid(
+        children: [
+          for (final doc in _paginatedDocuments) _buildAgentCard(doc, pending: false),
+        ],
+      );
+    }
+
+    final footerLabel = _filteredDocuments.length == _allDocuments.length
+        ? 'Showing ${_paginatedDocuments.length} of ${_filteredDocuments.length} agents'
+        : 'Showing ${_paginatedDocuments.length} of ${_filteredDocuments.length} agents · ${_allDocuments.length} total';
+
+    return LvPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          filterBar,
+          body,
+          LvPanelFooter(
+            label: footerLabel,
+            currentPage: _currentPage,
+            totalPages: _totalPages,
+            onPageChanged: (p) => setState(() => _currentPage = p),
+            pageSize: _pageSize,
+            onPageSizeChanged: (rows) {
+              setState(() {
+                _pageSize = rows;
+                _currentPage = 1;
+              });
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isDesktop = size.width >= CRMBreakpoints.desktop;
-    final isTablet = size.width >= CRMBreakpoints.tablet && size.width < CRMBreakpoints.desktop;
-    final isMobile = CRMBreakpoints.isPhone(context);
-
     return Scaffold(
-      backgroundColor: CRMColors.background,
+      backgroundColor: LibTokens.pageBg(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(CRMSpacing.m),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const LibraryBreadcrumb(currentPageName: 'Service Agent Library'),
-                Text('Service agents', style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context))),
-                Text('Store, filter, and organize service provider SLA agreements and invoices.',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-              ]),
-              Row(children: [
-                PopupMenuButton<String>(
-                  icon: Icon(Icons.download_rounded, color: CRMColors.primaryOf(context)),
-                  tooltip: 'Export Index',
-                  onSelected: (val) => DocumentExportHelper.triggerExport(context, val),
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'Excel', child: Text('Export to Excel')),
-                    const PopupMenuItem(value: 'PDF', child: Text('Export to PDF')),
-                  ],
-                ),
-                const SizedBox(width: CRMSpacing.s),
-                if (_isAdminOrSuperAdmin) ...[
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _showPendingView ? Colors.white : Colors.orange.shade700,
-                      backgroundColor: _showPendingView ? Colors.orange.shade600 : Colors.orange.withOpacity(0.08),
-                      side: BorderSide(color: Colors.orange.shade600),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    icon: Icon(Icons.pending_actions_rounded, size: 18,
-                        color: _showPendingView ? Colors.white : Colors.orange.shade700),
-                    label: Text(
-                      _showPendingView ? 'Back to Library'
-                          : 'Pending${_pendingDocuments.isNotEmpty ? ' (${_pendingDocuments.length})' : ''}',
-                      style: TextStyle(fontWeight: FontWeight.w600,
-                          color: _showPendingView ? Colors.white : Colors.orange.shade700),
-                    ),
-                    onPressed: () async {
-                      if (!_showPendingView) await _loadPendingDocuments();
-                      setState(() => _showPendingView = !_showPendingView);
-                    },
-                  ),
-                  const SizedBox(width: CRMSpacing.s),
-                ],
-                CRMButton(label: 'Add agent', prefixIcon: Icons.add_rounded, onPressed: () => _showUploadEditDialog()),
-              ]),
-            ]),
-            const SizedBox(height: CRMSpacing.m),
-
-            if (!_showPendingView) ...[
-              if (_selectedServiceType != 'All') ...[
-                Align(alignment: Alignment.centerRight, child: Padding(
-                  padding: const EdgeInsets.only(bottom: CRMSpacing.s),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(_showOtherTypesKpis ? 'Showing other agent types KPIs' : 'Showing $_selectedServiceType KPIs only',
-                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context), fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 8),
-                    Switch.adaptive(value: _showOtherTypesKpis, activeColor: CRMColors.primaryOf(context),
-                        onChanged: (val) => setState(() => _showOtherTypesKpis = val)),
-                  ]),
-                )),
-              ],
-              LayoutBuilder(builder: (context, constraints) {
-                int columns = isDesktop ? 4 : 2;
-                double spacing = CRMSpacing.m;
-                double cardWidth = (constraints.maxWidth - (spacing * (columns - 1))) / columns;
-                return Wrap(spacing: spacing, runSpacing: spacing, children: [
-                  SizedBox(width: cardWidth, child: CRMKPICard(
-                    title: 'Total Agents', value: '$_totalCount', icon: Icons.badge_rounded,
-                    iconColor: CRMColors.terracotta, backgroundColor: CRMColors.kpiPlum,
-                    benefit: 'Vendor credentials ready when you need them',
-                  )),
-                ]);
-              }),
-              const SizedBox(height: CRMSpacing.l),
-              CRMCard(padding: const EdgeInsets.all(CRMSpacing.m), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(Icons.filter_alt_rounded, size: 18, color: CRMColors.primaryOf(context)),
-                  const SizedBox(width: 6),
-                  Text('Advanced Filters', style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context))),
-                  const Spacer(),
-                  TextButton(onPressed: _resetFilters, child: const Text('Reset All')),
-                ]),
-                const SizedBox(height: CRMSpacing.s),
-                LayoutBuilder(builder: (context, filterConstraints) {
-                  int rowColumns = isDesktop ? 4 : (isTablet ? 4 : 2);
-                  double filterSpacing = CRMSpacing.s;
-                  double inputWidth = ((filterConstraints.maxWidth - (filterSpacing * (rowColumns - 1))) / rowColumns) - 1.0;
-                  return Wrap(spacing: filterSpacing, runSpacing: filterSpacing, children: [
-                    SizedBox(width: inputWidth, child: TextField(
-                      controller: _searchController,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: 'Search Agent or Document',
-                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      onChanged: (_) => _applyFiltersAndSort(),
-                    )),
-                    _buildFilterDropdown('Role', _selectedServiceType, _serviceTypes, (val) {
-                      setState(() { _selectedServiceType = val!; _showOtherTypesKpis = false; });
-                      _applyFiltersAndSort();
-                    }, inputWidth),
-                    _buildFilterDropdown('Area', _selectedArea, _dynamicAreas, (val) {
-                      setState(() => _selectedArea = val!);
-                      _applyFiltersAndSort();
-                    }, inputWidth),
-                    _buildFilterDropdown('Doc Type', _selectedDocType, _dynamicDocTypes, (val) {
-                      setState(() => _selectedDocType = val!);
-                      _applyFiltersAndSort();
-                    }, inputWidth),
-                  ]);
-                }),
-              ])),
-              const SizedBox(height: CRMSpacing.m),
-              _isLoading
-                  ? const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
-                  : _filteredDocuments.isEmpty
-                      ? CRMEmptyState(title: 'No Provider Documents', description: 'No service agent records match the current filters.',
-                          actionLabel: 'Reset Filters', onActionPressed: _resetFilters)
-                      : (isMobile
-                          ? Column(children: [..._paginatedDocuments.map((doc) => _buildMobileDocumentCard(doc)), _buildMobilePagination()])
-                          : LayoutBuilder(builder: (context, constraints) {
-                              return LayoutBuilder(builder: (context, constraints) {
-                                return Card(
-                                  elevation: 0,
-                                  color: CRMColors.cardBgOf(context),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-                                    side: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      // Horizontal Scrollview added to prevent Right Overflow
-                                      SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: ConstrainedBox(
-                                          constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                                          child: DataTable(
-                                            dataRowMinHeight: 65, // Increased row height to avoid Bottom Overflow
-                                            dataRowMaxHeight: 75,
-                                            horizontalMargin: 12,
-                                            columnSpacing: 16,
-                                            headingRowColor: WidgetStateProperty.all(
-                                              CRMColors.backgroundOf(context).withOpacity(0.5),
-                                            ),
-                                            columns: [
-                                              DataColumn(label: Text('Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Agent Name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Role', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Mobile Number', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Identity', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Area', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Uploaded By', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                              DataColumn(label: Text('Actions', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: CRMColors.textSecondaryOf(context)))),
-                                            ],
-                                            rows: _paginatedDocuments.map((doc) {
-                                              final text = doc.uploadedBy.trim();
-                                              String displayUser = text;
-                                              if (text.toLowerCase() == 'admin' || text.toLowerCase() == 'admin@nbdeveloper.com') {
-                                                displayUser = 'Admin';
-                                              } else if (text.toLowerCase() == 'super admin' || text.toLowerCase() == 'super_admin') {
-                                                displayUser = 'Super Admin';
-                                              } else if (text.contains('@')) {
-                                                displayUser = text.split('@').first;
-                                                if (displayUser.isNotEmpty) {
-                                                  displayUser = displayUser[0].toUpperCase() + displayUser.substring(1);
-                                                }
-                                              }
-
-                                              return DataRow(cells: [
-                                                DataCell(
-                                                  doc.agentImageUrl != null && doc.agentImageUrl!.isNotEmpty
-                                                      ? ClipRRect(
-                                                    borderRadius: BorderRadius.circular(6),
-                                                    child: CrmNetworkImage(
-                                                      url: doc.agentImageUrl!,
-                                                      width: 36,
-                                                      height: 36,
-                                                      cacheLogicalWidth: 36,
-                                                      cacheLogicalHeight: 36,
-                                                      fit: BoxFit.cover,
-                                                      error: (context) => _tableAvatarPlaceholder(context),
-                                                    ),
-                                                  )
-                                                      : _tableAvatarPlaceholder(context),
-                                                ),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 140,
-                                                    child: Text(
-                                                      doc.agentName,
-                                                      style: CRMTypography.bodyMedium.copyWith(
-                                                        fontWeight: FontWeight.bold,
-                                                        color: CRMColors.textOf(context),
-                                                      ),
-                                                      maxLines: 2,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(Text(doc.serviceType, style: TextStyle(color: CRMColors.textOf(context)))),
-                                                DataCell(Text(doc.mobileNumber, style: TextStyle(color: CRMColors.textOf(context)))),
-                                                DataCell(
-                                                   Padding(
-                                                     padding: const EdgeInsets.symmetric(vertical: 8),
-                                                     child: Tooltip(
-                                                       message: 'Click to view ${doc.documentType}',
-                                                       child: Material(
-                                                         color: Colors.transparent,
-                                                         child: InkWell(
-                                                           borderRadius: BorderRadius.circular(8),
-                                                           onTap: () => _showInScreenDocumentViewer(context, doc),
-                                                           child: Container(
-                                                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                             decoration: BoxDecoration(
-                                                               color: CRMColors.primaryOf(context).withOpacity(0.08),
-                                                               borderRadius: BorderRadius.circular(8),
-                                                               border: Border.all(
-                                                                 color: CRMColors.primaryOf(context).withOpacity(0.4),
-                                                                 width: 1,
-                                                               ),
-                                                             ),
-                                                             child: Row(
-                                                               mainAxisSize: MainAxisSize.min,
-                                                               children: [
-                                                                 Icon(
-                                                                   Icons.visibility_outlined,
-                                                                   size: 15,
-                                                                   color: CRMColors.primaryOf(context),
-                                                                 ),
-                                                                 const SizedBox(width: 6),
-                                                                 Flexible(
-                                                                   child: Text(
-                                                                     doc.documentType,
-                                                                     style: TextStyle(
-                                                                       fontSize: 12,
-                                                                       fontWeight: FontWeight.w600,
-                                                                       color: CRMColors.primaryOf(context),
-                                                                     ),
-                                                                     overflow: TextOverflow.ellipsis,
-                                                                   ),
-                                                                 ),
-                                                               ],
-                                                             ),
-                                                           ),
-                                                         ),
-                                                       ),
-                                                     ),
-                                                   ),
-                                                ),
-                                                _buildAreaTableCell(context, doc.area),
-                                                DataCell(Text(displayUser, style: TextStyle(color: CRMColors.textOf(context)))),
-                                                DataCell(
-                                                  PopupMenuButton<String>(
-                                                    icon: Icon(Icons.more_vert_rounded, color: CRMColors.textSecondaryOf(context)),
-                                                    onSelected: (val) {
-                                                      switch (val) {
-                                                        case 'view': _viewDocument(doc); break;
-                                                        case 'edit': _showUploadEditDialog(doc); break;
-                                                        case 'share': _shareDocument(doc); break;
-                                                        case 'delete': _deleteDocument(doc); break;
-                                                      }
-                                                    },
-                                                    itemBuilder: (context) => [
-                                                      const PopupMenuItem(value: 'view', child: Row(children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')])),
-                                                      const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')])),
-                                                      const PopupMenuDivider(),
-                                                      const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))])),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ]);
-                                            }).toList(),
-                                          ),
-                                        ),
-                                      ),
-
-                                      // Bottom Pagination Bar
-                                      if (_totalPages > 1)
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'Showing ${((_currentPage - 1) * _pageSize) + 1} - ${(_currentPage * _pageSize).clamp(0, _filteredDocuments.length)} of ${_filteredDocuments.length}',
-                                                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                                              ),
-                                              Row(
-                                                children: [
-                                                  IconButton(
-                                                    icon: const Icon(Icons.chevron_left_rounded),
-                                                    onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
-                                                  ),
-                                                  Text('Page $_currentPage of $_totalPages', style: CRMTypography.captionBold),
-                                                  IconButton(
-                                                    icon: const Icon(Icons.chevron_right_rounded),
-                                                    onPressed: _currentPage < _totalPages ? () => setState(() => _currentPage++) : null,
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              });
-                            })),
-            ],
-
-            if (_showPendingView && _isAdminOrSuperAdmin) _buildPendingView(),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAreaCell(BuildContext context, List<String> areaList) {
-    final areaText = areaList.isEmpty ? '-' : areaList.join(', ');
-    final tooltipMessage = 'Area(s):\n$areaText';
-
-    return SizedBox(
-      width: 160,
-      child: Tooltip(
-        richMessage: WidgetSpan(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 340.0),
-            child: Text(
-              tooltipMessage,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12.5,
-                height: 1.4,
-                fontWeight: FontWeight.w500,
+          padding: EdgeInsets.all(CRMBreakpoints.pagePadding(context)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: LvBreadcrumb(vaultName: 'Service Agent Library'),
               ),
-            ),
+              const SizedBox(height: 16),
+              LvHero(
+                icon: Icons.handyman_rounded,
+                title: 'Service Agent Library',
+                subtitle: 'Plumbers, electricians, AC technicians and other vendors — with ID, GST and agreements.',
+                onExport: (format) => DocumentExportHelper.triggerExport(context, format),
+                primaryLabel: 'Add agent',
+                onPrimary: () => _showUploadEditDialog(),
+              ),
+              const SizedBox(height: 16),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: LvVaultTabs(current: LvVault.service),
+              ),
+              const SizedBox(height: 16),
+              LvKpiStrip(items: _buildKpis()),
+              const SizedBox(height: 16),
+              LvChecklist(items: _buildChecklist()),
+              const SizedBox(height: 16),
+              _buildMainPanel(),
+            ],
           ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        margin: const EdgeInsets.only(bottom: 6),
-        decoration: BoxDecoration(
-          color: CRMColors.isDark ? const Color(0xFF24211F) : const Color(0xFF292725),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: CRMColors.primaryOf(context).withValues(alpha: 0.35),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Text(
-          areaText,
-          style: TextStyle(color: CRMColors.textOf(context), fontSize: 12),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
         ),
       ),
     );
-  }
-
-  DataCell _buildAreaTableCell(BuildContext context, List<String> areaList) {
-    return DataCell(_buildAreaCell(context, areaList));
   }
 }
 

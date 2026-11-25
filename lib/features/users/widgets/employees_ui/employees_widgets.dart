@@ -382,6 +382,7 @@ class EmDetailPanel extends StatelessWidget {
                         ),
                       ),
                       Switch.adaptive(
+                        key: ValueKey('em-login-panel-${user.id}'),
                         value: loginOn,
                         onChanged: canToggle ? onToggleLogin : null,
                         activeThumbColor: EmTokens.green,

@@ -5,13 +5,12 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/cards.dart';
-import '../../../core/design_system/widgets/crm_data_table.dart';
 import '../../../core/design_system/widgets/crm_status_chips.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
-import '../../../core/design_system/widgets/empty_state.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../models/document_model.dart';
+import '../widgets/library_vault/library_vault_tokens.dart';
+import '../widgets/library_vault/library_vault_widgets.dart';
 import 'library_widgets.dart';
 import '../../properties/models/property_model.dart';
 import '../repository/library_repository.dart';
@@ -48,8 +47,6 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
 
   // Autocomplete suggestions
   List<String> _properties = ['All'];
-  List<String> _tenants = ['All'];
-  List<String> _owners = ['All'];
   final List<String> _docTypes = [
     'All',
     'Rental Agreement',
@@ -104,8 +101,6 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
   void _updateFilterOptions() {
     setState(() {
       _properties = ['All', ..._allDocuments.map((d) => d.propertyName).toSet()];
-      _tenants = ['All', ..._allDocuments.map((d) => d.tenantName).toSet()];
-      _owners = ['All', ..._allDocuments.map((d) => d.ownerName).toSet()];
     });
   }
 
@@ -971,791 +966,341 @@ class _RentalLibraryScreenState extends State<RentalLibraryScreen> {
     );
   }
 
+  // ───────────────────────── New_UI vault shell ─────────────────────────────
+
+  /// Selected KPI card (0 total, 1 active, 2 expired, 3 recent uploads).
+  int? _selectedKpi;
+
+  void _onKpiTap(int index) {
+    final deselect = _selectedKpi == index;
+    setState(() {
+      _selectedKpi = deselect ? null : index;
+      _selectedStatus = 'All';
+      _selectedDateRange = null;
+      if (!deselect) {
+        if (index == 1) _selectedStatus = 'Active';
+        if (index == 2) _selectedStatus = 'Expired';
+        if (index == 3) {
+          final now = DateTime.now();
+          _selectedDateRange = DateTimeRange(
+            start: now.subtract(const Duration(days: 6)),
+            end: now,
+          );
+        }
+      }
+    });
+    _applyFiltersAndSort();
+  }
+
+  void _onResetAll() {
+    setState(() => _selectedKpi = null);
+    _resetFilters();
+  }
+
+  void _onSort(String field) {
+    setState(() {
+      if (_sortField == field) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortField = field;
+        _sortAscending = true;
+      }
+    });
+    _applyFiltersAndSort();
+  }
+
+  Widget _buildRowActions(RentalDocument doc) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        LvIconAction(
+          icon: Icons.visibility_outlined,
+          tooltip: 'Preview',
+          onTap: () => _viewDocument(doc),
+        ),
+        LvIconAction(
+          icon: Icons.file_download_outlined,
+          tooltip: 'Download',
+          onTap: () => _downloadDocument(doc),
+        ),
+        LvIconAction(
+          icon: Icons.edit_outlined,
+          tooltip: 'Edit',
+          onTap: () => _showUploadEditDialog(doc),
+        ),
+        LvIconAction(
+          icon: Icons.share_outlined,
+          tooltip: 'Share',
+          onTap: () => _shareDocument(doc),
+        ),
+        LvIconAction(
+          icon: Icons.delete_outline_rounded,
+          tooltip: 'Delete',
+          danger: true,
+          onTap: () => _deleteDocument(doc),
+        ),
+      ],
+    );
+  }
+
+  List<LvKpiItem> _buildKpis() {
+    return [
+      LvKpiItem(
+        icon: Icons.description_outlined,
+        label: 'Total documents',
+        value: '$_totalCount',
+        hint: 'Complete lease paper trail',
+        selected: _selectedKpi == 0,
+        onTap: () => _onKpiTap(0),
+      ),
+      LvKpiItem(
+        icon: Icons.check_circle_outline_rounded,
+        label: 'Active',
+        value: '$_activeCount',
+        hint: 'Ready for renewals',
+        selected: _selectedKpi == 1,
+        onTap: () => _onKpiTap(1),
+      ),
+      LvKpiItem(
+        icon: Icons.warning_amber_rounded,
+        label: 'Expired',
+        value: '$_expiredCount',
+        hint: 'Flag before disputes',
+        selected: _selectedKpi == 2,
+        onTap: () => _onKpiTap(2),
+      ),
+      LvKpiItem(
+        icon: Icons.cloud_upload_outlined,
+        label: 'Uploaded this week',
+        value: '$_recentCount',
+        hint: 'Keeps records audit-ready',
+        selected: _selectedKpi == 3,
+        onTap: () => _onKpiTap(3),
+      ),
+    ];
+  }
+
+  List<LvChecklistItem> _buildChecklist() {
+    final types = _allDocuments.map((d) => d.documentType).toList();
+    return [
+      LvChecklistItem(
+        label: 'Rental & lease agreements',
+        count: lvCountByKeywords(types, ['agreement', 'lease']),
+      ),
+      LvChecklistItem(
+        label: 'Tenant & owner ID proofs',
+        count: lvCountByKeywords(types, ['id proof', 'aadhaar', 'aadhar']),
+      ),
+      LvChecklistItem(
+        label: 'Rent & deposit receipts',
+        count: lvCountByKeywords(types, ['receipt', 'deposit']),
+      ),
+      LvChecklistItem(
+        label: 'Utility bills',
+        count: lvCountByKeywords(types, ['bill', 'electricity', 'water', 'maintenance']),
+      ),
+      LvChecklistItem(
+        label: 'Inspection photos & videos',
+        count: lvCountByKeywords(types, ['photo', 'video', 'walkthrough']),
+      ),
+    ];
+  }
+
+  List<LvColumn<RentalDocument>> _buildColumns() {
+    return [
+      LvColumn<RentalDocument>(
+        label: 'Document',
+        flex: 4,
+        sortField: 'name',
+        cell: (context, d) => LvDocNameCell(
+          extension: d.fileExtension,
+          name: d.name,
+          size: d.fileSize,
+        ),
+      ),
+      LvColumn<RentalDocument>(
+        label: 'Property',
+        flex: 3,
+        sortField: 'propertyName',
+        cell: (context, d) => LvCellText(primary: d.propertyName),
+      ),
+      LvColumn<RentalDocument>(
+        label: 'Tenant · Owner',
+        flex: 3,
+        sortField: 'tenantName',
+        cell: (context, d) => LvCellText(primary: d.tenantName, secondary: d.ownerName),
+      ),
+      LvColumn<RentalDocument>(
+        label: 'Type',
+        flex: 2,
+        sortField: 'documentType',
+        cell: (context, d) => LvTagPill(label: d.documentType),
+      ),
+      LvColumn<RentalDocument>(
+        label: 'Uploaded',
+        flex: 2,
+        sortField: 'uploadDate',
+        cell: (context, d) => LvCellText(
+          primary: DateFormat('dd MMM yyyy').format(d.uploadDate),
+          secondary: 'by ${d.uploadedBy}',
+        ),
+      ),
+      LvColumn<RentalDocument>(
+        label: 'Status',
+        flex: 2,
+        sortField: 'status',
+        cell: (context, d) => LvStatusPill(label: d.status.displayName),
+      ),
+    ];
+  }
+
+  Widget _buildMainPanel(bool isPhone) {
+    final rentalSuggestions = _masterPropertiesList
+        .where((p) => p.listingTypeName.toLowerCase().contains('rent'))
+        .map((p) => p.title)
+        .toList();
+
+    final filterBar = LvFilterBar(
+      searchController: _searchController,
+      searchHint: 'Document, property or person',
+      searchSuggestions: rentalSuggestions,
+      onSuggestionSelected: (_) => _applyFiltersAndSort(),
+      onSearchChanged: (_) => _applyFiltersAndSort(),
+      dropdowns: [
+        LvDropdownField(
+          label: 'Document type',
+          value: _selectedDocType,
+          items: _docTypes,
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() => _selectedDocType = v);
+            _applyFiltersAndSort();
+          },
+        ),
+        LvDropdownField(
+          label: 'Status',
+          value: _selectedStatus,
+          items: const ['All', 'Active', 'Expired', 'Archived'],
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() {
+              _selectedStatus = v;
+              if (_selectedKpi != 3) _selectedKpi = null;
+            });
+            _applyFiltersAndSort();
+          },
+        ),
+      ],
+      onReset: _onResetAll,
+    );
+
+    final footerLabel = _filteredDocuments.length == _allDocuments.length
+        ? 'Showing ${_paginatedDocuments.length} of ${_filteredDocuments.length} documents'
+        : 'Showing ${_paginatedDocuments.length} of ${_filteredDocuments.length} documents · ${_allDocuments.length} total';
+
+    final footer = LvPanelFooter(
+      label: footerLabel,
+      currentPage: _currentPage,
+      totalPages: _totalPages,
+      onPageChanged: (p) => setState(() => _currentPage = p),
+      pageSize: _pageSize,
+      onPageSizeChanged: (rows) {
+        setState(() {
+          _pageSize = rows;
+          _currentPage = 1;
+        });
+        _applyFiltersAndSort();
+      },
+    );
+
+    Widget body;
+    if (_filteredDocuments.isEmpty) {
+      body = LvEmpty(
+        title: 'No documents match',
+        message: 'Try another type or status.',
+        actionLabel: 'Reset filters',
+        onAction: _onResetAll,
+      );
+    } else if (isPhone) {
+      body = Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+        child: Column(
+          children: [
+            for (final doc in _paginatedDocuments)
+              LvDocMobileCard(
+                extension: doc.fileExtension,
+                name: doc.name,
+                subtitle: '${doc.fileSize} • ${doc.documentType}',
+                statusLabel: doc.status.displayName,
+                details: [
+                  MapEntry('Property', doc.propertyName),
+                  MapEntry('Tenant', doc.tenantName),
+                  MapEntry('Owner', doc.ownerName),
+                  MapEntry('Uploaded', '${DateFormat('dd MMM yyyy').format(doc.uploadDate)} by ${doc.uploadedBy}'),
+                ],
+                actions: _buildRowActions(doc),
+              ),
+          ],
+        ),
+      );
+    } else {
+      body = LvDocTable<RentalDocument>(
+        columns: _buildColumns(),
+        items: _paginatedDocuments,
+        actionsBuilder: (context, doc) => _buildRowActions(doc),
+        actionsWidth: 176,
+        sortField: _sortField,
+        sortAscending: _sortAscending,
+        onSort: _onSort,
+      );
+    }
+
+    return LvPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [filterBar, body, footer],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isDesktop = size.width >= CRMBreakpoints.desktop;
-    final isMobile = CRMBreakpoints.isPhone(context);
+    final isPhone = CRMBreakpoints.isPhone(context);
 
     return Scaffold(
-      backgroundColor: CRMColors.background,
+      backgroundColor: LibTokens.pageBg(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(CRMSpacing.m),
+          padding: EdgeInsets.all(CRMBreakpoints.pagePadding(context)),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header & Breadcrumb
-              isMobile
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const LibraryBreadcrumb(currentPageName: 'Rental Library'),
-                        Text(
-                          'Rental Document Library',
-                          style: CRMTypography.pageTitle.copyWith(
-                            color: CRMColors.textOf(context),
-                            fontSize: 20,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Store, filter, and organize rental leasing documents.',
-                          style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                        ),
-                        const SizedBox(height: CRMSpacing.m),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: CRMButton(
-                                label: 'Upload Document',
-                                prefixIcon: Icons.add_rounded,
-                                onPressed: () => _showUploadEditDialog(),
-                              ),
-                            ),
-                            const SizedBox(width: CRMSpacing.s),
-                            Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: CRMColors.borderOf(context)),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: PopupMenuButton<String>(
-                                icon: Icon(Icons.download_rounded, color: CRMColors.primaryOf(context)),
-                                tooltip: 'Export Index',
-                                onSelected: (val) => DocumentExportHelper.triggerExport(context, val),
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(value: 'Excel', child: Text('Export to Excel')),
-                                  const PopupMenuItem(value: 'PDF', child: Text('Export to PDF')),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const LibraryBreadcrumb(currentPageName: 'Rental Library'),
-                              Text(
-                                'Rental Document Library',
-                                style: CRMTypography.pageTitle.copyWith(color: CRMColors.textOf(context)),
-                              ),
-                              Text(
-                                'Store, filter, and organize rental leasing documents.',
-                                style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: CRMSpacing.m),
-                        Row(
-                          children: [
-                            PopupMenuButton<String>(
-                              icon: Icon(Icons.download_rounded, color: CRMColors.primaryOf(context)),
-                              tooltip: 'Export Index',
-                              onSelected: (val) => DocumentExportHelper.triggerExport(context, val),
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(value: 'Excel', child: Text('Export to Excel')),
-                                const PopupMenuItem(value: 'PDF', child: Text('Export to PDF')),
-                              ],
-                            ),
-                            const SizedBox(width: CRMSpacing.s),
-                            CRMButton(
-                              label: 'Upload Document',
-                              prefixIcon: Icons.add_rounded,
-                              onPressed: () => _showUploadEditDialog(),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-              const SizedBox(height: CRMSpacing.m),
-
-              // Top Cards Grid
-              LayoutBuilder(builder: (context, constraints) {
-                int columns = isDesktop ? 4 : 2;
-                double spacing = CRMSpacing.m;
-                double cardWidth = (constraints.maxWidth - (spacing * (columns - 1))) / columns;
-
-                return Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: [
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Total Documents',
-                        value: '$_totalCount',
-                        icon: Icons.folder_rounded,
-                        iconColor: CRMColors.terracotta,
-                        backgroundColor: CRMColors.kpiPlum,
-                        benefit: 'Complete lease paper trail in one vault',
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Active Documents',
-                        value: '$_activeCount',
-                        icon: Icons.check_circle_rounded,
-                        iconColor: CRMColors.text,
-                        backgroundColor: CRMColors.kpiSage,
-                        benefit: 'Current agreements ready for renewals',
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Expired Documents',
-                        value: '$_expiredCount',
-                        icon: Icons.history_rounded,
-                        iconColor: CRMColors.terracotta,
-                        backgroundColor: CRMColors.kpiTerracotta,
-                        benefit: 'Flag outdated files before disputes',
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: CRMKPICard(
-                        title: 'Recent Uploads (7d)',
-                        value: '$_recentCount',
-                        icon: Icons.cloud_done_rounded,
-                        iconColor: CRMColors.terracotta,
-                        backgroundColor: CRMColors.kpiSand,
-                        benefit: 'Fresh uploads keep records audit-ready',
-                      ),
-                    ),
-                  ],
-                );
-              }),
-              const SizedBox(height: CRMSpacing.l),
-
-              // Filter Controls Card
-              CRMCard(
-                padding: const EdgeInsets.all(CRMSpacing.m),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.filter_alt_rounded, size: 18, color: CRMColors.primaryOf(context)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Advanced Filters',
-                          style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: CRMColors.textOf(context)),
-                        ),
-                        const Spacer(),
-                      ],
-                    ),
-                    const SizedBox(height: CRMSpacing.s),
-                    LayoutBuilder(
-                      builder: (context, filterConstraints) {
-                        // Build rental property name suggestions from master list
-                        final rentalSuggestions = _masterPropertiesList
-                            .where((p) => p.listingTypeName.toLowerCase().contains('rent'))
-                            .map((p) => p.title)
-                            .toList();
-
-                        final double dropdownSpacing = CRMSpacing.s;
-
-                        return Column(
-                          children: [
-                            // Row 1: Search field + Reset All button
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Autocomplete<String>(
-                                    optionsBuilder: (textEditingValue) {
-                                      final query = textEditingValue.text.trim().toLowerCase();
-                                      if (query.isEmpty) return const Iterable<String>.empty();
-                                      return rentalSuggestions.where(
-                                        (name) => name.toLowerCase().contains(query),
-                                      );
-                                    },
-                                    onSelected: (selected) {
-                                      _searchController.text = selected;
-                                      _applyFiltersAndSort();
-                                    },
-                                    fieldViewBuilder: (context, autoController, focusNode, onFieldSubmitted) {
-                                      return TextField(
-                                        controller: autoController,
-                                        focusNode: focusNode,
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: CRMColors.textOf(context),
-                                        ),
-                                        decoration: InputDecoration(
-                                          hintText: 'Search by document name, property, tenant, owner...',
-                                          hintStyle: TextStyle(fontSize: 13, color: CRMColors.textSecondaryOf(context)),
-                                          prefixIcon: Icon(Icons.search_rounded, size: 20, color: CRMColors.primaryOf(context)),
-                                          suffixIcon: autoController.text.isNotEmpty
-                                              ? IconButton(
-                                                  icon: Icon(Icons.close_rounded, size: 16, color: CRMColors.textSecondaryOf(context)),
-                                                  onPressed: () {
-                                                    autoController.clear();
-                                                    _searchController.clear();
-                                                    _applyFiltersAndSort();
-                                                  },
-                                                )
-                                              : null,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                                          filled: true,
-                                          fillColor: CRMColors.backgroundOf(context),
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
-                                          ),
-                                        ),
-                                        onChanged: (value) {
-                                          _searchController.text = value;
-                                          _applyFiltersAndSort();
-                                        },
-                                      );
-                                    },
-                                    optionsViewBuilder: (context, onSelected, options) {
-                                      return Align(
-                                        alignment: Alignment.topLeft,
-                                        child: Material(
-                                          elevation: 6,
-                                          borderRadius: BorderRadius.circular(10),
-                                          color: CRMColors.surfaceElevatedOf(context),
-                                          child: ConstrainedBox(
-                                            constraints: const BoxConstraints(maxHeight: 220),
-                                            child: ListView.separated(
-                                              padding: const EdgeInsets.symmetric(vertical: 6),
-                                              shrinkWrap: true,
-                                              itemCount: options.length,
-                                              separatorBuilder: (_, __) => Divider(
-                                                height: 1,
-                                                color: CRMColors.divider.withOpacity(0.5),
-                                              ),
-                                              itemBuilder: (context, index) {
-                                                final option = options.elementAt(index);
-                                                final prop = _masterPropertiesList
-                                                    .where((p) => p.title == option)
-                                                    .firstOrNull;
-                                                return InkWell(
-                                                  onTap: () => onSelected(option),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(Icons.home_work_rounded, size: 16, color: CRMColors.primaryOf(context)),
-                                                        const SizedBox(width: 10),
-                                                        Expanded(
-                                                          child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                              Text(
-                                                                option,
-                                                                style: TextStyle(
-                                                                  fontSize: 13,
-                                                                  fontWeight: FontWeight.w600,
-                                                                  color: CRMColors.textOf(context),
-                                                                ),
-                                                              ),
-                                                              if (prop != null)
-                                                                Text(
-                                                                  '${prop.propertyCode} • ${prop.areaName}',
-                                                                  style: TextStyle(
-                                                                    fontSize: 11,
-                                                                    color: CRMColors.textSecondaryOf(context),
-                                                                  ),
-                                                                ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: CRMSpacing.s),
-                                // Reset All button — premium UI
-                                ElevatedButton.icon(
-                                  onPressed: _resetFilters,
-                                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                                  label: const Text('Reset All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: CRMColors.primaryOf(context),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                    elevation: 0,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: CRMSpacing.s),
-                            // Row 2: Doc Type + Status dropdowns
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildFilterDropdown('Doc Type', _selectedDocType, _docTypes, (val) {
-                                    setState(() => _selectedDocType = val!);
-                                    _applyFiltersAndSort();
-                                  }, 0),
-                                ),
-                                SizedBox(width: dropdownSpacing),
-                                Expanded(
-                                  child: _buildFilterDropdown('Status', _selectedStatus, ['All', 'Active', 'Expired', 'Archived'], (val) {
-                                    setState(() => _selectedStatus = val!);
-                                    _applyFiltersAndSort();
-                                  }, 0),
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: LvBreadcrumb(vaultName: 'Rental Library'),
               ),
-              const SizedBox(height: CRMSpacing.m),
-
-              // Data Table Area
-              _filteredDocuments.isEmpty
-                    ? CRMEmptyState(
-                        title: 'No Documents Found',
-                        description: 'Try adjusting your search criteria or clear the filters to see all rental files.',
-                        actionLabel: 'Reset Filters',
-                        onActionPressed: _resetFilters,
-                      )
-                    : (isMobile
-                        ? Column(
-                            children: [
-                              ..._paginatedDocuments.map((doc) => _buildMobileDocumentCard(doc)),
-                              _buildMobilePagination(),
-                            ],
-                          )
-                        : CRMDataTable<RentalDocument>(
-                            currentPage: _currentPage,
-                            totalPages: _totalPages,
-                            onPageChanged: (page) {
-                              setState(() {
-                                _currentPage = page;
-                              });
-                            },
-                            totalItems: _filteredDocuments.length,
-                            itemsPerPage: _pageSize,
-                            onItemsPerPageChanged: (rows) {
-                              setState(() {
-                                _pageSize = rows;
-                                _currentPage = 1;
-                              });
-                              _applyFiltersAndSort();
-                            },
-                            sortField: _sortField,
-                        sortAscending: _sortAscending,
-                        onSort: (field, ascending) {
-                          setState(() {
-                            _sortField = field;
-                            _sortAscending = ascending;
-                          });
-                          _applyFiltersAndSort();
-                        },
-                        columns: [
-                          CRMColumn<RentalDocument>(
-                            label: 'Document Name',
-                            sortable: true,
-                            sortField: 'name',
-                            width: 250,
-                            cellBuilder: (doc) => Row(
-                              children: [
-                                FileIconHelper.getIconForExtension(doc.fileExtension),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        doc.name,
-                                        style: CRMTypography.bodyMedium.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: CRMColors.textOf(context),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        doc.fileSize,
-                                        style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Property Name',
-                            sortable: true,
-                            sortField: 'propertyName',
-                            width: 180,
-                            cellBuilder: (doc) => Text(doc.propertyName, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Tenant Name',
-                            sortable: true,
-                            sortField: 'tenantName',
-                            width: 140,
-                            cellBuilder: (doc) => Text(doc.tenantName, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Owner Name',
-                            sortable: true,
-                            sortField: 'ownerName',
-                            width: 140,
-                            cellBuilder: (doc) => Text(doc.ownerName, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Document Type',
-                            sortable: true,
-                            sortField: 'documentType',
-                            width: 150,
-                            cellBuilder: (doc) => Text(doc.documentType, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Upload Date',
-                            sortable: true,
-                            sortField: 'uploadDate',
-                            width: 120,
-                            cellBuilder: (doc) => Text(
-                              DateFormat('dd MMM yyyy').format(doc.uploadDate),
-                              style: TextStyle(color: CRMColors.textOf(context)),
-                            ),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Uploaded By',
-                            width: 110,
-                            cellBuilder: (doc) => Text(doc.uploadedBy, style: TextStyle(color: CRMColors.textOf(context))),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Status',
-                            sortable: true,
-                            sortField: 'status',
-                            width: 110,
-                            cellBuilder: (doc) => CRMStatusChip(status: doc.status.displayName),
-                          ),
-                          CRMColumn<RentalDocument>(
-                            label: 'Actions',
-                            width: 80,
-                            cellBuilder: (doc) => PopupMenuButton<String>(
-                              icon: Icon(Icons.more_vert_rounded, color: CRMColors.textSecondaryOf(context)),
-                              onSelected: (val) {
-                                switch (val) {
-                                  case 'view':
-                                    _viewDocument(doc);
-                                    break;
-                                  case 'download':
-                                    _downloadDocument(doc);
-                                    break;
-                                  case 'edit':
-                                    _showUploadEditDialog(doc);
-                                    break;
-                                  case 'share':
-                                    _shareDocument(doc);
-                                    break;
-                                  case 'delete':
-                                    _deleteDocument(doc);
-                                    break;
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'view',
-                                  child: Row(
-                                    children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'download',
-                                  child: Row(
-                                    children: [Icon(Icons.download_rounded, size: 18), SizedBox(width: 8), Text('Download')],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [Icon(Icons.share_outlined, size: 18), SizedBox(width: 8), Text('Share')],
-                                  ),
-                                ),
-                                const PopupMenuDivider(),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        items: _paginatedDocuments,
-                      )),
+              const SizedBox(height: 16),
+              LvHero(
+                icon: Icons.home_rounded,
+                title: 'Rental Library',
+                subtitle: 'Lease agreements, ID proofs, rent receipts and bills for rented homes.',
+                onExport: (format) => DocumentExportHelper.triggerExport(context, format),
+                primaryLabel: 'Upload document',
+                onPrimary: () => _showUploadEditDialog(),
+              ),
+              const SizedBox(height: 16),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: LvVaultTabs(current: LvVault.rental),
+              ),
+              const SizedBox(height: 16),
+              LvKpiStrip(items: _buildKpis()),
+              const SizedBox(height: 16),
+              LvChecklist(items: _buildChecklist()),
+              const SizedBox(height: 16),
+              _buildMainPanel(isPhone),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterDropdown(
-    String label,
-    String currentValue,
-    List<String> items,
-    void Function(String?) onChanged,
-    double width,
-  ) {
-    final child = DropdownButtonFormField<String>(
-      value: currentValue,
-      isExpanded: true,
-      dropdownColor: CRMColors.cardBgOf(context),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: 10),
-        filled: true,
-        fillColor: CRMColors.backgroundOf(context),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-          borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-          borderSide: BorderSide(color: CRMColors.borderOf(context).withOpacity(0.6)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-          borderSide: BorderSide(color: CRMColors.primaryOf(context), width: 1.5),
-        ),
-      ),
-      style: CRMTypography.body.copyWith(color: CRMColors.textOf(context), fontSize: 13),
-      items: items
-          .map((item) => DropdownMenuItem(
-                value: item,
-                child: Text(
-                  item,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: CRMColors.textOf(context),
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ))
-          .toList(),
-      onChanged: onChanged,
-    );
-    if (width > 0) {
-      return SizedBox(width: width, child: child);
-    }
-    return child;
-  }
-
-  Widget _buildMobileDocumentCard(RentalDocument doc) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-      child: CRMCard(
-        padding: const EdgeInsets.all(CRMSpacing.m),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FileIconHelper.getIconForExtension(doc.fileExtension, size: 24),
-              const SizedBox(width: CRMSpacing.s),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      doc.name,
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: CRMColors.textOf(context),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      '${doc.fileSize} • ${doc.documentType}',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert_rounded, color: CRMColors.textSecondaryOf(context)),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onSelected: (val) {
-                  switch (val) {
-                    case 'view':
-                      _viewDocument(doc);
-                      break;
-                    case 'download':
-                      _downloadDocument(doc);
-                      break;
-                    case 'edit':
-                      _showUploadEditDialog(doc);
-                      break;
-                    case 'share':
-                      _shareDocument(doc);
-                      break;
-                    case 'delete':
-                      _deleteDocument(doc);
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'view',
-                    child: Row(
-                      children: [Icon(Icons.visibility_outlined, size: 18), SizedBox(width: 8), Text('View')],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'download',
-                    child: Row(
-                      children: [Icon(Icons.download_rounded, size: 18), SizedBox(width: 8), Text('Download')],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('Edit')],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'share',
-                    child: Row(
-                      children: [Icon(Icons.share_outlined, size: 18), SizedBox(width: 8), Text('Share')],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 18), SizedBox(width: 8), Text('Delete', style: TextStyle(color: CRMColors.danger))],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.m),
-          const Divider(height: 1),
-          const SizedBox(height: CRMSpacing.s),
-          _buildMobileDetailItem('Property Name', doc.propertyName),
-          _buildMobileDetailItem('Tenant Name', doc.tenantName),
-          _buildMobileDetailItem('Owner Name', doc.ownerName),
-          _buildMobileDetailItem('Uploaded By', doc.uploadedBy),
-          _buildMobileDetailItem('Upload Date', DateFormat('dd MMM yyyy').format(doc.uploadDate)),
-          const SizedBox(height: CRMSpacing.m),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              CRMStatusChip(status: doc.status.displayName),
-              Text(
-                doc.fileExtension.toUpperCase(),
-                style: CRMTypography.captionBold.copyWith(
-                  color: CRMColors.textMutedOf(context),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-  Widget _buildMobileDetailItem(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-          ),
-          const SizedBox(width: CRMSpacing.m),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: CRMTypography.bodyMedium.copyWith(
-                color: CRMColors.textOf(context),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMobilePagination() {
-    if (_totalPages <= 1) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: CRMSpacing.s, bottom: CRMSpacing.l),
-      child: CRMCard(
-        padding: const EdgeInsets.symmetric(horizontal: CRMSpacing.m, vertical: CRMSpacing.xs),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Page $_currentPage of $_totalPages',
-              style: CRMTypography.captionBold.copyWith(color: CRMColors.textSecondaryOf(context)),
-            ),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded),
-                  onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded),
-                  onPressed: _currentPage < _totalPages ? () => setState(() => _currentPage++) : null,
-                ),
-              ],
-            ),
-          ],
         ),
       ),
     );

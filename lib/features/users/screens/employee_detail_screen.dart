@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -8,11 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
-import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/cards.dart';
-import '../../../core/design_system/widgets/crm_page_header.dart';
-import '../../../core/design_system/widgets/crm_network_image.dart';
+import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/design_system/widgets/app_status_snackbar.dart';
 import '../../../core/design_system/widgets/drawers.dart';
 import '../../../core/utils/budget_formatter.dart';
@@ -25,6 +19,8 @@ import '../../requirements/services/requirements_service.dart';
 import '../bloc/users_bloc.dart';
 import '../models/user_model.dart';
 import '../utils/employee_activity.dart';
+import '../widgets/employee_detail_ui/employee_detail_tokens.dart';
+import '../widgets/employee_detail_ui/employee_detail_widgets.dart';
 import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/mobile/mobile.dart';
@@ -48,6 +44,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
 
   bool _loadingActivity = true;
   bool _updatingAccess = false;
+  bool _removing = false;
   String? _activityError;
   List<PropertyModel> _properties = [];
   List<RequirementModel> _requirements = [];
@@ -522,8 +519,14 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                 message: state.message,
                 isSuccess: true,
               );
+              if (_removing) {
+                _removing = false;
+                context.go('/users');
+                return;
+              }
               context.read<UsersBloc>().add(const FetchUsers());
             } else if (state is UsersError) {
+              _removing = false;
               AppStatusSnackBar.show(
                 context,
                 message: state.message,
@@ -622,8 +625,8 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       return s.contains('site visit') || s.contains('sitevisit') || s == 'sv' || s.startsWith('site visit');
     }
 
-    final focusedReqs = visibleReqs.where((r) {
-      switch (_leadFocus) {
+    bool matchesFocus(RequirementModel r, _LeadFocus focus) {
+      switch (focus) {
         case _LeadFocus.all:
           return true;
         case _LeadFocus.won:
@@ -661,7 +664,10 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
               !EmployeeActivity.isWon(r) &&
               !EmployeeActivity.isRejected(r);
       }
-    }).toList();
+    }
+
+    final focusedReqs =
+        visibleReqs.where((r) => matchesFocus(r, _leadFocus)).toList();
 
     int assignedOf(List<RequirementModel> reqs) {
       if (isTelecallerRole) {
@@ -826,467 +832,427 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final inactiveSales =
         _adminStats?['inactiveSales'] ?? team.where((m) => !m.isActive).length;
 
+    final canEdit = RoleGuard.canAction('page.employees.edit');
+    final canDelete = RoleGuard.canAction('page.employees.delete');
+    final canToggle = RoleGuard.canAction('page.employees.active_toggle');
+    final hasMobile = (user.mobile ?? '').trim().isNotEmpty;
+    final first = user.fullName.trim().isEmpty
+        ? 'them'
+        : user.fullName.trim().split(RegExp(r'\s+')).first;
+    final salesLike = isSalesRole;
+    final splitByListing = _listingFilter == 'All';
+
+    (String, EvTone) leadBadge(RequirementModel r) {
+      if (EmployeeActivity.isWon(r)) return ('Won', EvTone.green);
+      if (EmployeeActivity.isRejected(r)) {
+        return (_statusLabel(r.status), EvTone.red);
+      }
+      if (isSiteVisitStatus(r.status)) {
+        return (_statusLabel(r.status), EvTone.violet);
+      }
+      if (isFollowupStatus(r.status)) {
+        return (
+          _statusLabel(r.status),
+          EmployeeActivity.isOverdueFollowup(r) ? EvTone.red : EvTone.amber,
+        );
+      }
+      return (_statusLabel(r.status), EvTone.blue);
+    }
+
+    final focusChips = <_LeadFocus, String>{
+      _LeadFocus.all: 'All',
+      _LeadFocus.won: 'Won',
+      if (isSalesRole) _LeadFocus.rejected: 'Rejected',
+      _LeadFocus.followup: 'Follow-up',
+      _LeadFocus.overdue: 'Overdue',
+      _LeadFocus.visits: 'Site visits',
+      _LeadFocus.assigned: 'Assigned',
+      _LeadFocus.created: 'Created',
+    };
+    final focusCounts = <_LeadFocus, int>{
+      for (final f in focusChips.keys)
+        f: visibleReqs.where((r) => matchesFocus(r, f)).length,
+    };
+
+    EvKpiItem leadKpi({
+      required String title,
+      required IconData icon,
+      required Color color,
+      required String value,
+      required String hint,
+      required _LeadFocus focus,
+      String? hoverValue,
+      String? hoverHint,
+    }) {
+      return EvKpiItem(
+        title: title,
+        icon: icon,
+        color: color,
+        value: value,
+        hint: hint,
+        selected: focus != _LeadFocus.all && _leadFocus == focus,
+        onTap: () => _focusLeads(focus),
+        hoverValue: hoverValue,
+        hoverHint: hoverHint,
+      );
+    }
+
+    // Rent / Re-Sale hover split (sales only), same semantics as before.
+    String? splitValue(int rent, int resale, int total) {
+      if (!salesLike) return null;
+      return splitByListing ? _rentResaleLabel(rent, resale) : total.toString();
+    }
+
+    String? splitHint(int rent, int resale, int total, String totalCaption) {
+      if (!salesLike) return null;
+      return splitByListing
+          ? 'Rent $rent  •  Re-Sale $resale'
+          : '$totalCaption: $total';
+    }
+
+    final primaryKpis = <EvKpiItem>[
+      EvKpiItem(
+        title: 'Properties',
+        icon: Icons.home_work_outlined,
+        color: EmTokens.green,
+        value: visibleProps.length.toString(),
+        hint: visibleProps.isEmpty
+            ? 'Tap to view inventory'
+            : 'Listed by $first',
+        onTap: () => _scrollTo(_propertiesKey),
+      ),
+      leadKpi(
+        title: 'Leads',
+        icon: Icons.groups_2_outlined,
+        color: EvTokens.blue,
+        value: totalLeadsCount.toString(),
+        hint: 'Assigned + created',
+        focus: _LeadFocus.all,
+        hoverValue: salesLike && splitByListing
+            ? _rentResaleLabel(leadsRent, leadsResale)
+            : null,
+        hoverHint: 'Rent $leadsRent  •  Re-Sale $leadsResale',
+      ),
+      leadKpi(
+        title: 'Won clients',
+        icon: Icons.emoji_events_outlined,
+        color: EmTokens.green,
+        value: wonCount.toString(),
+        hint: '${conversion.toStringAsFixed(0)}% conversion',
+        focus: _LeadFocus.won,
+      ),
+      if (isSalesRole)
+        leadKpi(
+          title: 'Rejected',
+          icon: Icons.person_off_outlined,
+          color: EmTokens.redText,
+          value: rejectedCount.toString(),
+          hint: 'Leads they marked rejected',
+          focus: _LeadFocus.rejected,
+        ),
+      leadKpi(
+        title: 'Follow-ups',
+        icon: Icons.event_available_rounded,
+        color: EmTokens.amber,
+        value: pendingFollowups.toString(),
+        hint: 'Current follow-ups',
+        focus: _LeadFocus.followup,
+        hoverValue: splitValue(
+          pendingFollowupsRent,
+          pendingFollowupsResale,
+          totalFollowups,
+        ),
+        hoverHint: splitHint(
+          pendingFollowupsRent,
+          pendingFollowupsResale,
+          totalFollowups,
+          'Total follow-ups taken',
+        ),
+      ),
+      leadKpi(
+        title: 'Overdue',
+        icon: Icons.event_busy_rounded,
+        color: EmTokens.redText,
+        value: overdueFollowups.toString(),
+        hint: 'Past the due time',
+        focus: _LeadFocus.overdue,
+        hoverValue: splitValue(
+          overdueFollowupsRent,
+          overdueFollowupsResale,
+          totalOverdueFollowups,
+        ),
+        hoverHint: splitHint(
+          overdueFollowupsRent,
+          overdueFollowupsResale,
+          totalOverdueFollowups,
+          'Total overdue follow-ups',
+        ),
+      ),
+      leadKpi(
+        title: 'Site visits',
+        icon: Icons.location_on_outlined,
+        color: EmTokens.violet,
+        value: siteVisits.toString(),
+        hint: 'Visits planned or done',
+        focus: _LeadFocus.visits,
+        hoverValue: splitValue(
+          siteVisitsRent,
+          siteVisitsResale,
+          totalSiteVisits,
+        ),
+        hoverHint: splitHint(
+          siteVisitsRent,
+          siteVisitsResale,
+          totalSiteVisits,
+          'Total site visits',
+        ),
+      ),
+    ];
+
+    final adminKpis = <EvKpiItem>[
+      if (isAdminRole)
+        EvKpiItem(
+          title: 'Team size',
+          icon: Icons.group_outlined,
+          color: EmTokens.green,
+          value: '$salesCreated',
+          hint: '$activeSales active  •  $inactiveSales inactive',
+          onTap: () => _scrollTo(_teamKey),
+        ),
+      if (isAdminRole && _adminStats != null) ...[
+        EvKpiItem(
+          title: 'Telecallers',
+          icon: Icons.headset_mic_outlined,
+          color: EvTokens.blue,
+          value: '${_adminStats!['telecallersCreated'] ?? 0}',
+          hint: '${_adminStats!['activeTelecallers'] ?? 0} active',
+        ),
+        EvKpiItem(
+          title: 'Won deals',
+          icon: Icons.emoji_events_outlined,
+          color: EmTokens.green,
+          value: '${_adminStats!['wonRequirements'] ?? wonCount}',
+          hint: 'Closed from this team',
+        ),
+        EvKpiItem(
+          title: 'Campaign leads',
+          icon: Icons.campaign_outlined,
+          color: EmTokens.amber,
+          value: '${_adminStats!['campaignLeads'] ?? 0}',
+          hint: (_adminStats!['campaignEnabled'] == true)
+              ? 'In their own inbox'
+              : 'Inbox disconnected',
+        ),
+        EvKpiItem(
+          title: 'Imported',
+          icon: Icons.file_download_done_outlined,
+          color: EmTokens.green,
+          value: '${_adminStats!['campaignImported'] ?? 0}',
+          hint: '${_adminStats!['campaignPending'] ?? 0} still pending',
+        ),
+        EvKpiItem(
+          title: 'Owners',
+          icon: Icons.apartment_outlined,
+          color: EmTokens.green,
+          value: '${_adminStats!['ownersCount'] ?? 0}',
+          hint: 'Owner records in workspace',
+        ),
+        EvKpiItem(
+          title: 'Clients',
+          icon: Icons.people_outline,
+          color: EvTokens.blue,
+          value: '${_adminStats!['clientsCount'] ?? 0}',
+          hint: 'Client records in workspace',
+        ),
+        EvKpiItem(
+          title: 'Meta page',
+          icon: Icons.link_outlined,
+          color: (_adminStats!['webhookConnected'] == true)
+              ? EmTokens.green
+              : EmTokens.gray,
+          value: (_adminStats!['webhookConnected'] == true) ? 'ON' : 'OFF',
+          hint: (_adminStats!['campaignEnabled'] == true)
+              ? 'Webhook scoped to this admin'
+              : 'Campaign access is off',
+        ),
+      ],
+    ];
+
+    final assignedSummary = EvSummaryData(
+      icon: Icons.move_to_inbox_outlined,
+      tone: EvTone.blue,
+      label: isTelecallerRole ? 'ASSIGNED TO SALES' : 'ASSIGNED LEADS',
+      value: (isSalesRole || isTelecallerRole) && splitByListing
+          ? _rentResaleLabel(assignedRent, assignedResale)
+          : assignedCount.toString(),
+      caption: isTelecallerRole
+          ? 'Leads $first passed to the sales team'
+          : 'Given to $first by Lead Allocation or an admin',
+      onTap: () => _focusLeads(_LeadFocus.assigned),
+    );
+    final createdSummary = EvSummaryData(
+      icon: Icons.edit_note_rounded,
+      tone: EvTone.green,
+      label: 'CREATED LEADS',
+      value: createdCount.toString(),
+      caption: isSalesRole && splitByListing
+          ? 'Leads $first added personally  •  Rent $createdRent  •  Re-Sale $createdResale'
+          : 'Leads $first added personally',
+      onTap: () => _focusLeads(_LeadFocus.created),
+    );
+
+    void openProperties() => context.push(
+          '/properties?search=${Uri.encodeComponent(user.fullName)}',
+        );
+    void openLeads() => context.push(
+          '/requirements?search=${Uri.encodeComponent(user.fullName)}',
+        );
+
+    final propertiesCard = KeyedSubtree(
+      key: _propertiesKey,
+      child: _PropertiesSection(
+        user: user,
+        properties: visibleProps,
+        onOpenAll: openProperties,
+      ),
+    );
+    final leadsCard = KeyedSubtree(
+      key: _leadsKey,
+      child: _LeadsSection(
+        leads: focusedReqs,
+        totalUnfiltered: visibleReqs.length,
+        focus: _leadFocus,
+        chips: focusChips,
+        counts: focusCounts,
+        formatFollowup: _formatFollowup,
+        badgeFor: leadBadge,
+        onChangeFocus: (focus) => setState(() => _leadFocus = focus),
+        onOpenAll: openLeads,
+      ),
+    );
+
+    const gap = SizedBox(height: 16);
+
     final scrollContent = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (isMobile) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: CRMSpacing.m),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if ((user.mobile ?? '').trim().isNotEmpty)
-                  CRMButton(
-                    label: 'Call',
-                    prefixIcon: Icons.call_rounded,
-                    variant: CRMButtonVariant.outline,
-                    height: 48,
-                    onPressed: () => _call(user.mobile),
-                  ),
-                if ((user.mobile ?? '').trim().isNotEmpty)
-                  CRMButton(
-                    label: 'WhatsApp',
-                    prefixIcon: Icons.chat_rounded,
-                    variant: CRMButtonVariant.secondary,
-                    height: 48,
-                    onPressed: () => _whatsapp(user.mobile),
-                  ),
-                CRMButton(
-                  label: 'Email',
-                  prefixIcon: Icons.mail_outline_rounded,
-                  variant: CRMButtonVariant.primary,
-                  height: 48,
-                  onPressed: () => _email(user.email),
-                ),
-              ],
-            ),
+        if (!isMobile) ...[
+          EvBreadcrumb(
+            current: user.fullName,
+            onEmployees: () => context.go('/users'),
+          ),
+          const SizedBox(height: 10),
+        ],
+        EvHead(
+          title: user.fullName,
+          subtitle:
+              '${user.roleName}  •  ${user.isActive ? 'Active login' : 'Login off'}',
+          showTitle: !isMobile,
+          onBack: isMobile ? null : _goBack,
+          onCall: hasMobile ? () => _call(user.mobile) : null,
+          onWhatsapp: hasMobile ? () => _whatsapp(user.mobile) : null,
+          onEmail: () => _email(user.email),
+        ),
+        gap,
+        EvProfileCard(
+          user: user,
+          joinedLabel: _formatCreatedDate(user.createdAt),
+          reportingLabel: (user.createdByName ?? '').trim().isEmpty
+              ? '—'
+              : user.createdByName!,
+          onToggleLogin: canToggle
+              ? (val) => context.read<UsersBloc>().add(
+                    ToggleUserStatusRequested(id: user.id, isActive: val),
+                  )
+              : null,
+          onEmail: () => _email(user.email),
+          onCall: () => _call(user.mobile),
+          onEdit: canEdit ? () => _editDetails(user) : null,
+          onReset: canEdit ? () => _resetPassword(user) : null,
+          onRemove: canDelete ? () => _remove(user) : null,
+        ),
+        if (RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role) &&
+            user.roleName.toLowerCase() == 'admin') ...[
+          gap,
+          _WorkspaceAccessCard(
+            organizationName: _adminStats?['organizationName']?.toString() ??
+                user.organizationName ??
+                'Isolated admin workspace',
+            enabled: (_adminStats?['campaignEnabled'] as bool?) ??
+                user.campaignEnabled,
+            busy: _updatingAccess,
+            onChanged: (val) => _setCampaignAccess(user, val),
           ),
         ],
-        _ProfileSummaryCard(
-                    user: user,
-                    onCall: () => _call(user.mobile),
-                    onEmail: () => _email(user.email),
-                    onToggleActive: !RoleGuard.canAction('page.employees.active_toggle') ? null : (val) {
-                      context.read<UsersBloc>().add(
-                            ToggleUserStatusRequested(
-                              id: user.id,
-                              isActive: val,
-                            ),
-                          );
-                    },
-                    createdLabel: _formatCreatedDate(user.createdAt),
-                  ),
-                  if (RoleGuard.isSuperAdmin(RoleGuard.currentUser?.role) &&
-                      user.roleName.toLowerCase() == 'admin') ...[
-                    const SizedBox(height: CRMSpacing.m),
-                    CRMCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Workspace access',
-                            style: CRMTypography.sectionTitle.copyWith(
-                              color: CRMColors.textOf(context),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _adminStats?['organizationName']?.toString() ??
-                                user.organizationName ??
-                                'Isolated admin workspace',
-                            style: CRMTypography.caption.copyWith(
-                              color: CRMColors.textSecondaryOf(context),
-                            ),
-                          ),
-                          const SizedBox(height: CRMSpacing.s),
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Campaign / Meta inbox'),
-                            subtitle: Text(
-                              ((_adminStats?['campaignEnabled'] as bool?) ??
-                                      user.campaignEnabled)
-                                  ? 'Connected — this admin can ingest Meta and Sheets leads into their own inbox.'
-                                  : 'Off — new admin starts empty. Enable when they should run campaigns.',
-                            ),
-                            value: (_adminStats?['campaignEnabled'] as bool?) ??
-                                user.campaignEnabled,
-                            onChanged: _updatingAccess
-                                ? null
-                                : (val) => _setCampaignAccess(user, val),
-                          ),
-                        ],
-                      ),
-                    ),
+        gap,
+        if (_loadingActivity)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_activityError != null)
+          EvCardShell(
+            title: 'Activity unavailable',
+            subtitle: _activityError!,
+            actionLabel: 'Retry',
+            onAction: _loadActivity,
+            children: const [
+              EvEmpty(
+                title: 'Could not load activity',
+                message: 'Check your connection and retry.',
+              ),
+            ],
+          )
+        else ...[
+          EvBizSeg(
+            options: const ['All', 'Rent', 'Re-Sale'],
+            labels: const {'Re-Sale': 'Re-sale'},
+            selected: _listingFilter,
+            onChanged: (v) => setState(() => _listingFilter = v),
+          ),
+          gap,
+          EvKpiGrid(items: primaryKpis),
+          gap,
+          EvSummaryPair(left: assignedSummary, right: createdSummary),
+          if (adminKpis.isNotEmpty) ...[
+            gap,
+            EvKpiGrid(items: adminKpis),
+          ],
+          gap,
+          LayoutBuilder(
+            builder: (context, c) {
+              if (c.maxWidth >= 900) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 5, child: propertiesCard),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 7, child: leadsCard),
                   ],
-                  const SizedBox(height: CRMSpacing.m),
-                  if (_loadingActivity)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (_activityError != null)
-                    CRMCard(
-                      child: Column(
-                        children: [
-                          Text(_activityError!, style: CRMTypography.body),
-                          const SizedBox(height: CRMSpacing.m),
-                          CRMButton(label: 'Retry', onPressed: _loadActivity),
-                        ],
-                      ),
-                    )
-                  else ...[
-                    _listingToggle(context),
-                    const SizedBox(height: CRMSpacing.m),
-                    CRMResponsiveKpiRow(
-                      minCardWidth: 150,
-                      children: [
-                        CRMKPICard(
-                          title: 'PROPERTIES',
-                          value: visibleProps.length.toString(),
-                          icon: Icons.home_work_outlined,
-                          iconColor: CRMColors.primaryOf(context),
-                          benefit: 'Tap to view inventory they added',
-                          onTap: () => _scrollTo(_propertiesKey),
-                        ),
-                        _salesKpiCard(
-                          title: 'LEADS',
-                          value: totalLeadsCount.toString(),
-                          icon: Icons.assignment_outlined,
-                          iconColor: CRMColors.info,
-                          benefit: isSalesRole && _listingFilter == 'All'
-                              ? 'Assigned + created  •  Hover for Rent / Re-Sale'
-                              : 'Tap to view assigned & created leads',
-                          hoverValue: isSalesRole && _listingFilter == 'All'
-                              ? _rentResaleLabel(leadsRent, leadsResale)
-                              : null,
-                          hoverBenefit: 'Rent $leadsRent  •  Re-Sale $leadsResale',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.all);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                        CRMKPICard(
-                          title: 'WON CLIENTS',
-                          value: wonCount.toString(),
-                          icon: Icons.workspace_premium_outlined,
-                          iconColor: CRMColors.success,
-                          benefit:
-                              '${conversion.toStringAsFixed(0)}% conversion  •  Tap to filter',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.won);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                        if (isSalesRole)
-                          CRMKPICard(
-                            title: 'REJECTED CLIENT',
-                            value: rejectedCount.toString(),
-                            icon: Icons.person_off_outlined,
-                            iconColor: CRMColors.danger,
-                            benefit: 'Leads they marked rejected  •  Tap to filter',
-                            onTap: () {
-                              setState(() => _leadFocus = _LeadFocus.rejected);
-                              _scrollTo(_leadsKey);
-                            },
-                          ),
-                        _salesKpiCard(
-                          title: 'FOLLOW-UPS',
-                          value: pendingFollowups.toString(),
-                          icon: Icons.event_available_rounded,
-                          iconColor: const Color(0xFFF59E0B),
-                          benefit: isSalesRole
-                              ? (_listingFilter == 'All'
-                                  ? 'Current follow-ups  •  Hover for Rent / Re-Sale'
-                                  : 'Current follow-ups  •  Hover for total')
-                              : 'Upcoming  •  Tap to open',
-                          hoverValue: !isSalesRole
-                              ? null
-                              : _listingFilter == 'All'
-                                  ? _rentResaleLabel(
-                                      pendingFollowupsRent,
-                                      pendingFollowupsResale,
-                                    )
-                                  : totalFollowups.toString(),
-                          hoverBenefit: !isSalesRole
-                              ? null
-                              : _listingFilter == 'All'
-                                  ? 'Rent $pendingFollowupsRent  •  Re-Sale $pendingFollowupsResale'
-                                  : 'Total follow-ups taken: $totalFollowups',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.followup);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                        _salesKpiCard(
-                          title: 'OVERDUE',
-                          value: overdueFollowups.toString(),
-                          icon: Icons.event_busy_rounded,
-                          iconColor: CRMColors.danger,
-                          benefit: isSalesRole
-                              ? (_listingFilter == 'All'
-                                  ? 'Current overdue  •  Hover for Rent / Re-Sale'
-                                  : 'Current overdue  •  Hover for total')
-                              : 'Missed follow-ups  •  Tap to open',
-                          hoverValue: !isSalesRole
-                              ? null
-                              : _listingFilter == 'All'
-                                  ? _rentResaleLabel(
-                                      overdueFollowupsRent,
-                                      overdueFollowupsResale,
-                                    )
-                                  : totalOverdueFollowups.toString(),
-                          hoverBenefit: !isSalesRole
-                              ? null
-                              : _listingFilter == 'All'
-                                  ? 'Rent $overdueFollowupsRent  •  Re-Sale $overdueFollowupsResale'
-                                  : 'Total overdue follow-ups: $totalOverdueFollowups',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.overdue);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                        _salesKpiCard(
-                          title: 'SITE VISITS',
-                          value: siteVisits.toString(),
-                          icon: Icons.location_on_outlined,
-                          iconColor: const Color(0xFF8B5CF6),
-                          benefit: isSalesRole
-                              ? (_listingFilter == 'All'
-                                  ? 'Current site visits  •  Hover for Rent / Re-Sale'
-                                  : 'Current site visits  •  Hover for total')
-                              : 'Leads with visits  •  Tap to open',
-                          hoverValue: !isSalesRole
-                              ? null
-                              : _listingFilter == 'All'
-                                  ? _rentResaleLabel(
-                                      siteVisitsRent,
-                                      siteVisitsResale,
-                                    )
-                                  : totalSiteVisits.toString(),
-                          hoverBenefit: !isSalesRole
-                              ? null
-                              : _listingFilter == 'All'
-                                  ? 'Rent $siteVisitsRent  •  Re-Sale $siteVisitsResale'
-                                  : 'Total site visits: $totalSiteVisits',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.visits);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: CRMSpacing.s),
-                    CRMResponsiveKpiRow(
-                      minCardWidth: 150,
-                      children: [
-                        _salesKpiCard(
-                          title: isTelecallerRole ? 'ASSIGNED TO SALES' : 'ASSIGNED LEADS',
-                          value: assignedCount.toString(),
-                          icon: Icons.person_pin_circle_outlined,
-                          iconColor: CRMColors.info,
-                          benefit: isTelecallerRole
-                              ? 'Leads passed to sales team'
-                              : (isSalesRole && _listingFilter == 'All'
-                                  ? 'Currently on their plate  •  Hover for Rent / Re-Sale'
-                                  : 'Currently on their plate'),
-                          hoverValue: (isSalesRole || isTelecallerRole) && _listingFilter == 'All'
-                              ? _rentResaleLabel(assignedRent, assignedResale)
-                              : null,
-                          hoverBenefit:
-                              'Rent $assignedRent  •  Re-Sale $assignedResale',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.assigned);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                        _salesKpiCard(
-                          title: 'CREATED LEADS',
-                          value: createdCount.toString(),
-                          icon: Icons.post_add_rounded,
-                          iconColor: CRMColors.primaryOf(context),
-                          benefit: isSalesRole && _listingFilter == 'All'
-                              ? 'Leads they originated  •  Hover for Rent / Re-Sale'
-                              : 'Leads they originated',
-                          hoverValue: isSalesRole && _listingFilter == 'All'
-                              ? _rentResaleLabel(createdRent, createdResale)
-                              : null,
-                          hoverBenefit:
-                              'Rent $createdRent  •  Re-Sale $createdResale',
-                          onTap: () {
-                            setState(() => _leadFocus = _LeadFocus.created);
-                            _scrollTo(_leadsKey);
-                          },
-                        ),
-                        if (isAdminRole)
-                          CRMKPICard(
-                            title: 'TEAM SIZE',
-                            value: '$salesCreated',
-                            icon: Icons.group_outlined,
-                            iconColor: CRMColors.primaryOf(context),
-                            benefit:
-                                '$activeSales active  •  $inactiveSales inactive',
-                            onTap: () => _scrollTo(_teamKey),
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'TELECALLERS',
-                            value: '${_adminStats!['telecallersCreated'] ?? 0}',
-                            icon: Icons.headset_mic_outlined,
-                            iconColor: CRMColors.info,
-                            benefit:
-                                '${_adminStats!['activeTelecallers'] ?? 0} active on this workspace',
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'WON DEALS',
-                            value: '${_adminStats!['wonRequirements'] ?? wonCount}',
-                            icon: Icons.emoji_events_outlined,
-                            iconColor: CRMColors.success,
-                            benefit: 'Closed from this admin team',
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'CAMPAIGN LEADS',
-                            value: '${_adminStats!['campaignLeads'] ?? 0}',
-                            icon: Icons.campaign_outlined,
-                            iconColor: CRMColors.warning,
-                            benefit: (_adminStats!['campaignEnabled'] == true)
-                                ? 'In their own Meta/Sheets inbox'
-                                : 'Inbox disconnected',
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'IMPORTED',
-                            value: '${_adminStats!['campaignImported'] ?? 0}',
-                            icon: Icons.file_download_done_outlined,
-                            iconColor: CRMColors.success,
-                            benefit:
-                                '${_adminStats!['campaignPending'] ?? 0} still pending in their inbox',
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'OWNERS',
-                            value: '${_adminStats!['ownersCount'] ?? 0}',
-                            icon: Icons.apartment_outlined,
-                            iconColor: CRMColors.primaryOf(context),
-                            benefit: 'Owner records in this workspace only',
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'CLIENTS',
-                            value: '${_adminStats!['clientsCount'] ?? 0}',
-                            icon: Icons.people_outline,
-                            iconColor: CRMColors.info,
-                            benefit: 'Client records in this workspace only',
-                          ),
-                        if (isAdminRole && _adminStats != null)
-                          CRMKPICard(
-                            title: 'META PAGE',
-                            value: (_adminStats!['webhookConnected'] == true)
-                                ? 'ON'
-                                : 'OFF',
-                            icon: Icons.link_outlined,
-                            iconColor: (_adminStats!['webhookConnected'] == true)
-                                ? CRMColors.success
-                                : CRMColors.textSecondaryOf(context),
-                            benefit: (_adminStats!['campaignEnabled'] == true)
-                                ? 'Webhook scoped to this admin workspace'
-                                : 'Campaign access is off until you enable it',
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: CRMSpacing.m),
-                    if (!isMobile && MediaQuery.of(context).size.width >= 900)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: KeyedSubtree(
-                              key: _propertiesKey,
-                              child: _PropertiesSection(
-                                user: user,
-                                properties: visibleProps,
-                                isMobile: isMobile,
-                                onOpenAll: () => context.push(
-                                  '/properties?search=${Uri.encodeComponent(user.fullName)}',
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: CRMSpacing.m),
-                          Expanded(
-                            child: KeyedSubtree(
-                              key: _leadsKey,
-                              child: _LeadsSection(
-                                leads: focusedReqs,
-                                totalUnfiltered: visibleReqs.length,
-                                focus: _leadFocus,
-                                isMobile: isMobile,
-                                formatFollowup: _formatFollowup,
-                                onChangeFocus: (focus) =>
-                                    setState(() => _leadFocus = focus),
-                                showRejected: isSalesRole,
-                                onOpenAll: () => context.push(
-                                  '/requirements?search=${Uri.encodeComponent(user.fullName)}',
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    else ...[
-                      KeyedSubtree(
-                        key: _propertiesKey,
-                        child: _PropertiesSection(
-                          user: user,
-                          properties: visibleProps,
-                          isMobile: isMobile,
-                          onOpenAll: () => context.push(
-                            '/properties?search=${Uri.encodeComponent(user.fullName)}',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: CRMSpacing.m),
-                      KeyedSubtree(
-                        key: _leadsKey,
-                        child: _LeadsSection(
-                          leads: focusedReqs,
-                          totalUnfiltered: visibleReqs.length,
-                          focus: _leadFocus,
-                          isMobile: isMobile,
-                          formatFollowup: _formatFollowup,
-                          onChangeFocus: (focus) =>
-                              setState(() => _leadFocus = focus),
-                          showRejected: isSalesRole,
-                          onOpenAll: () => context.push(
-                            '/requirements?search=${Uri.encodeComponent(user.fullName)}',
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (isAdminRole || team.isNotEmpty) ...[
-                      const SizedBox(height: CRMSpacing.m),
-                      KeyedSubtree(
-                        key: _teamKey,
-                        child: _TeamSection(members: team),
-                      ),
-                    ],
-                  ],
-                ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [propertiesCard, gap, leadsCard],
               );
+            },
+          ),
+          if (isAdminRole || team.isNotEmpty) ...[
+            gap,
+            KeyedSubtree(
+              key: _teamKey,
+              child: _TeamSection(members: team),
+            ),
+          ],
+        ],
+      ],
+    );
 
     if (isMobile) {
       return MobileScreenScaffold(
         title: user.fullName,
         showBack: true,
-        onBack: () {
-          if (context.canPop()) {
-            context.pop();
-          } else {
-            context.go('/users');
-          }
-        },
+        onBack: _goBack,
         backFallback: '/users',
         scrollable: false,
         body: RefreshIndicator(
@@ -1306,827 +1272,75 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       );
     }
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            CRMSpacing.l,
-            CRMSpacing.m,
-            CRMSpacing.l,
-            0,
-          ),
-          child: CRMPageHeader(
-            title: user.fullName,
-            eyebrow: 'Employee',
-            benefit:
-                '${user.roleName}  •  ${user.isActive ? 'Active login' : 'Inactive'}',
-            breadcrumbs: [
-              InkWell(
-                onTap: () => context.go('/users'),
-                child: Text(
-                  'Employees',
-                  style: CRMTypography.captionBold.copyWith(
-                    color: CRMColors.primaryOf(context),
-                  ),
-                ),
-              ),
-              Text(
-                '  /  ',
-                style: CRMTypography.caption.copyWith(
-                  color: CRMColors.textMutedOf(context),
-                ),
-              ),
-              Text(
-                user.fullName,
-                style: CRMTypography.caption.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                ),
-              ),
-            ],
-            trailing: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.end,
-              children: [
-                CRMButton(
-                  label: 'Back',
-                  prefixIcon: Icons.arrow_back_rounded,
-                  variant: CRMButtonVariant.outline,
-                  height: 36,
-                  onPressed: () {
-                    if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go('/users');
-                    }
-                  },
-                ),
-                if ((user.mobile ?? '').trim().isNotEmpty)
-                  CRMButton(
-                    label: 'Call',
-                    prefixIcon: Icons.call_rounded,
-                    variant: CRMButtonVariant.outline,
-                    height: 36,
-                    onPressed: () => _call(user.mobile),
-                  ),
-                if ((user.mobile ?? '').trim().isNotEmpty)
-                  CRMButton(
-                    label: 'WhatsApp',
-                    prefixIcon: Icons.chat_rounded,
-                    variant: CRMButtonVariant.secondary,
-                    height: 36,
-                    onPressed: () => _whatsapp(user.mobile),
-                  ),
-                CRMButton(
-                  label: 'Email',
-                  prefixIcon: Icons.mail_outline_rounded,
-                  variant: CRMButtonVariant.primary,
-                  height: 36,
-                  onPressed: () => _email(user.email),
-                ),
-              ],
-            ),
-          ),
+    return RefreshIndicator(
+      onRefresh: _loadActivity,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(
+          CRMSpacing.l,
+          CRMSpacing.m,
+          CRMSpacing.l,
+          CRMSpacing.xl,
         ),
-        const SizedBox(height: CRMSpacing.m),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadActivity,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(
-                CRMSpacing.l,
-                0,
-                CRMSpacing.l,
-                CRMSpacing.xl,
-              ),
-              child: scrollContent,
-            ),
-          ),
-        ),
-      ],
+        child: scrollContent,
+      ),
     );
+  }
+
+  void _goBack() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/users');
+    }
   }
 
   String _rentResaleLabel(int rent, int resale) =>
       'Rent $rent  •  Re-Sale $resale';
 
-  Widget _salesKpiCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color iconColor,
-    required String benefit,
-    VoidCallback? onTap,
-    String? hoverValue,
-    String? hoverBenefit,
-  }) {
-    final front = CRMKPICard(
-      title: title,
-      value: value,
-      icon: icon,
-      iconColor: iconColor,
-      benefit: benefit,
-      onTap: onTap,
-    );
-    if (hoverValue == null || hoverValue.isEmpty) return front;
-    return _HoverFlipKpi(
-      front: front,
-      back: CRMKPICard(
-        title: title,
-        value: hoverValue,
-        icon: icon,
-        iconColor: iconColor,
-        benefit: hoverBenefit ?? benefit,
-        onTap: onTap,
-      ),
-    );
+  /// KPI tap: toggle the lead focus and scroll to the leads card.
+  void _focusLeads(_LeadFocus focus) {
+    setState(() {
+      _leadFocus =
+          (_leadFocus == focus && focus != _LeadFocus.all) ? _LeadFocus.all : focus;
+    });
+    _scrollTo(_leadsKey);
   }
 
-  Widget _listingToggle(BuildContext context) {
-    const options = ['All', 'Rent', 'Re-Sale'];
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Wrap(
-        spacing: 8,
-        children: [
-          for (final option in options)
-            ChoiceChip(
-              label: Text(option),
-              selected: _listingFilter == option,
-              onSelected: (_) => setState(() => _listingFilter = option),
-              selectedColor:
-                  CRMColors.primaryOf(context).withValues(alpha: 0.18),
-              labelStyle: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: _listingFilter == option
-                    ? CRMColors.primaryOf(context)
-                    : CRMColors.textSecondaryOf(context),
-              ),
-            ),
-        ],
-      ),
+  Future<void> _editDetails(UserModel user) async {
+    final data = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _EditEmployeeDialog(user: user),
     );
-  }
-}
-
-class _HoverFlipKpi extends StatefulWidget {
-  final Widget front;
-  final Widget back;
-
-  const _HoverFlipKpi({
-    required this.front,
-    required this.back,
-  });
-
-  @override
-  State<_HoverFlipKpi> createState() => _HoverFlipKpiState();
-}
-
-class _HoverFlipKpiState extends State<_HoverFlipKpi> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 280),
-        switchInCurve: Curves.easeInOut,
-        switchOutCurve: Curves.easeInOut,
-        layoutBuilder: (currentChild, previousChildren) {
-          return Stack(
-            alignment: Alignment.topLeft,
-            children: [
-              ...previousChildren,
-              ?currentChild,
-            ],
-          );
-        },
-        transitionBuilder: (child, animation) {
-          final rotate = Tween<double>(begin: math.pi / 2, end: 0).animate(animation);
-          return AnimatedBuilder(
-            animation: rotate,
-            child: child,
-            builder: (context, child) {
-              return Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001)
-                  ..rotateY(rotate.value),
-                child: child,
-              );
-            },
-          );
-        },
-        child: KeyedSubtree(
-          key: ValueKey(_hovered),
-          child: _hovered ? widget.back : widget.front,
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileSummaryCard extends StatelessWidget {
-  final UserModel user;
-  final VoidCallback onCall;
-  final VoidCallback onEmail;
-  final ValueChanged<bool>? onToggleActive;
-  final String createdLabel;
-
-  const _ProfileSummaryCard({
-    required this.user,
-    required this.onCall,
-    required this.onEmail,
-    required this.onToggleActive,
-    required this.createdLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isAdmin = user.roleName.toLowerCase() == 'admin' ||
-        user.roleName.toLowerCase() == 'super admin';
-    final hasPhoto =
-        user.profilePhoto != null && user.profilePhoto!.isNotEmpty;
-    final isMobile = MediaQuery.of(context).size.width < 700;
-
-    return CRMCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipOval(
-                child: SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: hasPhoto
-                      ? CrmNetworkImage(
-                          url: user.profilePhoto!,
-                          fit: BoxFit.cover,
-                          width: 56,
-                          height: 56,
-                          cacheLogicalWidth: 56,
-                          error: (_) => Icon(
-                            isAdmin
-                                ? Icons.admin_panel_settings_rounded
-                                : Icons.person_rounded,
-                            color: isAdmin
-                                ? CRMColors.info
-                                : CRMColors.primaryOf(context),
-                          ),
-                        )
-                      : ColoredBox(
-                          color: isAdmin
-                              ? CRMColors.info.withValues(alpha: 0.12)
-                              : CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                          child: Icon(
-                            isAdmin
-                                ? Icons.admin_panel_settings_rounded
-                                : Icons.person_rounded,
-                            color: isAdmin
-                                ? CRMColors.info
-                                : CRMColors.primaryOf(context),
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(width: CRMSpacing.m),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          user.fullName,
-                          style: CRMTypography.sectionTitle.copyWith(
-                            color: CRMColors.textOf(context),
-                          ),
-                        ),
-                        _StatusChip(
-                          label: user.roleName,
-                          color: isAdmin
-                              ? CRMColors.info
-                              : CRMColors.primaryOf(context),
-                        ),
-                        _StatusChip(
-                          label: user.isActive ? 'Active' : 'Inactive',
-                          color: user.isActive
-                              ? CRMColors.success
-                              : CRMColors.danger,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Joined $createdLabel',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (!isMobile)
-                Row(
-                  children: [
-                    Text(
-                      'Active login',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
-                      ),
-                    ),
-                    Switch(
-                      value: user.isActive,
-                      activeThumbColor: CRMColors.primaryOf(context),
-                      onChanged: onToggleActive,
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.m),
-          Divider(
-            color: CRMColors.borderOf(context).withValues(alpha: 0.5),
-            height: 1,
-          ),
-          const SizedBox(height: CRMSpacing.m),
-          Wrap(
-            spacing: 24,
-            runSpacing: 12,
-            children: [
-              _InfoAction(
-                icon: Icons.mail_outline_rounded,
-                label: 'Email',
-                value: user.email,
-                onTap: onEmail,
-              ),
-              _InfoAction(
-                icon: Icons.phone_outlined,
-                label: 'Mobile',
-                value: (user.mobile ?? '').trim().isEmpty ? '—' : user.mobile!,
-                onTap: (user.mobile ?? '').trim().isEmpty ? null : onCall,
-              ),
-              _InfoAction(
-                icon: Icons.badge_outlined,
-                label: 'Reporting / created by',
-                value: (user.createdByName ?? '').trim().isEmpty
-                    ? '—'
-                    : user.createdByName!,
-              ),
-            ],
-          ),
-          if (isMobile) ...[
-            const SizedBox(height: CRMSpacing.s),
-            Row(
-              children: [
-                Text(
-                  'Active login',
-                  style: CRMTypography.caption.copyWith(
-                    color: CRMColors.textSecondaryOf(context),
-                  ),
-                ),
-                const Spacer(),
-                Switch(
-                  value: user.isActive,
-                  activeThumbColor: CRMColors.primaryOf(context),
-                  onChanged: onToggleActive,
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _StatusChip({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.round),
-      ),
-      child: Text(
-        label,
-        style: CRMTypography.captionBold.copyWith(color: color, fontSize: 11),
-      ),
-    );
-  }
-}
-
-class _InfoAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final VoidCallback? onTap;
-
-  const _InfoAction({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: CRMColors.textSecondaryOf(context)),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label.toUpperCase(),
-                style: CRMTypography.captionBold.copyWith(
-                  color: CRMColors.textMutedOf(context),
-                  fontSize: 10,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              Text(
-                value,
-                style: CRMTypography.bodyMedium.copyWith(
-                  color: onTap != null
-                      ? CRMColors.primaryOf(context)
-                      : CRMColors.textOf(context),
-                  fontWeight: onTap != null ? FontWeight.w600 : FontWeight.w500,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-    if (onTap == null) return child;
-    return InkWell(onTap: onTap, child: child);
-  }
-}
-
-Widget _buildSectionPagination({
-  required BuildContext context,
-  required int startItem,
-  required int endItem,
-  required int totalItems,
-  required int pageSize,
-  required int currentPage,
-  required int totalPages,
-  required ValueChanged<int> onPageSizeChanged,
-  required ValueChanged<int> onPageChanged,
-}) {
-  return Container(
-    padding: const EdgeInsets.only(top: 8, bottom: 4),
-    decoration: BoxDecoration(
-      border: Border(
-        top: BorderSide(
-          color: CRMColors.borderOf(context).withValues(alpha: 0.4),
-        ),
-      ),
-    ),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final showCompact = constraints.maxWidth < 280;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Showing $startItem–$endItem of $totalItems',
-              style: CRMTypography.caption.copyWith(
-                color: CRMColors.textSecondaryOf(context),
-                fontSize: 11,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!showCompact)
-                  Text(
-                    'Rows: ',
-                    style: CRMTypography.caption.copyWith(
-                      color: CRMColors.textSecondaryOf(context),
-                      fontSize: 11,
-                    ),
-                  ),
-                DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    value: pageSize,
-                    isDense: true,
-                    dropdownColor: CRMColors.surfaceElevatedOf(context),
-                    icon: const Icon(Icons.arrow_drop_down_rounded, size: 18),
-                    style: CRMTypography.captionBold.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontSize: 11,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 10, child: Text('10')),
-                      DropdownMenuItem(value: 15, child: Text('15')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) onPageSizeChanged(val);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded, size: 18),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed:
-                      currentPage > 1 ? () => onPageChanged(currentPage - 1) : null,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    '$currentPage / $totalPages',
-                    style: CRMTypography.captionBold.copyWith(
-                      color: CRMColors.textOf(context),
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded, size: 18),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: currentPage < totalPages
-                      ? () => onPageChanged(currentPage + 1)
-                      : null,
-                ),
-              ],
-            ),
-          ],
+    if (data == null || !mounted) return;
+    context.read<UsersBloc>().add(
+          UpdateUserRequested(id: user.id, userData: data),
         );
-      },
-    ),
-  );
-}
-
-class _PropertiesSection extends StatefulWidget {
-  final UserModel user;
-  final List<PropertyModel> properties;
-  final bool isMobile;
-  final VoidCallback onOpenAll;
-
-  const _PropertiesSection({
-    required this.user,
-    required this.properties,
-    required this.isMobile,
-    required this.onOpenAll,
-  });
-
-  @override
-  State<_PropertiesSection> createState() => _PropertiesSectionState();
-}
-
-class _PropertiesSectionState extends State<_PropertiesSection> {
-  int _currentPage = 1;
-  int _pageSize = 10;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = widget.properties.length;
-    final totalPages = total == 0 ? 1 : (total / _pageSize).ceil();
-    if (_currentPage > totalPages) _currentPage = totalPages;
-    if (_currentPage < 1) _currentPage = 1;
-
-    final startIndex = (total == 0) ? 0 : (_currentPage - 1) * _pageSize;
-    final endIndex = (startIndex + _pageSize).clamp(0, total);
-    final paged = widget.properties.sublist(startIndex, endIndex);
-
-    final startItem = total == 0 ? 0 : startIndex + 1;
-    final endItem = endIndex;
-
-    return CRMCard(
-      title: 'Properties added',
-      subtitle: total == 0
-          ? 'No inventory linked to ${widget.user.fullName}'
-          : '$total listing${total == 1 ? '' : 's'}  •  tap a row to open',
-      headerAction: TextButton.icon(
-        onPressed: widget.onOpenAll,
-        icon: const Icon(Icons.open_in_new_rounded, size: 14),
-        label: Text(widget.isMobile ? 'All' : 'Open in Properties'),
-      ),
-      child: total == 0
-          ? const SizedBox(height: 8)
-          : Column(
-              children: [
-                for (var i = 0; i < paged.length; i++) ...[
-                  if (i > 0)
-                    Divider(
-                      height: 1,
-                      color: CRMColors.borderOf(context).withValues(alpha: 0.4),
-                    ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    onTap: () => showCRMPropertyDrawer(context, paged[i]),
-                    title: Text(
-                      paged[i].title,
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: CRMColors.textOf(context),
-                      ),
-                    ),
-                    subtitle: Text(
-                      '${paged[i].propertyCode}  •  ${paged[i].areaName}  •  ${paged[i].configurationName ?? '${paged[i].bedrooms} BHK'}  •  ${EmployeeActivity.propertyListingBucket(paged[i])}',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
-                      ),
-                    ),
-                    trailing: Text(
-                      BudgetFormatter.format(paged[i].price),
-                      style: CRMTypography.bodyMedium.copyWith(
-                        color: CRMColors.primaryOf(context),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: CRMSpacing.s),
-                _buildSectionPagination(
-                  context: context,
-                  startItem: startItem,
-                  endItem: endItem,
-                  totalItems: total,
-                  pageSize: _pageSize,
-                  currentPage: _currentPage,
-                  totalPages: totalPages,
-                  onPageSizeChanged: (newSize) {
-                    setState(() {
-                      _pageSize = newSize;
-                      _currentPage = 1;
-                    });
-                  },
-                  onPageChanged: (newPage) {
-                    setState(() {
-                      _currentPage = newPage;
-                    });
-                  },
-                ),
-              ],
-            ),
-    );
   }
-}
 
-class _LeadsSection extends StatefulWidget {
-  final List<RequirementModel> leads;
-  final int totalUnfiltered;
-  final _LeadFocus focus;
-  final bool isMobile;
-  final String Function(String?) formatFollowup;
-  final ValueChanged<_LeadFocus> onChangeFocus;
-  final bool showRejected;
-  final VoidCallback onOpenAll;
+  Future<void> _resetPassword(UserModel user) async {
+    final password = await showDialog<String>(
+      context: context,
+      builder: (_) => _ResetPasswordDialog(user: user),
+    );
+    if (password == null || !mounted) return;
+    context.read<UsersBloc>().add(
+          UpdateUserRequested(id: user.id, userData: {'password': password}),
+        );
+  }
 
-  const _LeadsSection({
-    required this.leads,
-    required this.totalUnfiltered,
-    required this.focus,
-    required this.isMobile,
-    required this.formatFollowup,
-    required this.onChangeFocus,
-    this.showRejected = false,
-    required this.onOpenAll,
-  });
-
-  @override
-  State<_LeadsSection> createState() => _LeadsSectionState();
-}
-
-class _LeadsSectionState extends State<_LeadsSection> {
-  int _currentPage = 1;
-  int _pageSize = 10;
-
-  @override
-  void didUpdateWidget(covariant _LeadsSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.focus != widget.focus) {
-      _currentPage = 1;
+  Future<void> _remove(UserModel user) async {
+    final confirmed = await CRMDialogs.showDeleteConfirmation(
+      context,
+      title: 'Remove employee',
+      content:
+          'Are you sure you want to remove ${user.fullName}? This user will be permanently removed from the system.',
+    );
+    if (confirmed == true && mounted) {
+      _removing = true;
+      context.read<UsersBloc>().add(DeleteUserRequested(id: user.id));
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = widget.leads.length;
-    final totalPages = total == 0 ? 1 : (total / _pageSize).ceil();
-    if (_currentPage > totalPages) _currentPage = totalPages;
-    if (_currentPage < 1) _currentPage = 1;
-
-    final startIndex = (total == 0) ? 0 : (_currentPage - 1) * _pageSize;
-    final endIndex = (startIndex + _pageSize).clamp(0, total);
-    final paged = widget.leads.sublist(startIndex, endIndex);
-
-    final startItem = total == 0 ? 0 : startIndex + 1;
-    final endItem = endIndex;
-
-    return CRMCard(
-      title: 'Leads',
-      subtitle: '$total shown of ${widget.totalUnfiltered}  •  tap a row to open',
-      headerAction: TextButton.icon(
-        onPressed: widget.onOpenAll,
-        icon: const Icon(Icons.open_in_new_rounded, size: 14),
-        label: Text(widget.isMobile ? 'All' : 'Open in Leads'),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _focusChip(context, 'All', _LeadFocus.all),
-              _focusChip(context, 'Won', _LeadFocus.won),
-              if (widget.showRejected)
-                _focusChip(context, 'Rejected', _LeadFocus.rejected),
-              _focusChip(context, 'Follow-up', _LeadFocus.followup),
-              _focusChip(context, 'Overdue', _LeadFocus.overdue),
-              _focusChip(context, 'Site visits', _LeadFocus.visits),
-              _focusChip(context, 'Assigned', _LeadFocus.assigned),
-              _focusChip(context, 'Created', _LeadFocus.created),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.s),
-          if (total == 0)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'No leads in this filter.',
-                style: CRMTypography.body.copyWith(
-                  color: CRMColors.textSecondaryOf(context),
-                ),
-              ),
-            )
-          else ...[
-            for (var i = 0; i < paged.length; i++) ...[
-              if (i > 0)
-                Divider(
-                  height: 1,
-                  color: CRMColors.borderOf(context).withValues(alpha: 0.4),
-                ),
-              _LeadTile(lead: paged[i], formatFollowup: widget.formatFollowup),
-            ],
-            const SizedBox(height: CRMSpacing.s),
-            _buildSectionPagination(
-              context: context,
-              startItem: startItem,
-              endItem: endItem,
-              totalItems: total,
-              pageSize: _pageSize,
-              currentPage: _currentPage,
-              totalPages: totalPages,
-              onPageSizeChanged: (newSize) {
-                setState(() {
-                  _pageSize = newSize;
-                  _currentPage = 1;
-                });
-              },
-              onPageChanged: (newPage) {
-                setState(() {
-                  _currentPage = newPage;
-                });
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _focusChip(BuildContext context, String label, _LeadFocus value) {
-    final selected = widget.focus == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => widget.onChangeFocus(value),
-      selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.18),
-      labelStyle: TextStyle(
-        fontWeight: FontWeight.w600,
-        fontSize: 12,
-        color: selected
-            ? CRMColors.primaryOf(context)
-            : CRMColors.textSecondaryOf(context),
-      ),
-    );
   }
 }
 
@@ -2141,68 +1355,248 @@ String _statusLabel(String status) {
   return status;
 }
 
-class _LeadTile extends StatelessWidget {
-  final RequirementModel lead;
-  final String Function(String?) formatFollowup;
+// -----------------------------------------------------------------------------
+// Sections composed from employee_detail_ui widgets
+// -----------------------------------------------------------------------------
 
-  const _LeadTile({required this.lead, required this.formatFollowup});
+class _WorkspaceAccessCard extends StatelessWidget {
+  final String organizationName;
+  final bool enabled;
+  final bool busy;
+  final ValueChanged<bool> onChanged;
+
+  const _WorkspaceAccessCard({
+    required this.organizationName,
+    required this.enabled,
+    required this.busy,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final won = EmployeeActivity.isWon(lead);
-    final followup = formatFollowup(lead.nextFollowupDate);
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      onTap: () => context.push('/requirements?openId=${Uri.encodeComponent(lead.id)}'),
-      title: Text(
-        lead.clientName,
-        style: CRMTypography.bodyMedium.copyWith(
-          fontWeight: FontWeight.w700,
-          color: CRMColors.textOf(context),
-        ),
-      ),
-      subtitle: Text(
-        [
-          lead.clientMobile,
-          '${lead.propertyTypeName}${lead.configurationName != null ? ' (${lead.configurationName})' : ''}',
-          lead.displayAreasText,
-          if (followup.isNotEmpty) 'Follow-up $followup',
-        ].join('  •  '),
-        style: CRMTypography.caption.copyWith(
-          color: CRMColors.textSecondaryOf(context),
-        ),
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            '₹${BudgetFormatter.format(lead.minBudget)} – ₹${BudgetFormatter.format(lead.maxBudget)}',
-            style: CRMTypography.caption.copyWith(
-              color: CRMColors.primaryOf(context),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: (won ? CRMColors.success : CRMColors.primaryOf(context))
-                  .withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              _statusLabel(lead.status),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: won ? CRMColors.success : CRMColors.primaryOf(context),
+    return EvCardShell(
+      title: 'Workspace access',
+      subtitle: organizationName,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Campaign / Meta inbox',
+                      style: EvTokens.text(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: EmTokens.ink(context),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      enabled
+                          ? 'Connected — this admin can ingest Meta and Sheets leads into their own inbox.'
+                          : 'Off — new admin starts empty. Enable when they should run campaigns.',
+                      style: EvTokens.text(
+                        size: 12,
+                        color: EmTokens.muted(context),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
+              EvToggle(value: enabled, onChanged: busy ? null : onChanged),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PropertiesSection extends StatefulWidget {
+  final UserModel user;
+  final List<PropertyModel> properties;
+  final VoidCallback onOpenAll;
+
+  const _PropertiesSection({
+    required this.user,
+    required this.properties,
+    required this.onOpenAll,
+  });
+
+  @override
+  State<_PropertiesSection> createState() => _PropertiesSectionState();
+}
+
+class _PropertiesSectionState extends State<_PropertiesSection> {
+  int _page = 1;
+  int _pageSize = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.properties.length;
+    final totalPages = total == 0 ? 1 : (total / _pageSize).ceil();
+    if (_page > totalPages) _page = totalPages;
+    if (_page < 1) _page = 1;
+    final start = total == 0 ? 0 : (_page - 1) * _pageSize;
+    final end = (start + _pageSize).clamp(0, total);
+    final paged = widget.properties.sublist(start, end);
+    final first = widget.user.fullName.trim().split(RegExp(r'\s+')).first;
+
+    return EvCardShell(
+      title: 'Properties added',
+      subtitle: total == 0
+          ? 'No inventory linked to ${widget.user.fullName}'
+          : '$total listed by $first',
+      actionLabel: 'Open in Properties →',
+      onAction: widget.onOpenAll,
+      children: [
+        if (total == 0)
+          EvEmpty(
+            title: 'No properties yet',
+            message: 'Properties $first adds will show up here.',
+          )
+        else ...[
+          for (final p in paged)
+            EvPropRow(
+              title: p.title,
+              subtitle:
+                  '${p.propertyCode}  •  ${p.areaName}  •  ${p.configurationName ?? '${p.bedrooms} BHK'}  •  ${EmployeeActivity.propertyListingBucket(p)}',
+              price: '₹${BudgetFormatter.format(p.price)}',
+              priceSuffix:
+                  EmployeeActivity.propertyListingBucket(p) == 'Rent' ? '/mo' : null,
+              onTap: () => showCRMPropertyDrawer(context, p),
             ),
+          EvPager(
+            total: total,
+            page: _page,
+            pageSize: _pageSize,
+            onPageChanged: (v) => setState(() => _page = v),
+            onPageSizeChanged: (v) => setState(() {
+              _pageSize = v;
+              _page = 1;
+            }),
           ),
         ],
-      ),
+      ],
+    );
+  }
+}
+
+class _LeadsSection extends StatefulWidget {
+  final List<RequirementModel> leads;
+  final int totalUnfiltered;
+  final _LeadFocus focus;
+  final Map<_LeadFocus, String> chips;
+  final Map<_LeadFocus, int> counts;
+  final String Function(String?) formatFollowup;
+  final (String, EvTone) Function(RequirementModel) badgeFor;
+  final ValueChanged<_LeadFocus> onChangeFocus;
+  final VoidCallback onOpenAll;
+
+  const _LeadsSection({
+    required this.leads,
+    required this.totalUnfiltered,
+    required this.focus,
+    required this.chips,
+    required this.counts,
+    required this.formatFollowup,
+    required this.badgeFor,
+    required this.onChangeFocus,
+    required this.onOpenAll,
+  });
+
+  @override
+  State<_LeadsSection> createState() => _LeadsSectionState();
+}
+
+class _LeadsSectionState extends State<_LeadsSection> {
+  int _page = 1;
+  int _pageSize = 10;
+
+  static const _avatarTones = [
+    EvTone.green,
+    EvTone.amber,
+    EvTone.blue,
+    EvTone.violet,
+  ];
+
+  @override
+  void didUpdateWidget(covariant _LeadsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focus != widget.focus) _page = 1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.leads.length;
+    final totalPages = total == 0 ? 1 : (total / _pageSize).ceil();
+    if (_page > totalPages) _page = totalPages;
+    if (_page < 1) _page = 1;
+    final start = total == 0 ? 0 : (_page - 1) * _pageSize;
+    final end = (start + _pageSize).clamp(0, total);
+    final paged = widget.leads.sublist(start, end);
+
+    return EvCardShell(
+      title: 'Leads',
+      subtitle:
+          '$total shown of ${widget.totalUnfiltered}  •  tap a row to open',
+      actionLabel: 'Open in Leads →',
+      onAction: widget.onOpenAll,
+      children: [
+        EvFilterChips(
+          items: [
+            for (final e in widget.chips.entries)
+              EvChipItem(
+                label: e.value,
+                count: widget.counts[e.key] ?? 0,
+                selected: widget.focus == e.key,
+                onTap: () => widget.onChangeFocus(e.key),
+              ),
+          ],
+        ),
+        if (total == 0)
+          const EvEmpty(title: 'No leads here', message: 'Try another filter.')
+        else ...[
+          for (final lead in paged) _row(context, lead),
+          EvPager(
+            total: total,
+            page: _page,
+            pageSize: _pageSize,
+            onPageChanged: (v) => setState(() => _page = v),
+            onPageSizeChanged: (v) => setState(() {
+              _pageSize = v;
+              _page = 1;
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _row(BuildContext context, RequirementModel lead) {
+    final followup = widget.formatFollowup(lead.nextFollowupDate);
+    final (label, tone) = widget.badgeFor(lead);
+    final mobile = lead.clientMobile.toString();
+    return EvLeadRow(
+      name: lead.clientName,
+      subtitle: [
+        if (mobile.trim().isNotEmpty) mobile,
+        EmployeeActivity.requirementListingBucket(lead),
+        lead.displayAreasText,
+        if (followup.isNotEmpty) 'Follow-up $followup',
+      ].where((s) => s.toString().trim().isNotEmpty).join('  •  '),
+      budget:
+          '₹${BudgetFormatter.format(lead.minBudget)} – ₹${BudgetFormatter.format(lead.maxBudget)}',
+      statusLabel: label,
+      statusTone: tone,
+      avatarTone: _avatarTones[lead.clientName.length % _avatarTones.length],
+      onTap: () =>
+          context.push('/requirements?openId=${Uri.encodeComponent(lead.id)}'),
     );
   }
 }
@@ -2214,59 +1608,256 @@ class _TeamSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CRMCard(
+    final canOpen = RoleGuard.canAction('page.employees.details');
+    return EvCardShell(
       title: 'Team members',
       subtitle: members.isEmpty
           ? 'No sales or telecaller profiles report to this admin'
           : '${members.length} people  •  tap to open their page',
-      child: members.isEmpty
-          ? const SizedBox(height: 8)
-          : Column(
-              children: [
-                for (var i = 0; i < members.length; i++) ...[
-                  if (i > 0)
-                    Divider(
-                      height: 1,
-                      color: CRMColors.borderOf(context).withValues(alpha: 0.4),
-                    ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    onTap: RoleGuard.canAction('page.employees.details')
-                        ? () => context.push('/users/${members[i].id}')
-                        : null,
-                    leading: CircleAvatar(
-                      radius: 16,
-                      backgroundColor:
-                          CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                      child: Icon(
-                        Icons.person_rounded,
-                        size: 16,
-                        color: CRMColors.primaryOf(context),
-                      ),
-                    ),
-                    title: Text(
-                      members[i].fullName,
-                      style: CRMTypography.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: CRMColors.textOf(context),
-                      ),
-                    ),
-                    subtitle: Text(
-                      '${members[i].roleName}  •  ${members[i].email}',
-                      style: CRMTypography.caption.copyWith(
-                        color: CRMColors.textSecondaryOf(context),
-                      ),
-                    ),
-                    trailing: _StatusChip(
-                      label: members[i].isActive ? 'Active' : 'Inactive',
-                      color: members[i].isActive
-                          ? CRMColors.success
-                          : CRMColors.danger,
-                    ),
-                  ),
-                ],
-              ],
+      children: [
+        if (members.isEmpty)
+          const EvEmpty(
+            title: 'No team yet',
+            message: 'People who report to this admin will show up here.',
+          )
+        else
+          for (final m in members)
+            EvLeadRow(
+              name: m.fullName,
+              subtitle: m.email,
+              budget: m.roleName,
+              statusLabel: m.isActive ? 'Active' : 'Inactive',
+              statusTone: m.isActive ? EvTone.green : EvTone.gray,
+              avatarTone: EvTokens.roleTone(m.roleName),
+              onTap: canOpen ? () => context.push('/users/${m.id}') : null,
             ),
+      ],
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Dialogs (dispatch UpdateUserRequested via the screen)
+// -----------------------------------------------------------------------------
+
+InputDecoration _fieldDecoration(BuildContext context, String label) {
+  final border = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(9),
+    borderSide: BorderSide(color: EmTokens.line(context)),
+  );
+  return InputDecoration(
+    labelText: label,
+    isDense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    border: border,
+    enabledBorder: border,
+    focusedBorder: border.copyWith(
+      borderSide: const BorderSide(color: EmTokens.green, width: 1.5),
+    ),
+    labelStyle: EvTokens.text(size: 13, color: EmTokens.muted(context)),
+  );
+}
+
+class _EvDialogFrame extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget body;
+  final List<Widget> actions;
+
+  const _EvDialogFrame({
+    required this.title,
+    required this.subtitle,
+    required this.body,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: EmTokens.panelBg(context),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(EvTokens.radiusCard),
+        side: BorderSide(color: EmTokens.line(context)),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: EvTokens.text(
+                  size: 17,
+                  weight: FontWeight.w700,
+                  color: EmTokens.ink(context),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: EvTokens.text(size: 12.5, color: EmTokens.muted(context)),
+              ),
+              const SizedBox(height: 16),
+              body,
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    actions[i],
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditEmployeeDialog extends StatefulWidget {
+  final UserModel user;
+  const _EditEmployeeDialog({required this.user});
+
+  @override
+  State<_EditEmployeeDialog> createState() => _EditEmployeeDialogState();
+}
+
+class _EditEmployeeDialogState extends State<_EditEmployeeDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _name =
+      TextEditingController(text: widget.user.fullName);
+  late final TextEditingController _email =
+      TextEditingController(text: widget.user.email);
+  late final TextEditingController _mobile =
+      TextEditingController(text: widget.user.mobile ?? '');
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _mobile.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.pop(context, <String, dynamic>{
+      'full_name': _name.text.trim(),
+      'email': _email.text.trim(),
+      'mobile': _mobile.text.trim(),
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _EvDialogFrame(
+      title: 'Edit details',
+      subtitle: 'Update ${widget.user.fullName}’s name, email and mobile.',
+      body: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _name,
+              decoration: _fieldDecoration(context, 'Full name *'),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Full name required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: _fieldDecoration(context, 'Email *'),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Email required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _mobile,
+              keyboardType: TextInputType.phone,
+              decoration: _fieldDecoration(context, 'Mobile *'),
+              validator: (v) {
+                final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
+                if (digits.isEmpty) return 'Phone number required';
+                if (digits.length != 10) return 'Enter a valid 10-digit mobile';
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        EvButton(label: 'Cancel', onTap: () => Navigator.pop(context)),
+        EvButton(label: 'Save changes', primary: true, onTap: _save),
+      ],
+    );
+  }
+}
+
+class _ResetPasswordDialog extends StatefulWidget {
+  final UserModel user;
+  const _ResetPasswordDialog({required this.user});
+
+  @override
+  State<_ResetPasswordDialog> createState() => _ResetPasswordDialogState();
+}
+
+class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _password = TextEditingController();
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.pop(context, _password.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _EvDialogFrame(
+      title: 'Reset password',
+      subtitle: 'Set a new password for ${widget.user.fullName}.',
+      body: Form(
+        key: _formKey,
+        child: TextFormField(
+          controller: _password,
+          obscureText: _obscure,
+          decoration: _fieldDecoration(context, 'New password *').copyWith(
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscure
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                size: 18,
+              ),
+              onPressed: () => setState(() => _obscure = !_obscure),
+            ),
+          ),
+          validator: (v) {
+            if (v == null || v.isEmpty) return 'Password required';
+            if (v.length < 6) return 'Password must be at least 6 characters';
+            return null;
+          },
+        ),
+      ),
+      actions: [
+        EvButton(label: 'Cancel', onTap: () => Navigator.pop(context)),
+        EvButton(label: 'Set password', primary: true, onTap: _save),
+      ],
     );
   }
 }
@@ -2286,20 +1877,29 @@ class _NotFound extends StatelessWidget {
             Icon(
               Icons.person_off_outlined,
               size: 48,
-              color: CRMColors.textMutedOf(context),
+              color: EmTokens.muted(context),
             ),
             const SizedBox(height: CRMSpacing.m),
-            Text('Employee not found', style: CRMTypography.sectionTitle),
+            Text(
+              'Employee not found',
+              style: EvTokens.text(
+                size: 17,
+                weight: FontWeight.w700,
+                color: EmTokens.ink(context),
+              ),
+            ),
             const SizedBox(height: CRMSpacing.s),
             Text(
               'This profile may have been removed or you do not have access.',
               textAlign: TextAlign.center,
-              style: CRMTypography.body.copyWith(
-                color: CRMColors.textSecondaryOf(context),
-              ),
+              style: EvTokens.text(size: 13, color: EmTokens.muted(context)),
             ),
             const SizedBox(height: CRMSpacing.l),
-            CRMButton(label: 'Back to Employees', onPressed: onBack),
+            EvButton(
+              label: 'Back to Employees',
+              primary: true,
+              onTap: onBack,
+            ),
           ],
         ),
       ),
