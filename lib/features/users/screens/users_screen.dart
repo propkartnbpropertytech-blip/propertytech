@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../bloc/users_bloc.dart';
 import '../models/user_model.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -12,7 +13,6 @@ import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_motion.dart';
 import '../../../core/design_system/widgets/cards.dart';
 import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/crm_page_header.dart';
 import '../../../core/design_system/widgets/inputs.dart';
 import '../../../core/design_system/widgets/dialogs.dart';
 import '../../../core/design_system/widgets/crm_network_image.dart';
@@ -25,6 +25,8 @@ import 'package:http_parser/http_parser.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/security/role_guard.dart';
+import '../widgets/employees_ui/employees_tokens.dart';
+import '../widgets/employees_ui/employees_widgets.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -43,6 +45,11 @@ class _UsersScreenState extends State<UsersScreen> {
   bool _isLoadingResets = false;
   int _activeTabIndex = 0;
   bool _isUploadingPhoto = false;
+
+  /// New_UI filter chips (employees.html). Role uses name match; login maps to status.
+  String _roleChip = ''; // '' | Sales | Telecaller | Admin
+  String _loginChip = ''; // '' | 1 | 0
+  String? _focusedUserId;
 
   @override
   void initState() {
@@ -729,12 +736,11 @@ class _UsersScreenState extends State<UsersScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. Header Row
               _buildPageHeader(),
               const SizedBox(height: CRMSpacing.l),
-
-              // 2. Statistics Overview Cards
               _buildStatisticsRow(),
+              const SizedBox(height: CRMSpacing.m),
+              _buildLoginOffBanner(),
               if (authState is Authenticated &&
                   (authState.user.role == 'Super Admin' || authState.user.role == 'Admin') &&
                   _can('page.employees.tree')) ...[
@@ -748,22 +754,20 @@ class _UsersScreenState extends State<UsersScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: CRMSpacing.l),
-
-              // TabBar for Admin & Super Admin
+              const SizedBox(height: CRMSpacing.m),
               if (authState is Authenticated &&
                   (authState.user.role == 'Super Admin' || authState.user.role == 'Admin')) ...[
                 _buildTabBar(),
                 const SizedBox(height: CRMSpacing.m),
               ],
-
-              // Content based on active tab
               if (_activeTabIndex == 1)
                 _buildPasswordResetsTabContent()
               else ...[
                 _buildSearchAndFiltersCard(),
                 const SizedBox(height: CRMSpacing.l),
-                _buildEmployeesTable(),
+                _buildEmployeesBody(),
+                const SizedBox(height: CRMSpacing.l),
+                _buildRoleSummaries(),
               ],
             ],
           ),
@@ -772,102 +776,304 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
+  List<UserModel> _teamWithoutSelf(List<UserModel> users) {
+    final authState = context.read<AuthBloc>().state;
+    final selfId = authState is Authenticated ? authState.user.id : null;
+    return users.where((u) => u.id != selfId).toList();
+  }
+
+  void _applyRoleChip(String roleName, List<RoleModel> roles) {
+    final authState = context.read<AuthBloc>().state;
+    final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
+    setState(() {
+      _roleChip = roleName;
+      if (roleName.isEmpty) {
+        _selectedRoleId = null;
+      } else {
+        final match = roles.where((r) => r.name.toLowerCase() == roleName.toLowerCase());
+        _selectedRoleId = match.isEmpty ? null : match.first.id;
+      }
+      // Super Admin splits Sales/Tele vs Admins across roster tabs.
+      if (isSuperAdmin && roleName.toLowerCase() == 'admin') {
+        _activeTabIndex = 2;
+      } else {
+        _activeTabIndex = 0;
+      }
+    });
+    _triggerFetch();
+  }
+
+  void _applyLoginChip(String login) {
+    setState(() {
+      _loginChip = login;
+      if (login == '1') {
+        _selectedStatus = 'Active';
+      } else if (login == '0') {
+        _selectedStatus = 'Inactive';
+      } else {
+        _selectedStatus = 'All';
+      }
+      _activeTabIndex = 0;
+    });
+    _triggerFetch();
+  }
+
+  Future<void> _callUser(UserModel user) async {
+    final raw = user.mobile?.replaceAll(RegExp(r'\D'), '') ?? '';
+    if (raw.isEmpty) return;
+    final uri = Uri.parse('tel:$raw');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (!mounted) return;
+      AppStatusSnackBar.show(context, message: 'Could not start call', isSuccess: false);
+    }
+  }
+
   Widget _buildPageHeader() {
     final authState = context.read<AuthBloc>().state;
     final isSuperAdmin = authState is Authenticated && authState.user.role == 'Super Admin';
-    return CRMPageHeader(
-      title: isSuperAdmin ? "Users" : "Employees",
-      trailing: !_can('page.employees.add') ? null : CRMButton(
-        label: "Add Employee",
-        prefixIcon: Icons.add_rounded,
-        height: 40,
-        onPressed: () => _showAddEditUserDialog(),
-      ),
+    final canLeadAlloc = _can('page.lead_allocation');
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isSuperAdmin ? 'Users' : 'Employees',
+                style: CRMTypography.pageTitle.copyWith(color: EmTokens.ink(context)),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Your team, their roles, who can log in, and the work each person is carrying.',
+                style: CRMTypography.body.copyWith(color: EmTokens.muted(context), fontSize: 13.5),
+              ),
+            ],
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            if (canLeadAlloc)
+              OutlinedButton(
+                onPressed: () => context.go('/admin/lead-allocation'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: EmTokens.ink(context),
+                  side: BorderSide(color: EmTokens.line(context)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                child: const Text('Lead allocation rules'),
+              ),
+            if (_can('page.employees.add'))
+              FilledButton.icon(
+                onPressed: () => _showAddEditUserDialog(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: EmTokens.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Add Employee'),
+              ),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildStatisticsRow() {
     return BlocBuilder<UsersBloc, UsersState>(
       builder: (context, state) {
-        int total = 0;
-        int active = 0;
-        int admins = 0;
+        var total = 0;
+        var canLogin = 0;
+        var sales = 0;
+        var tele = 0;
+        var admins = 0;
+        List<RoleModel> roles = const [];
 
         if (state is UsersLoaded) {
-          final authState = context.read<AuthBloc>().state;
-          String? currentUserId;
-          if (authState is Authenticated) {
-            currentUserId = authState.user.id;
-          }
-
-          final list = state.users.where((u) => u.id != currentUserId).toList();
-
+          roles = state.roles;
+          final list = _teamWithoutSelf(state.users);
           total = list.length;
-          active = list.where((u) => u.isActive).length;
-          admins = list
-              .where((u) => u.roleName.toLowerCase() == 'admin')
-              .length;
+          canLogin = list.where((u) => u.isActive).length;
+          sales = list.where((u) => u.roleName.toLowerCase() == 'sales').length;
+          tele = list.where((u) => u.roleName.toLowerCase() == 'telecaller').length;
+          admins = list.where((u) => u.roleName.toLowerCase() == 'admin').length;
         }
 
-        return CRMResponsiveKpiRow(
-          children: [
-            CRMKPICard(
-              title: "TOTAL EMPLOYEES",
-              value: total.toString(),
-              icon: Icons.people_rounded,
-              iconColor: CRMColors.terracotta,
-              backgroundColor: CRMColors.kpiPlum,
-            ),
-            CRMKPICard(
-              title: "ACTIVE SYSTEM USERS",
-              value: active.toString(),
-              icon: Icons.check_circle_outline_rounded,
-              iconColor: CRMColors.text,
-              backgroundColor: CRMColors.kpiSage,
-            ),
-            CRMKPICard(
-              title: "ADMINISTRATORS",
-              value: admins.toString(),
-              icon: Icons.admin_panel_settings_rounded,
-              iconColor: CRMColors.terracotta,
-              backgroundColor: CRMColors.kpiRose,
-            ),
-          ],
+        final width = MediaQuery.of(context).size.width;
+        final columns = width >= 1200 ? 5 : (width >= 800 ? 3 : 2);
+        final gap = 11.0;
+
+        final cards = [
+          EmKpiCard(
+            label: 'Total employees',
+            value: '$total',
+            hint: 'Everyone on the team',
+            dot: EmTokens.gray,
+            selected: _roleChip.isEmpty && _loginChip.isEmpty,
+            onTap: () {
+              _applyRoleChip('', roles);
+              _applyLoginChip('');
+            },
+          ),
+          EmKpiCard(
+            label: 'Can log in',
+            value: '$canLogin',
+            hint: '${total - canLogin} with login off',
+            dot: EmTokens.greenBright,
+            selected: _loginChip == '1' && _roleChip.isEmpty,
+            onTap: () {
+              _applyRoleChip('', roles);
+              _applyLoginChip('1');
+            },
+          ),
+          EmKpiCard(
+            label: 'Sales',
+            value: '$sales',
+            hint: 'Handle leads & site visits',
+            dot: EmTokens.green,
+            selected: _roleChip == 'Sales',
+            onTap: () {
+              _applyLoginChip('');
+              _applyRoleChip('Sales', roles);
+            },
+          ),
+          EmKpiCard(
+            label: 'Telecallers',
+            value: '$tele',
+            hint: 'First call on new leads',
+            dot: EmTokens.violet,
+            selected: _roleChip == 'Telecaller',
+            onTap: () {
+              _applyLoginChip('');
+              _applyRoleChip('Telecaller', roles);
+            },
+          ),
+          EmKpiCard(
+            label: 'Administrators',
+            value: '$admins',
+            hint: 'Besides Propkart Admin',
+            dot: EmTokens.red,
+            selected: _roleChip == 'Admin',
+            onTap: () {
+              _applyLoginChip('');
+              _applyRoleChip('Admin', roles);
+            },
+          ),
+        ];
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final cardW = columns == 1
+                ? constraints.maxWidth
+                : (constraints.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: cards.map((c) => SizedBox(width: cardW, child: c)).toList(),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildLoginOffBanner() {
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        if (state is! UsersLoaded) return const SizedBox.shrink();
+        final off = _teamWithoutSelf(state.users).where((u) => !u.isActive).toList();
+        if (off.isEmpty) return const SizedBox.shrink();
+        final names = off.map((u) => u.fullName).take(3).join(' and ');
+        final more = off.length > 3 ? ' and ${off.length - 3} more' : '';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: EmLoginOffBanner(
+            names: '$names$more',
+            onShow: () {
+              _applyRoleChip('', state.roles);
+              _applyLoginChip('0');
+            },
+          ),
         );
       },
     );
   }
 
   Widget _buildSearchAndFiltersCard() {
-    return CRMCard(
-      elevated: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              // Search input
-              Expanded(
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        final roles = state is UsersLoaded ? state.roles : <RoleModel>[];
+        final list = state is UsersLoaded ? _teamWithoutSelf(state.users) : <UserModel>[];
+        final salesN = list.where((u) => u.roleName.toLowerCase() == 'sales').length;
+        final teleN = list.where((u) => u.roleName.toLowerCase() == 'telecaller').length;
+        final adminN = list.where((u) => u.roleName.toLowerCase() == 'admin').length;
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            EmFilterChip(
+              label: 'All',
+              count: '${list.length}',
+              selected: _roleChip.isEmpty,
+              onTap: () => _applyRoleChip('', roles),
+            ),
+            EmFilterChip(
+              label: 'Sales',
+              count: '$salesN',
+              selected: _roleChip == 'Sales',
+              onTap: () => _applyRoleChip('Sales', roles),
+            ),
+            EmFilterChip(
+              label: 'Telecallers',
+              count: '$teleN',
+              selected: _roleChip == 'Telecaller',
+              onTap: () => _applyRoleChip('Telecaller', roles),
+            ),
+            EmFilterChip(
+              label: 'Admins',
+              count: '$adminN',
+              selected: _roleChip == 'Admin',
+              onTap: () => _applyRoleChip('Admin', roles),
+            ),
+            Container(width: 1, height: 24, color: EmTokens.line(context), margin: const EdgeInsets.symmetric(horizontal: 4)),
+            EmFilterChip(
+              label: 'Any login',
+              selected: _loginChip.isEmpty,
+              onTap: () => _applyLoginChip(''),
+            ),
+            EmFilterChip(
+              label: 'Can log in',
+              selected: _loginChip == '1',
+              onTap: () => _applyLoginChip('1'),
+            ),
+            EmFilterChip(
+              label: 'Login off',
+              selected: _loginChip == '0',
+              onTap: () => _applyLoginChip('0'),
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 220, maxWidth: 340),
+              child: SizedBox(
+                width: 340,
                 child: TextField(
                   controller: _searchController,
-                  style: CRMTypography.body.copyWith(
-                    color: CRMColors.textOf(context),
-                  ),
+                  style: CRMTypography.body.copyWith(color: EmTokens.ink(context)),
                   decoration: InputDecoration(
-                    hintText: 'Search by employee name, email, phone number...',
-                    hintStyle: CRMTypography.body.copyWith(
-                      color: CRMColors.textMutedOf(context),
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search_rounded,
-                      color: CRMColors.textMutedOf(context),
-                    ),
+                    hintText: 'Name, email or phone number',
+                    hintStyle: CRMTypography.body.copyWith(color: EmTokens.muted(context)),
+                    prefixIcon: Icon(Icons.search_rounded, color: EmTokens.muted(context)),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
-                            icon: Icon(
-                              Icons.clear_rounded,
-                              color: CRMColors.textMutedOf(context),
-                            ),
+                            icon: Icon(Icons.clear_rounded, color: EmTokens.muted(context)),
                             onPressed: () {
                               _searchController.clear();
                               _triggerFetch();
@@ -875,166 +1081,166 @@ class _UsersScreenState extends State<UsersScreen> {
                           )
                         : null,
                     filled: true,
-                    fillColor: CRMColors.backgroundOf(context),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: CRMSpacing.m,
-                      vertical: CRMSpacing.s,
-                    ),
+                    fillColor: EmTokens.panelBg(context),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        CRMBorderRadius.input,
-                      ),
-                      borderSide: BorderSide(
-                        color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: EmTokens.line(context)),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        CRMBorderRadius.input,
-                      ),
-                      borderSide: BorderSide(
-                        color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: EmTokens.line(context)),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        CRMBorderRadius.input,
-                      ),
-                      borderSide: BorderSide(
-                        color: CRMColors.primaryOf(context),
-                        width: 1.5,
-                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: EmTokens.green, width: 1.5),
                     ),
                   ),
-                  onChanged: (val) => _searchGate.schedule((_) {
+                  onChanged: (_) => _searchGate.schedule((_) {
                     if (mounted) _triggerFetch();
                   }),
                 ),
               ),
-              const SizedBox(width: CRMSpacing.s),
-              CRMButton(label: "Search", onPressed: _triggerFetch),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.m),
-
-          // Role & Status Dropdown Row
-          BlocBuilder<UsersBloc, UsersState>(
-            builder: (context, state) {
-              List<RoleModel> roles = [];
-              if (state is UsersLoaded) {
-                roles = state.roles;
-              }
-
-              final authState = context.watch<AuthBloc>().state;
-              String? userRole;
-              if (authState is Authenticated) {
-                userRole = authState.user.role;
-              }
-              final bool isSuperAdmin = userRole == 'Super Admin';
-
-              return Wrap(
-                spacing: CRMSpacing.m,
-                runSpacing: CRMSpacing.s,
-                children: [
-                  // Role Filter
-                  if (isSuperAdmin)
-                    _buildDropdown(
-                      label: 'Filter by Role',
-                      value: _selectedRoleId,
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text("All Roles"),
-                        ),
-                        ...roles.map(
-                          (r) => DropdownMenuItem<String?>(
-                            value: r.id,
-                            child: Text(r.name),
-                          ),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        setState(() {
-                          _selectedRoleId = val;
-                        });
-                        _triggerFetch();
-                      },
-                    ),
-
-                  // Status Filter
-                  _buildDropdown(
-                    label: 'Filter by Status',
-                    value: _selectedStatus,
-                    items: ["All", "Active", "Inactive"].map((status) {
-                      return DropdownMenuItem<String>(
-                        value: status,
-                        child: Text(status),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedStatus = val ?? "All";
-                      });
-                      _triggerFetch();
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildDropdown<T>({
-    required String label,
-    required T value,
-    required List<DropdownMenuItem<T>> items,
-    required ValueChanged<T?> onChanged,
-  }) {
-    return SizedBox(
-      width: 200,
-      height: 44,
-      child: DropdownButtonFormField<T>(
-        initialValue: value,
-        isExpanded: true,
-        dropdownColor: CRMColors.cardBgOf(context),
-        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: CRMTypography.caption.copyWith(
-            color: CRMColors.textSecondaryOf(context),
+  Widget _buildEmployeesBody() {
+    final wide = MediaQuery.of(context).size.width >= 1100;
+    if (!wide) {
+      return _buildEmployeesTable();
+    }
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        UserModel? focused;
+        if (state is UsersLoaded) {
+          final list = _teamWithoutSelf(state.users);
+          if (list.isNotEmpty) {
+            for (final u in list) {
+              if (u.id == _focusedUserId) {
+                focused = u;
+                break;
+              }
+            }
+            focused ??= list.first;
+          }
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildEmployeesTable()),
+            if (focused != null) ...[
+              const SizedBox(width: 14),
+              SizedBox(
+                width: 340,
+                child: EmDetailPanel(
+                  user: focused,
+                  canEdit: _can('page.employees.edit'),
+                  canDelete: _can('page.employees.delete'),
+                  canToggle: _can('page.employees.active_toggle'),
+                  canOpen: _can('page.employees.details'),
+                  onCall: () => _callUser(focused!),
+                  onEdit: () => _showAddEditUserDialog(focused),
+                  onOpenProfile: () => _openEmployeePage(focused!),
+                  onToggleLogin: (val) {
+                    context.read<UsersBloc>().add(
+                          ToggleUserStatusRequested(id: focused!.id, isActive: val),
+                        );
+                  },
+                  onRemove: () => _showDeleteConfirmDialog(focused!),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRoleSummaries() {
+    return BlocBuilder<UsersBloc, UsersState>(
+      builder: (context, state) {
+        if (state is! UsersLoaded) return const SizedBox.shrink();
+        final list = _teamWithoutSelf(state.users);
+        final sales = list.where((u) => u.roleName.toLowerCase() == 'sales').toList();
+        final tele = list.where((u) => u.roleName.toLowerCase() == 'telecaller').toList();
+        final admins = list.where((u) => u.roleName.toLowerCase() == 'admin').toList();
+        final width = MediaQuery.of(context).size.width;
+        final columns = width >= 1100 ? 3 : 1;
+        final gap = 14.0;
+
+        final cards = [
+          EmRoleSummaryCard(
+            title: 'Sales',
+            badgeColor: EmTokens.green,
+            badgeBg: EmTokens.roleBg('Sales'),
+            count: sales.length,
+            blurb: 'Own leads after the first call, run site visits and close deals.',
+            people: sales,
+            onPersonTap: _can('page.employees.details') ? _openEmployeePage : null,
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: CRMSpacing.m,
-            vertical: 4,
+          EmRoleSummaryCard(
+            title: 'Telecallers',
+            badgeColor: EmTokens.violet,
+            badgeBg: EmTokens.roleBg('Telecaller'),
+            count: tele.length,
+            blurb: 'Make the first call on new leads and pass interested ones to sales.',
+            people: tele,
+            onPersonTap: _can('page.employees.details') ? _openEmployeePage : null,
           ),
-          filled: true,
-          fillColor: CRMColors.backgroundOf(context),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-            borderSide: BorderSide(
-              color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-            ),
+          EmRoleSummaryCard(
+            title: 'Administrators',
+            badgeColor: EmTokens.red,
+            badgeBg: EmTokens.roleBg('Admin'),
+            count: admins.length,
+            blurb: 'Can manage settings, employees and allocation rules.',
+            people: admins,
+            onPersonTap: _can('page.employees.details') ? _openEmployeePage : null,
+            emptyChild: admins.isNotEmpty
+                ? null
+                : Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: EmTokens.line(context)),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'No administrators yet. Add one so someone besides Propkart Admin can manage settings.',
+                          textAlign: TextAlign.center,
+                          style: CRMTypography.caption.copyWith(color: EmTokens.muted(context)),
+                        ),
+                        if (_can('page.employees.add')) ...[
+                          const SizedBox(height: 10),
+                          FilledButton(
+                            onPressed: () => _showAddEditUserDialog(),
+                            style: FilledButton.styleFrom(backgroundColor: EmTokens.green),
+                            child: const Text('+ Add administrator'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-            borderSide: BorderSide(
-              color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(CRMBorderRadius.input),
-            borderSide: BorderSide(
-              color: CRMColors.primaryOf(context),
-              width: 1.5,
-            ),
-          ),
-        ),
-        items: items,
-        onChanged: onChanged,
-      ),
+        ];
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final cardW = columns == 1
+                ? constraints.maxWidth
+                : (constraints.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: cards.map((c) => SizedBox(width: cardW, child: c)).toList(),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1226,7 +1432,10 @@ class _UsersScreenState extends State<UsersScreen> {
               children: [
                 bodyCell(
                   InkWell(
-                    onTap: () => _openEmployeePage(user),
+                    onTap: () {
+                      _focusEmployee(user);
+                      _openEmployeePage(user);
+                    },
                     child: Row(
                       children: [
                         CircleAvatar(
@@ -2042,8 +2251,13 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   void _openEmployeePage(UserModel user) {
+    setState(() => _focusedUserId = user.id);
     if (!_can('page.employees.details')) return;
     context.push('/users/${user.id}');
+  }
+
+  void _focusEmployee(UserModel user) {
+    setState(() => _focusedUserId = user.id);
   }
 
 
