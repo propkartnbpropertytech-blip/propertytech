@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../../core/design_system/tokens/app_breakpoints.dart';
-import '../../../../core/design_system/tokens/app_spacing.dart';
 import '../../../../core/design_system/tokens/app_typography.dart';
 import 'support_tokens.dart';
 
