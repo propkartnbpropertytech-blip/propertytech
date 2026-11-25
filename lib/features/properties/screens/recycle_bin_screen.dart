@@ -1,8 +1,12 @@
 import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// New_UI Recycle Bin — Not Interested tab removed; leads = listing + requirement only.
+// NI removed — compile against disk (2026-11-25 13:59:52).
 
 import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';

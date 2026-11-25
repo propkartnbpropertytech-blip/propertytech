@@ -11,6 +11,7 @@ import '../../../core/design_system/tokens/app_colors.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
 import '../../../core/security/admin_action_gate.dart';
 import '../../../core/security/role_guard.dart';
+import '../../settings/services/support_contacts_manager.dart';
 import '../models/support_issue_model.dart';
 import '../models/support_navigation_registry.dart';
 import '../services/support_service.dart';
@@ -93,6 +94,8 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   void initState() {
     super.initState();
+    SupportContactsManager().addListener(_onSupportContactsChanged);
+    SupportContactsManager().fetchFromBackend(silent: true);
     _initPages();
     _loadData();
     if (widget.initialPageKey != null && widget.initialPageKey!.isNotEmpty) {
@@ -100,8 +103,13 @@ class _SupportScreenState extends State<SupportScreen> {
     }
   }
 
+  void _onSupportContactsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    SupportContactsManager().removeListener(_onSupportContactsChanged);
     _searchDebounce?.cancel();
     _searchController.dispose();
     _subjectController.dispose();
@@ -438,10 +446,18 @@ class _SupportScreenState extends State<SupportScreen> {
           },
         ),
         const SizedBox(height: 16),
-        SuContactWays(
-          onWhatsApp: () => _launchExternal(Uri.parse('https://wa.me/919999999999')),
-          onCall: () => _launchExternal(Uri.parse('tel:+917900000000')),
-          onEmail: () => _launchExternal(Uri.parse('mailto:support@nbpropertytech.com')),
+        Builder(
+          builder: (context) {
+            final contacts = SupportContactsManager().contacts;
+            return SuContactWays(
+              whatsappSubtitle: contacts.whatsappSubtitle,
+              phoneSubtitle: contacts.phoneDisplay,
+              emailSubtitle: contacts.email,
+              onWhatsApp: () => _launchExternal(contacts.whatsappUri),
+              onCall: () => _launchExternal(contacts.phoneUri),
+              onEmail: () => _launchExternal(contacts.emailUri),
+            );
+          },
         ),
         const SizedBox(height: 16),
         if (wide)

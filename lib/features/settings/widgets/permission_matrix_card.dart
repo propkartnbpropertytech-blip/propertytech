@@ -1283,6 +1283,13 @@ class _PermissionMatrixCardState extends State<PermissionMatrixCard>
           icon: Icons.cloud_upload_outlined,
         ),
         _AdminDrilldownPageConfig(
+          key: 'page.settings.support_contacts.save',
+          title: 'Support Contacts',
+          description: 'Allow saving Support page WhatsApp, phone, and email.',
+          route: '/settings#support_contacts',
+          icon: Icons.support_agent_outlined,
+        ),
+        _AdminDrilldownPageConfig(
           key: 'group.settings.kpi',
           title: 'KPI Configuration',
           description: 'KPI configuration actions.',

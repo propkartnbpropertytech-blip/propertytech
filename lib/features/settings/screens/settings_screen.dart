@@ -24,6 +24,7 @@ import '../../../core/security/role_guard.dart';
 import '../../../core/design_system/widgets/under_development_screen.dart';
 import '../../requirements/services/match_criteria_manager.dart';
 import '../services/upload_limits_manager.dart';
+import '../services/support_contacts_manager.dart';
 import '../../../core/storage/isar_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/api/api_constants.dart';
@@ -46,6 +47,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _uploadLimitsDirty = false;
   bool _isSavingUploadLimits = false;
 
+  final TextEditingController _supportWhatsappController = TextEditingController();
+  final TextEditingController _supportWhatsappHoursController = TextEditingController();
+  final TextEditingController _supportPhoneController = TextEditingController();
+  final TextEditingController _supportPhoneDisplayController = TextEditingController();
+  final TextEditingController _supportEmailController = TextEditingController();
+  bool _supportContactsDirty = false;
+  bool _isSavingSupportContacts = false;
+  bool _supportContactsDraftReady = false;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +63,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     MatchCriteriaManager().addListener(_onCriteriaChanged);
     UploadLimitsManager().addListener(_onUploadLimitsChanged);
     UploadLimitsManager().fetchFromBackend(silent: true);
+    SupportContactsManager().addListener(_onSupportContactsChanged);
+    SupportContactsManager().fetchFromBackend(silent: true);
+    _hydrateSupportContactsDraft(force: true);
     PageControlService.instance.addListener(_onThemeChanged);
     PermissionMatrixService.instance.addListener(_onThemeChanged);
   }
@@ -77,10 +90,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  void _onSupportContactsChanged() {
+    if (!mounted || _supportContactsDirty) return;
+    _hydrateSupportContactsDraft(force: true);
+    setState(() {});
+  }
+
+  void _hydrateSupportContactsDraft({bool force = false}) {
+    if (_supportContactsDirty && !force) return;
+    final c = SupportContactsManager().contacts;
+    _supportWhatsappController.text = c.whatsapp;
+    _supportWhatsappHoursController.text = c.whatsappHours;
+    _supportPhoneController.text = c.phone;
+    _supportPhoneDisplayController.text = c.phoneDisplay;
+    _supportEmailController.text = c.email;
+    _supportContactsDraftReady = true;
+    _supportContactsDirty = false;
+  }
+
   void _resetUploadLimitDraft() {
     _uploadLimitsDirty = false;
     _selectedMaxImages = UploadLimitsManager().maxImages.toDouble();
     _selectedMaxVideos = UploadLimitsManager().maxVideos.toDouble();
+  }
+
+  void _resetSupportContactsDraft() {
+    _hydrateSupportContactsDraft(force: true);
   }
 
   void _setActiveSection(String id) {
@@ -89,10 +124,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_activeSection == 'upload_limits' || id == 'upload_limits') {
         _resetUploadLimitDraft();
       }
+      if (_activeSection == 'support_contacts' || id == 'support_contacts') {
+        _resetSupportContactsDraft();
+      }
       _activeSection = id;
     });
     if (id == 'upload_limits') {
       UploadLimitsManager().fetchFromBackend(silent: true);
+    }
+    if (id == 'support_contacts') {
+      SupportContactsManager().fetchFromBackend(silent: true);
     }
   }
 
@@ -101,8 +142,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeManager().removeListener(_onThemeChanged);
     MatchCriteriaManager().removeListener(_onCriteriaChanged);
     UploadLimitsManager().removeListener(_onUploadLimitsChanged);
+    SupportContactsManager().removeListener(_onSupportContactsChanged);
     PageControlService.instance.removeListener(_onThemeChanged);
     PermissionMatrixService.instance.removeListener(_onThemeChanged);
+    _supportWhatsappController.dispose();
+    _supportWhatsappHoursController.dispose();
+    _supportPhoneController.dispose();
+    _supportPhoneDisplayController.dispose();
+    _supportEmailController.dispose();
     super.dispose();
   }
 
@@ -1704,6 +1751,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _persistSupportContacts() async {
+    final draft = SupportContacts(
+      whatsapp: _supportWhatsappController.text.trim(),
+      whatsappHours: _supportWhatsappHoursController.text.trim(),
+      phone: _supportPhoneController.text.trim(),
+      phoneDisplay: _supportPhoneDisplayController.text.trim(),
+      email: _supportEmailController.text.trim(),
+    );
+    if (!draft.email.contains('@') || draft.whatsappDigits.isEmpty || draft.phone.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a valid WhatsApp number, phone number, and email.'),
+          backgroundColor: CRMColors.danger,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSavingSupportContacts = true);
+    final ok = await SupportContactsManager().save(draft);
+    if (!mounted) return;
+    setState(() {
+      _isSavingSupportContacts = false;
+      if (ok) {
+        _supportContactsDirty = false;
+        _hydrateSupportContactsDraft(force: true);
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Support contacts saved. Support page will use the new details.' : 'Failed to save support contacts.'),
+        backgroundColor: ok ? CRMColors.success : CRMColors.danger,
+      ),
+    );
+  }
+
+  Widget _buildSupportContactsSection() {
+    if (!_supportContactsDraftReady) {
+      _hydrateSupportContactsDraft(force: true);
+    }
+    final canSave = RoleGuard.canAction('page.settings.support_contacts.save');
+    final fieldStyle = CRMTypography.body.copyWith(color: CRMColors.textOf(context));
+
+    InputDecoration deco(String hint) => InputDecoration(
+          hintText: hint,
+          filled: true,
+          fillColor: CRMColors.cardBgOf(context),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.borderOf(context)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
+          ),
+        );
+
+    Widget labeledField({
+      required String label,
+      required String help,
+      required TextEditingController controller,
+      TextInputType? keyboardType,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: CRMTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(help, style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
+          const SizedBox(height: 8),
+          TextField(
+            controller: controller,
+            enabled: canSave,
+            style: fieldStyle,
+            keyboardType: keyboardType,
+            decoration: deco(label),
+            onChanged: (_) {
+              if (!_supportContactsDirty) setState(() => _supportContactsDirty = true);
+            },
+          ),
+        ],
+      );
+    }
+
+    return CRMCard(
+      elevated: true,
+      title: 'Support Contacts',
+      child: Padding(
+        padding: const EdgeInsets.only(top: CRMSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'These details appear on the Support page for WhatsApp, Call, and Email. Changes apply for your organization.',
+              style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
+            ),
+            const SizedBox(height: CRMSpacing.l),
+            labeledField(
+              label: 'WhatsApp number',
+              help: 'Digits with country code, e.g. 919876543210 (no + or spaces).',
+              controller: _supportWhatsappController,
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            labeledField(
+              label: 'WhatsApp hours label',
+              help: 'Shown under WhatsApp support, e.g. Mon–Sat, 9:30 AM – 7 PM.',
+              controller: _supportWhatsappHoursController,
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            labeledField(
+              label: 'Phone number (dial)',
+              help: 'Used for the Call button, e.g. +917900000000.',
+              controller: _supportPhoneController,
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            labeledField(
+              label: 'Phone display text',
+              help: 'Friendly text shown on the Support card, e.g. +91 79 0000 0000.',
+              controller: _supportPhoneDisplayController,
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: CRMSpacing.m),
+            labeledField(
+              label: 'Support email',
+              help: 'Used for the Email button and card subtitle.',
+              controller: _supportEmailController,
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: CRMSpacing.l),
+            if (!canSave) ...[
+              _buildActionDisabledNotice('Updating support contacts is disabled by Super Admin.'),
+              const SizedBox(height: CRMSpacing.s),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: (_isSavingSupportContacts || !canSave) ? null : () {
+                    setState(_resetSupportContactsDraft);
+                  },
+                  child: const Text('Reset'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: (_isSavingSupportContacts || !canSave || !_supportContactsDirty) ? null : _persistSupportContacts,
+                  icon: _isSavingSupportContacts
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_circle_rounded, size: 18),
+                  label: const Text('Save Changes'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: CRMColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = CRMBreakpoints.isPhone(context);
@@ -1738,6 +1962,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const _SettingsNavItem(id: 'match_criteria', label: 'Run Match Criteria', icon: Icons.bolt_rounded),
       if (isAdminOrSuperAdmin && (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.upload_limits')))
         const _SettingsNavItem(id: 'upload_limits', label: 'Upload Limits', icon: Icons.photo_library_outlined),
+      if (isAdminOrSuperAdmin && (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.support_contacts')))
+        const _SettingsNavItem(id: 'support_contacts', label: 'Support Contacts', icon: Icons.support_agent_outlined),
       if (isAdminOrSuperAdmin && (isSuperAdmin || permService.hasPermission(currentUserRole, 'page.settings.kpi_config')))
         const _SettingsNavItem(id: 'kpi_config', label: 'KPI Configuration', icon: Icons.dashboard_customize_outlined),
       if (isSuperAdmin)
@@ -1785,6 +2011,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildRunMatchCriteriaSection();
         case 'upload_limits':
           return _buildUploadLimitsSection();
+        case 'support_contacts':
+          return _buildSupportContactsSection();
         case 'kpi_config':
           return const KpiConfigScreen(isEmbedded: true);
         case 'backups':
@@ -1986,6 +2214,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   _setActiveSection('upload_limits');
                   setState(() => _mobileActiveSection = 'upload_limits');
+                },
+              ),
+              const Divider(height: 1, indent: 48),
+              _buildMobileSettingsTile(
+                icon: Icons.support_agent_outlined,
+                title: 'Support Contacts',
+                subtitle: 'WhatsApp, phone & email on Support page',
+                isUnderDev: !isSuperAdmin &&
+                    PageControlService.instance.isSettingsSectionUnderDevelopment('support_contacts', currentUserRole),
+                onTap: () {
+                  _setActiveSection('support_contacts');
+                  setState(() => _mobileActiveSection = 'support_contacts');
                 },
               ),
               const Divider(height: 1, indent: 48),

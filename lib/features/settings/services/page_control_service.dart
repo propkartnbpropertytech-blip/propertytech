@@ -40,6 +40,7 @@ class PageControlService extends ChangeNotifier with WidgetsBindingObserver {
     PageControlModel(pageKey: 'settings_locations', title: 'Settings → Locations', route: '/settings?section=locations', icon: 'location_city_outlined', category: 'Settings', roles: ['Admin', 'Telecaller', 'Sales'], sortOrder: 93),
     PageControlModel(pageKey: 'settings_match_criteria', title: 'Settings → Run Match Criteria', route: '/settings?section=match_criteria', icon: 'bolt_rounded', category: 'Settings', roles: ['Admin'], sortOrder: 94),
     PageControlModel(pageKey: 'settings_upload_limits', title: 'Settings → Upload Limits', route: '/settings?section=upload_limits', icon: 'photo_library_outlined', category: 'Settings', roles: ['Admin'], sortOrder: 95),
+    PageControlModel(pageKey: 'settings_support_contacts', title: 'Settings → Support Contacts', route: '/settings?section=support_contacts', icon: 'support_agent_outlined', category: 'Settings', roles: ['Admin'], sortOrder: 96),
     PageControlModel(pageKey: 'settings_kpi_config', title: 'Settings → KPI Configuration', route: '/settings?section=kpi_config', icon: 'dashboard_customize_outlined', category: 'Settings', roles: ['Admin'], sortOrder: 96),
     PageControlModel(pageKey: 'settings_system', title: 'Settings → System', route: '/settings?section=system', icon: 'info_outline_rounded', category: 'Settings', roles: ['Admin', 'Telecaller', 'Sales'], sortOrder: 97),
     PageControlModel(pageKey: 'audit_logs', title: 'Audit Log', route: '/settings/audit-logs', icon: 'history_rounded', category: 'Settings', roles: ['Admin'], sortOrder: 100),
@@ -432,6 +433,9 @@ class PageControlService extends ChangeNotifier with WidgetsBindingObserver {
         break;
       case 'upload_limits':
         key = 'settings_upload_limits';
+        break;
+      case 'support_contacts':
+        key = 'settings_support_contacts';
         break;
       case 'kpi_config':
         key = 'settings_kpi_config';

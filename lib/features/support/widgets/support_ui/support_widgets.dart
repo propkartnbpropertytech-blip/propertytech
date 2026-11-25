@@ -214,20 +214,26 @@ class SuContactWays extends StatelessWidget {
   final VoidCallback onWhatsApp;
   final VoidCallback onCall;
   final VoidCallback onEmail;
+  final String whatsappSubtitle;
+  final String phoneSubtitle;
+  final String emailSubtitle;
 
   const SuContactWays({
     super.key,
     required this.onWhatsApp,
     required this.onCall,
     required this.onEmail,
+    this.whatsappSubtitle = 'Fastest · Mon–Sat, 9:30 AM – 7 PM',
+    this.phoneSubtitle = '+91 79 0000 0000',
+    this.emailSubtitle = 'support@nbpropertytech.com',
   });
 
   @override
   Widget build(BuildContext context) {
     final items = [
-      (Icons.chat_rounded, SuTokens.whatsappBg, SuTokens.whatsappFg, 'WhatsApp support', 'Fastest · Mon–Sat, 9:30 AM – 7 PM', onWhatsApp),
-      (Icons.call_rounded, SuTokens.callBg, SuTokens.callFg, 'Call us', '+91 79 0000 0000', onCall),
-      (Icons.mail_outline_rounded, SuTokens.emailBg, SuTokens.emailFg, 'Email', 'support@nbpropertytech.com', onEmail),
+      (Icons.chat_rounded, SuTokens.whatsappBg, SuTokens.whatsappFg, 'WhatsApp support', whatsappSubtitle, onWhatsApp),
+      (Icons.call_rounded, SuTokens.callBg, SuTokens.callFg, 'Call us', phoneSubtitle, onCall),
+      (Icons.mail_outline_rounded, SuTokens.emailBg, SuTokens.emailFg, 'Email', emailSubtitle, onEmail),
     ];
 
     final narrow = CRMBreakpoints.widthOf(context) < 900;
