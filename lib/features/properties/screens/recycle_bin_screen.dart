@@ -1,32 +1,31 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import '../../../core/network/sync_manager.dart';
-import '../../../core/storage/local_repositories.dart';
-import '../../../core/storage/repository_coordinator.dart';
-import '../../../core/storage/model_mappers.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../core/design_system/mobile/mobile_screen.dart';
 import '../../../core/design_system/tokens/app_breakpoints.dart';
 import '../../../core/design_system/tokens/app_colors.dart';
-import '../../../core/design_system/tokens/app_shadows.dart';
 import '../../../core/design_system/tokens/app_spacing.dart';
 import '../../../core/design_system/tokens/app_typography.dart';
-import '../../../core/design_system/mobile/mobile_screen.dart';
-import '../../../core/design_system/widgets/buttons.dart';
-import '../../../core/design_system/widgets/cards.dart';
-import '../../../core/design_system/widgets/data_table.dart';
+import '../../../core/network/sync_manager.dart';
 import '../../../core/security/permission_matrix_service.dart';
 import '../../../core/security/role_guard.dart';
+import '../../../core/storage/local_repositories.dart';
+import '../../../core/storage/model_mappers.dart';
+import '../../../core/storage/repository_coordinator.dart';
 import '../../../core/utils/currency.dart';
-import '../models/property_model.dart';
-import '../services/properties_service.dart';
-import '../../requirements/models/requirement_model.dart';
-import '../../requirements/services/requirements_service.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/models/user_model.dart' as auth_model;
-import '../../users/repository/users_repository.dart';
+import '../../requirements/models/requirement_model.dart';
+import '../../requirements/services/requirements_service.dart';
 import '../../users/models/user_model.dart' as user_settings_model;
+import '../../users/repository/users_repository.dart';
+import '../models/property_model.dart';
+import '../services/properties_service.dart';
+import '../widgets/recycle_bin/recycle_bin_tokens.dart';
+import '../widgets/recycle_bin/recycle_bin_widgets.dart';
 
 class RecycleBinScreen extends StatefulWidget {
   /// Set by a search link: 'properties' or 'requirements'.
@@ -37,10 +36,28 @@ class RecycleBinScreen extends StatefulWidget {
   /// Changes on every search link, so opening the same record twice still applies it.
   final String? linkStamp;
 
-  const RecycleBinScreen({super.key, this.initialTab, this.initialListing, this.initialSearch, this.linkStamp});
+  const RecycleBinScreen({
+    super.key,
+    this.initialTab,
+    this.initialListing,
+    this.initialSearch,
+    this.linkStamp,
+  });
 
   @override
   State<RecycleBinScreen> createState() => _RecycleBinScreenState();
+}
+
+class _RestoredSessionItem {
+  final String id;
+  final String name;
+  final String kind; // prop | lead
+
+  const _RestoredSessionItem({
+    required this.id,
+    required this.name,
+    required this.kind,
+  });
 }
 
 class _RecycleBinScreenState extends State<RecycleBinScreen> {
@@ -48,16 +65,19 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   final RequirementsService _requirementsService = RequirementsService();
 
   bool _isLoading = true;
-  String _selectedTab = 'Properties'; // 'Properties' or 'Requirements'
-  String _propertiesSubTab = 'Rent'; // 'Rent' or 'Re-sale'
-  String _requirementsSubTab = 'Bin'; // 'Bin' or 'Not Interested'
-  String _requirementsListingSubTab = 'Rent'; // 'Rent' or 'Re-sale'
-  int _autoDeleteDays = 30; // 15, 30, 60
+  /// HTML kind: Properties (`prop`) or Leads (`lead`).
+  String _kind = 'prop';
+  /// Rent | Re-sale | All
+  String _typeFilter = 'Rent';
+  /// list | req | ni  (leads only)
+  String _leadKind = 'list';
+  int _autoDeleteDays = 30;
 
   List<PropertyModel> _binProperties = [];
   List<RequirementModel> _binRequirements = [];
-  /// Requirement id → page/tab it was moved to the bin from ([RecycleBinSource]).
+  List<RequirementModel> _notInterestedRequirements = [];
   final Map<String, String> _binDeletedFrom = {};
+  final Map<String, DateTime> _deletedAtById = {};
   final Map<String, user_settings_model.UserModel> _usersMap = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -67,26 +87,89 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   Timer? _binSearchDebounce;
   StreamSubscription<Set<String>>? _binRefreshSub;
 
-  int _propertiesPerPage = 15;
-  int _requirementsPerPage = 15;
-  int _currentPropertiesPage = 1;
-  int _currentRequirementsPage = 1;
+  int _perPage = 15;
+  int _currentPage = 1;
+
+  final Set<String> _selectedIds = {};
+  final List<_RestoredSessionItem> _restoredSession = [];
+
+  late String _binActionSignature;
+
+  bool _can(String key) => RoleGuard.canAction(key);
+
+  String _currentBinActionSignature() => PermissionMatrixService.adminActionKeys
+      .where((k) => k.startsWith('page.recycle_bin.'))
+      .map((k) => _can(k) ? '1' : '0')
+      .join();
+
+  void _onBinActionPermissionsChanged() {
+    final next = _currentBinActionSignature();
+    if (next == _binActionSignature || !mounted) return;
+    setState(() => _binActionSignature = next);
+  }
 
   bool _isRentProperty(PropertyModel p) {
     final typeName = p.listingTypeName.toLowerCase();
-    if (typeName.contains('re-sale') || typeName.contains('resale') || typeName.contains('sell') || typeName.contains('sale')) return false;
+    if (typeName.contains('re-sale') || typeName.contains('resale') || typeName.contains('sell') || typeName.contains('sale')) {
+      return false;
+    }
     if (typeName.contains('rent')) return true;
     final lookupName = LookupLocalRepository.getLookupNameSync(p.listingTypeId)?.toLowerCase() ?? '';
-    if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) return false;
+    if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) {
+      return false;
+    }
     if (lookupName.contains('rent')) return true;
     return false;
   }
 
-  List<PropertyModel> get _visibleBinProperties {
-    final byListing = _propertiesSubTab == 'Rent'
-        ? _binProperties.where(_isRentProperty).toList()
-        : _binProperties.where((p) => !_isRentProperty(p)).toList();
-    return byListing.where(_propertyMatchesSearch).toList();
+  bool _isRentRequirement(RequirementModel r) {
+    final typeName = (r.listingTypeName ?? '').toLowerCase();
+    if (typeName.contains('re-sale') || typeName.contains('resale') || typeName.contains('sell') || typeName.contains('sale')) {
+      return false;
+    }
+    if (typeName.contains('rent')) return true;
+    final lookupName = LookupLocalRepository.getLookupNameSync(r.listingTypeId ?? '')?.toLowerCase() ?? '';
+    if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) {
+      return false;
+    }
+    if (lookupName.contains('rent')) return true;
+    return false;
+  }
+
+  bool _matchesTypeProperty(PropertyModel p) {
+    if (_typeFilter == 'All') return true;
+    return _typeFilter == 'Rent' ? _isRentProperty(p) : !_isRentProperty(p);
+  }
+
+  bool _matchesTypeRequirement(RequirementModel r) {
+    if (_typeFilter == 'All') return true;
+    return _typeFilter == 'Rent' ? _isRentRequirement(r) : !_isRentRequirement(r);
+  }
+
+  bool _isListingLead(RequirementModel r) =>
+      _binDeletedFrom[r.id] == RecycleBinSource.campaignPropertyListing;
+
+  List<PropertyModel> get _visibleBinProperties =>
+      _binProperties.where(_matchesTypeProperty).where(_propertyMatchesSearch).toList();
+
+  List<RequirementModel> get _binListingLeads =>
+      _binRequirements.where(_isListingLead).where(_matchesTypeRequirement).where(_requirementMatchesSearch).toList();
+
+  List<RequirementModel> get _binRequirementLeads =>
+      _binRequirements.where((r) => !_isListingLead(r)).where(_matchesTypeRequirement).where(_requirementMatchesSearch).toList();
+
+  List<RequirementModel> get _visibleNotInterested =>
+      _notInterestedRequirements.where(_matchesTypeRequirement).where(_requirementMatchesSearch).toList();
+
+  List<RequirementModel> get _visibleLeads {
+    switch (_leadKind) {
+      case 'list':
+        return _binListingLeads;
+      case 'ni':
+        return _visibleNotInterested;
+      default:
+        return _binRequirementLeads;
+    }
   }
 
   bool _propertyMatchesSearch(PropertyModel p) {
@@ -108,23 +191,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       p.price.toString(),
     ].join(' ').toLowerCase();
     return haystack.contains(q);
-  }
-
-  bool _isRentRequirement(RequirementModel r) {
-    final typeName = (r.listingTypeName ?? '').toLowerCase();
-    if (typeName.contains('re-sale') || typeName.contains('resale') || typeName.contains('sell') || typeName.contains('sale')) return false;
-    if (typeName.contains('rent')) return true;
-    final lookupName = LookupLocalRepository.getLookupNameSync(r.listingTypeId ?? '')?.toLowerCase() ?? '';
-    if (lookupName.contains('re-sale') || lookupName.contains('resale') || lookupName.contains('sell') || lookupName.contains('sale')) return false;
-    if (lookupName.contains('rent')) return true;
-    return false;
-  }
-
-  List<RequirementModel> get _visibleBinRequirements {
-    final byListing = _requirementsListingSubTab == 'Rent'
-        ? _binRequirements.where(_isRentRequirement).toList()
-        : _binRequirements.where((r) => !_isRentRequirement(r)).toList();
-    return byListing.where(_requirementMatchesSearch).toList();
   }
 
   bool _requirementMatchesSearch(RequirementModel r) {
@@ -150,19 +216,19 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     return haystack.contains(q);
   }
 
-  late String _binActionSignature;
+  int _daysLeft(String id) {
+    final deletedAt = _deletedAtById[id];
+    if (deletedAt == null) return _autoDeleteDays;
+    final elapsed = DateTime.now().difference(deletedAt).inDays;
+    final left = _autoDeleteDays - elapsed;
+    return left < 0 ? 0 : left;
+  }
 
-  bool _can(String key) => RoleGuard.canAction(key);
-
-  String _currentBinActionSignature() => PermissionMatrixService.adminActionKeys
-      .where((k) => k.startsWith('page.recycle_bin.'))
-      .map((k) => _can(k) ? '1' : '0')
-      .join();
-
-  void _onBinActionPermissionsChanged() {
-    final next = _currentBinActionSignature();
-    if (next == _binActionSignature || !mounted) return;
-    setState(() => _binActionSignature = next);
+  DateTime? _parseDeletedAt(dynamic raw) {
+    if (raw is! Map) return null;
+    final str = raw['deleted_at'] ?? raw['deletedAt'] ?? raw['updated_at'] ?? raw['updatedAt'];
+    if (str == null) return null;
+    return DateTime.tryParse(str.toString());
   }
 
   @override
@@ -173,12 +239,12 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     _binRefreshSub = SyncManager().tableChanges.listen((tables) {
       if (!mounted) return;
       if (tables.contains('properties') || tables.contains('requirements')) {
-        _fetchBinData();
+        _fetchAllBinData();
       }
     });
     _loadAutoDeleteDays();
     _applySearchLink();
-    _fetchBinData();
+    _fetchAllBinData();
   }
 
   @override
@@ -191,30 +257,33 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (!changed) return;
     var applied = false;
     setState(() => applied = _applySearchLink());
-    if (applied) _fetchBinData();
+    if (applied) _fetchAllBinData();
   }
 
-  /// Opens the tab and listing that hold the linked record and searches down to it.
   bool _applySearchLink() {
     final tab = widget.initialTab?.trim().toLowerCase() ?? '';
     final search = widget.initialSearch?.trim() ?? '';
     if (tab.isEmpty && search.isEmpty) return false;
     final listing = widget.initialListing?.trim().toLowerCase() ?? '';
-    final listingTab = listing == 'rent' ? 'Rent' : listing == 'resale' ? 'Re-sale' : null;
+    final listingTab = listing == 'rent'
+        ? 'Rent'
+        : listing == 'resale'
+            ? 'Re-sale'
+            : null;
     if (tab == 'properties') {
-      _selectedTab = 'Properties';
-      if (listingTab != null) _propertiesSubTab = listingTab;
+      _kind = 'prop';
+      if (listingTab != null) _typeFilter = listingTab;
     } else if (tab == 'requirements') {
-      _selectedTab = 'Requirements';
-      _requirementsSubTab = 'Bin';
-      if (listingTab != null) _requirementsListingSubTab = listingTab;
+      _kind = 'lead';
+      _leadKind = 'req';
+      if (listingTab != null) _typeFilter = listingTab;
     }
     if (search.isNotEmpty) {
       _searchController.text = search;
       _searchQuery = search.toLowerCase();
     }
-    _currentPropertiesPage = 1;
-    _currentRequirementsPage = 1;
+    _currentPage = 1;
+    _selectedIds.clear();
     return true;
   }
 
@@ -227,242 +296,170 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     super.dispose();
   }
 
-  Widget _buildBinSearchField({required bool isMobile}) {
-    final hint = _selectedTab == 'Properties'
-        ? 'Search code, property name, owner, area...'
-        : 'Search client name, mobile, specs, area, salesperson...';
-    return SizedBox(
-      width: double.infinity,
-      height: isMobile ? 42 : 38,
-      child: TextField(
-        controller: _searchController,
-        style: CRMTypography.body.copyWith(color: CRMColors.textOf(context)),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-          prefixIcon: const Icon(Icons.search_rounded, size: 18),
-          suffixIcon: _searchQuery.isEmpty
-              ? null
-              : IconButton(
-                  tooltip: 'Clear search',
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {
-                      _searchQuery = '';
-                      _currentPropertiesPage = 1;
-                      _currentRequirementsPage = 1;
-                    });
-                  },
-                ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: CRMColors.borderOf(context)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: CRMColors.primaryOf(context)),
-          ),
-          filled: true,
-          fillColor: CRMColors.cardBgOf(context),
-        ),
-        onChanged: (value) {
-          final next = value.trim().toLowerCase();
-          setState(() {
-            _searchQuery = next;
-            _currentPropertiesPage = 1;
-            _currentRequirementsPage = 1;
-          });
-          _binSearchDebounce?.cancel();
-          _binSearchDebounce = Timer(const Duration(milliseconds: 250), () {
-            if (mounted) _fetchBinData();
-          });
-        },
-      ),
-    );
-  }
-
   Future<void> _loadAutoDeleteDays() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _autoDeleteDays = prefs.getInt('auto_delete_days') ?? 30;
-    });
+    if (!mounted) return;
+    setState(() => _autoDeleteDays = prefs.getInt('auto_delete_days') ?? 30);
   }
 
   Future<void> _saveAutoDeleteDays(int days) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('auto_delete_days', days);
-    setState(() {
-      _autoDeleteDays = days;
-    });
+    if (!mounted) return;
+    setState(() => _autoDeleteDays = days);
   }
 
-  Future<void> _fetchBinData() async {
-    setState(() {
-      _currentPropertiesPage = 1;
-      _currentRequirementsPage = 1;
-    });
-    if (_selectedTab == 'Properties') {
-      await _fetchBinProperties();
-    } else {
-      await _fetchBinRequirements();
-    }
-  }
-
-  Future<void> _fetchBinProperties() async {
+  Future<void> _fetchAllBinData() async {
     final request = ++_binSearchRequest;
     final query = _searchQuery;
-    setState(() => _isLoading = true);
-    try {
-      final res = await _propertiesService.getBinProperties(search: query);
-      final data = res['data'] as Map<String, dynamic>? ?? {};
-      final list = data['properties'] as List? ?? [];
+    setState(() {
+      _isLoading = true;
+      _currentPage = 1;
+    });
 
-      list.sort((a, b) {
-        DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
-        DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
-        if (a is Map) {
-          final strA = a['deleted_at'] ?? a['deletedAt'] ?? a['updated_at'] ?? a['updatedAt'] ?? a['created_at'] ?? a['createdAt'];
-          if (strA != null) dateA = DateTime.tryParse(strA.toString()) ?? dateA;
-        }
-        if (b is Map) {
-          final strB = b['deleted_at'] ?? b['deletedAt'] ?? b['updated_at'] ?? b['updatedAt'] ?? b['created_at'] ?? b['createdAt'];
-          if (strB != null) dateB = DateTime.tryParse(strB.toString()) ?? dateB;
-        }
-        return dateB.compareTo(dateA);
-      });
-
-      List<PropertyModel> parsedList = list.map((p) => PropertyModel.fromJson(p)).toList();
-
-      if (!mounted || request != _binSearchRequest) return;
-      setState(() {
-        _binProperties = parsedList;
-        _serverPropertySearch = query;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load bin properties: $e'), backgroundColor: CRMColors.danger),
-        );
-      }
-    }
-  }
-
-  Future<void> _fetchBinRequirements() async {
-    final request = ++_binSearchRequest;
-    final query = _searchQuery;
-    final searchingBin = _requirementsSubTab == 'Bin';
-    setState(() => _isLoading = true);
     try {
       if (_usersMap.isEmpty) {
         try {
           final usersList = await UsersRepository().getUsers();
-          for (var u in usersList) {
+          for (final u in usersList) {
             _usersMap[u.id] = u;
           }
         } catch (_) {}
       }
 
-      final res = _requirementsSubTab == 'Bin'
-          ? await _requirementsService.getBinRequirements(search: query)
-          : await _requirementsService.getRequirements(status: 'Not Interested');
-      final data = res['data'] as Map<String, dynamic>? ?? {};
-      final list = data['requirements'] as List? ?? [];
-
-      list.sort((a, b) {
-        DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
-        DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
-        if (a is Map) {
-          final strA = a['deleted_at'] ?? a['deletedAt'] ?? a['updated_at'] ?? a['updatedAt'] ?? a['created_at'] ?? a['createdAt'];
-          if (strA != null) dateA = DateTime.tryParse(strA.toString()) ?? dateA;
-        }
-        if (b is Map) {
-          final strB = b['deleted_at'] ?? b['deletedAt'] ?? b['updated_at'] ?? b['updatedAt'] ?? b['created_at'] ?? b['createdAt'];
-          if (strB != null) dateB = DateTime.tryParse(strB.toString()) ?? dateB;
-        }
-        return dateB.compareTo(dateA);
-      });
-
-      final authState = context.read<AuthBloc>().state;
-      auth_model.UserModel? currentUser;
-      if (authState is Authenticated) {
-        currentUser = authState.user;
-      }
-      final isSales = currentUser?.role?.toLowerCase() == 'sales';
-      final currentUserId = currentUser?.id;
-
-      List<RequirementModel> parsedList = list.map((r) => RequirementModel.fromJson(r)).toList();
-      final deletedFrom = <String, String>{
-        if (searchingBin)
-          for (final raw in list)
-            if (raw is Map && raw['id'] != null && (raw['deleted_from'] ?? '').toString().isNotEmpty)
-              raw['id'].toString(): raw['deleted_from'].toString(),
-      };
-
-      if (currentUser != null) {
-        final role = currentUser.role;
-        final uName = currentUser.fullName.trim().toLowerCase();
-        if (role == 'Admin') {
-          parsedList = parsedList.where((r) {
-            final isCreator = r.createdBy == currentUserId ||
-                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
-                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-            return isCreator || r.adminId == currentUserId;
-          }).toList();
-        } else if (role == 'Telecaller') {
-          parsedList = parsedList.where((r) {
-            final isCreator = r.createdBy == currentUserId ||
-                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
-                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-            return isCreator || r.adminId == currentUser?.adminId;
-          }).toList();
-        } else if (role != 'Super Admin') {
-          parsedList = parsedList.where((r) {
-            final isCreator = r.createdBy == currentUserId ||
-                (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
-                (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
-            final isAssignee = (r.assignedTo != null && (r.assignedTo == currentUserId || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
-                (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
-            return isCreator || isAssignee;
-          }).toList();
-        }
-      }
+      final results = await Future.wait([
+        _propertiesService.getBinProperties(search: query),
+        _requirementsService.getBinRequirements(search: query),
+        _requirementsService.getRequirements(status: 'Not Interested'),
+      ]);
 
       if (!mounted || request != _binSearchRequest) return;
+
+      final propRes = results[0];
+      final reqRes = results[1];
+      final niRes = results[2];
+
+      final propList = (propRes['data'] as Map<String, dynamic>? ?? {})['properties'] as List? ?? [];
+      final reqList = (reqRes['data'] as Map<String, dynamic>? ?? {})['requirements'] as List? ?? [];
+      final niList = (niRes['data'] as Map<String, dynamic>? ?? {})['requirements'] as List? ?? [];
+
+      propList.sort(_compareDeletedDesc);
+      reqList.sort(_compareDeletedDesc);
+      niList.sort(_compareDeletedDesc);
+
+      final deletedAt = <String, DateTime>{};
+      for (final raw in [...propList, ...reqList, ...niList]) {
+        final id = raw is Map ? raw['id']?.toString() : null;
+        final at = _parseDeletedAt(raw);
+        if (id != null && at != null) deletedAt[id] = at;
+      }
+
+      final deletedFrom = <String, String>{
+        for (final raw in reqList)
+          if (raw is Map && raw['id'] != null && (raw['deleted_from'] ?? '').toString().isNotEmpty)
+            raw['id'].toString(): raw['deleted_from'].toString(),
+      };
+
+      var parsedReqs = reqList.map((r) => RequirementModel.fromJson(r)).toList();
+      var parsedNi = niList.map((r) => RequirementModel.fromJson(r)).toList();
+      parsedReqs = _filterRequirementsForRole(parsedReqs);
+      parsedNi = _filterRequirementsForRole(parsedNi);
+
       setState(() {
-        _binRequirements = parsedList;
+        _binProperties = propList.map((p) => PropertyModel.fromJson(p)).toList();
+        _binRequirements = parsedReqs;
+        _notInterestedRequirements = parsedNi;
         _binDeletedFrom
           ..clear()
           ..addAll(deletedFrom);
-        _serverRequirementSearch = searchingBin ? query : null;
+        _deletedAtById
+          ..clear()
+          ..addAll(deletedAt);
+        _serverPropertySearch = query;
+        _serverRequirementSearch = query;
         _isLoading = false;
+        _selectedIds.removeWhere(
+          (id) =>
+              !_binProperties.any((p) => p.id == id) &&
+              !_binRequirements.any((r) => r.id == id) &&
+              !_notInterestedRequirements.any((r) => r.id == id),
+        );
       });
     } catch (e) {
+      if (!mounted || request != _binSearchRequest) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load requirements: $e'), backgroundColor: CRMColors.danger),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load recycle bin: $e'), backgroundColor: CRMColors.danger),
+      );
     }
   }
 
+  int _compareDeletedDesc(dynamic a, dynamic b) {
+    DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+    DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+    final parsedA = _parseDeletedAt(a);
+    final parsedB = _parseDeletedAt(b);
+    if (parsedA != null) dateA = parsedA;
+    if (parsedB != null) dateB = parsedB;
+    return dateB.compareTo(dateA);
+  }
+
+  List<RequirementModel> _filterRequirementsForRole(List<RequirementModel> parsedList) {
+    final authState = context.read<AuthBloc>().state;
+    if (authState is! Authenticated) return parsedList;
+    final currentUser = authState.user;
+
+    final role = currentUser.role;
+    final uName = currentUser.fullName.trim().toLowerCase();
+    final currentUserId = currentUser.id;
+    final currentAdminId = currentUser.adminId;
+
+    if (role == 'Admin') {
+      return parsedList.where((r) {
+        final isCreator = r.createdBy == currentUserId ||
+            (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+            (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+        return isCreator || r.adminId == currentUserId;
+      }).toList();
+    }
+    if (role == 'Telecaller') {
+      return parsedList.where((r) {
+        final isCreator = r.createdBy == currentUserId ||
+            (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+            (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+        return isCreator || r.adminId == currentAdminId;
+      }).toList();
+    }
+    if (role != 'Super Admin') {
+      return parsedList.where((r) {
+        final isCreator = r.createdBy == currentUserId ||
+            (r.createdBy != null && uName.isNotEmpty && r.createdBy!.trim().toLowerCase() == uName) ||
+            (r.creatorName != null && uName.isNotEmpty && r.creatorName!.trim().toLowerCase() == uName);
+        final isAssignee = (r.assignedTo != null &&
+                (r.assignedTo == currentUserId || (uName.isNotEmpty && r.assignedTo!.trim().toLowerCase() == uName))) ||
+            (r.assigneeName != null && uName.isNotEmpty && r.assigneeName!.trim().toLowerCase() == uName);
+        return isCreator || isAssignee;
+      }).toList();
+    }
+    return parsedList;
+  }
+
   Future<void> _restoreProperty(String id) async {
-    final itemToRestore = _binProperties.firstWhereOrNull((p) => p.id == id);
+    final item = _binProperties.firstWhereOrNull((p) => p.id == id);
     setState(() {
       _binProperties.removeWhere((p) => p.id == id);
+      _selectedIds.remove(id);
+      if (item != null) {
+        _restoredSession.insert(
+          0,
+          _RestoredSessionItem(id: item.propertyCode.isNotEmpty ? item.propertyCode : id, name: item.title, kind: 'prop'),
+        );
+      }
     });
 
-    if (itemToRestore != null) {
+    if (item != null) {
       try {
-        final restoredItem = itemToRestore.copyWith(portalStatus: 'Active');
+        final restoredItem = item.copyWith(portalStatus: 'Active');
         await RepositoryCoordinator().propertyLocal.saveProperties([restoredItem.toLocal()]);
         RepositoryCoordinator().refreshProperties();
         RepositoryCoordinator().refreshDashboard();
@@ -472,7 +469,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Property restored successfully'),
+          content: Text('↺ Property restored to Properties'),
           backgroundColor: CRMColors.success,
           duration: Duration(seconds: 2),
         ),
@@ -487,12 +484,20 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _restoreRequirement(RequirementModel r) async {
+    final fromBin = _leadKind != 'ni';
     setState(() {
-      _binRequirements.removeWhere((item) => item.id == r.id);
+      if (fromBin) {
+        _binRequirements.removeWhere((item) => item.id == r.id);
+      } else {
+        _notInterestedRequirements.removeWhere((item) => item.id == r.id);
+      }
+      _selectedIds.remove(r.id);
+      _restoredSession.insert(
+        0,
+        _RestoredSessionItem(id: r.id, name: r.clientName, kind: 'lead'),
+      );
     });
 
-    final fromBin = _requirementsSubTab == 'Bin';
-    // A bin restore only clears deleted_at on the server, so the lead keeps its status and section.
     final String newStatus = fromBin
         ? r.status
         : (r.status == 'Bin' || r.status.startsWith('Rejected') ? 'Follow-up' : (r.status.isEmpty ? 'Active' : r.status));
@@ -507,9 +512,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(source == null
-              ? 'Requirement restored successfully'
-              : 'Lead restored to ${RecycleBinSource.label(source)}'),
+          content: Text(
+            source == null
+                ? '↺ Lead restored to Leads'
+                : '↺ Lead restored to ${RecycleBinSource.label(source)}',
+          ),
           backgroundColor: CRMColors.success,
           duration: const Duration(seconds: 2),
         ),
@@ -517,7 +524,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     }
 
     try {
-      if (_requirementsSubTab == 'Bin') {
+      if (fromBin) {
         await _requirementsService.restoreRequirement(r.id);
       } else {
         await _requirementsService.updateRequirement(r.id, {'status': newStatus});
@@ -527,11 +534,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     }
   }
 
-  Future<void> _deleteRequirement(RequirementModel r) async {
+  Future<void> _deleteRequirementToBin(RequirementModel r) async {
     setState(() {
-      _binRequirements.removeWhere((item) => item.id == r.id);
+      _notInterestedRequirements.removeWhere((item) => item.id == r.id);
+      _selectedIds.remove(r.id);
     });
-
     try {
       await _requirementsService.deleteRequirement(r.id);
       if (mounted) {
@@ -539,6 +546,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
           const SnackBar(content: Text('Requirement moved to Recycle Bin'), backgroundColor: CRMColors.success),
         );
       }
+      await _fetchAllBinData();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -548,23 +556,71 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     }
   }
 
-  Future<void> _permanentDeleteProperty(String id) async {
-    final confirm = await showDialog<bool>(
+  Future<bool> _confirmDanger({
+    required String title,
+    required String body,
+    required String confirmLabel,
+    bool requireDeleteTyped = false,
+  }) async {
+    final controller = TextEditingController();
+    final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Permanently Delete Property'),
-        content: const Text('Are you sure? This action cannot be undone and will erase this property forever.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete Permanently', style: TextStyle(color: CRMColors.danger))),
-        ],
-      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final typedOk = !requireDeleteTyped || controller.text.trim().toUpperCase() == 'DELETE';
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CRMBorderRadius.dialog)),
+              title: Text(title, style: CRMTypography.sectionTitle.copyWith(fontWeight: FontWeight.w700)),
+              content: SizedBox(
+                width: CRMBreakpoints.adaptiveWidth(ctx, 380),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(body, style: CRMTypography.body.copyWith(color: RbTokens.ink2(ctx), height: 1.45)),
+                    if (requireDeleteTyped) ...[
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: controller,
+                        decoration: InputDecoration(
+                          hintText: 'Type DELETE to confirm',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: RbTokens.red),
+                  onPressed: typedOk ? () => Navigator.pop(ctx, true) : null,
+                  child: Text(confirmLabel),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
+    controller.dispose();
+    return result == true;
+  }
 
-    if (confirm != true) return;
+  Future<void> _permanentDeleteProperty(String id) async {
+    final ok = await _confirmDanger(
+      title: 'Delete for good?',
+      body: 'This can’t be undone — the item will not come back to Properties.',
+      confirmLabel: 'Delete forever',
+    );
+    if (!ok) return;
 
     setState(() {
       _binProperties.removeWhere((p) => p.id == id);
+      _selectedIds.remove(id);
     });
 
     try {
@@ -574,7 +630,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Property permanently deleted'), backgroundColor: CRMColors.success),
+        const SnackBar(content: Text('🗑 Property permanently deleted'), backgroundColor: CRMColors.success),
       );
     }
 
@@ -586,22 +642,17 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _permanentDeleteRequirement(String id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Permanently Delete Requirement'),
-        content: const Text('Are you sure? This action cannot be undone and will erase this requirement forever.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete Permanently', style: TextStyle(color: CRMColors.danger))),
-        ],
-      ),
+    final ok = await _confirmDanger(
+      title: 'Delete for good?',
+      body: 'This can’t be undone — the item will not come back to Leads.',
+      confirmLabel: 'Delete forever',
     );
-
-    if (confirm != true) return;
+    if (!ok) return;
 
     setState(() {
       _binRequirements.removeWhere((r) => r.id == id);
+      _notInterestedRequirements.removeWhere((r) => r.id == id);
+      _selectedIds.remove(id);
     });
 
     try {
@@ -611,7 +662,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Requirement permanently deleted'), backgroundColor: CRMColors.success),
+        const SnackBar(content: Text('🗑 Lead permanently deleted'), backgroundColor: CRMColors.success),
       );
     }
 
@@ -622,1061 +673,774 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     }
   }
 
-  Future<void> _emptyBinProperties() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Empty Recycle Bin (Properties)'),
-        content: const Text('Are you sure you want to permanently erase ALL deleted properties in the bin?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Empty Bin', style: TextStyle(color: CRMColors.danger))),
-        ],
-      ),
-    );
+  Future<void> _emptyCurrentBin() async {
+    final total = _binProperties.length + _binRequirements.length;
+    if (total == 0 && _kind == 'prop') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The bin is already empty')),
+      );
+      return;
+    }
 
-    if (confirm != true) return;
+    final ok = await _confirmDanger(
+      title: 'Empty the whole bin?',
+      body: _kind == 'prop'
+          ? 'All deleted properties in the bin will be removed permanently. There’s no undo.'
+          : 'All deleted leads in the bin will be removed permanently. There’s no undo.',
+      confirmLabel: 'Empty bin',
+      requireDeleteTyped: true,
+    );
+    if (!ok) return;
 
     try {
-      await _propertiesService.emptyBin();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Properties recycle bin emptied'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinProperties();
+      if (_kind == 'prop') {
+        await _propertiesService.emptyBin();
+      } else {
+        await _requirementsService.emptyBin();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🗑 Bin emptied'), backgroundColor: CRMColors.success),
+        );
+      }
+      await _fetchAllBinData();
     } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to empty bin: $e'), backgroundColor: CRMColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _restoreSelected() async {
+    final ids = _selectedIds.toList();
+    if (_kind == 'prop') {
+      for (final id in ids) {
+        await _restoreProperty(id);
+      }
+    } else {
+      final items = _visibleLeads.where((r) => ids.contains(r.id)).toList();
+      for (final r in items) {
+        if (_leadKind == 'ni') {
+          await _restoreRequirement(r);
+        } else {
+          await _restoreRequirement(r);
+        }
+      }
+    }
+  }
+
+  Future<void> _deleteSelectedForever() async {
+    final ids = _selectedIds.toList();
+    final ok = await _confirmDanger(
+      title: 'Delete ${ids.length} item${ids.length == 1 ? '' : 's'} forever?',
+      body: 'This can’t be undone.',
+      confirmLabel: 'Delete forever',
+    );
+    if (!ok) return;
+    if (_kind == 'prop') {
+      for (final id in ids) {
+        setState(() {
+          _binProperties.removeWhere((p) => p.id == id);
+          _selectedIds.remove(id);
+        });
+        try {
+          await RepositoryCoordinator().propertyLocal.deleteProperty(id);
+        } catch (_) {}
+        try {
+          await _propertiesService.permanentDeleteProperty(id);
+        } catch (_) {}
+      }
+      RepositoryCoordinator().refreshProperties();
+    } else {
+      for (final id in ids) {
+        setState(() {
+          _binRequirements.removeWhere((r) => r.id == id);
+          _notInterestedRequirements.removeWhere((r) => r.id == id);
+          _selectedIds.remove(id);
+        });
+        try {
+          await RepositoryCoordinator().requirementLocal.deleteRequirement(id);
+        } catch (_) {}
+        try {
+          await _requirementsService.permanentDeleteRequirement(id);
+        } catch (_) {}
+      }
+      RepositoryCoordinator().refreshRequirements();
+    }
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to empty bin: $e'), backgroundColor: CRMColors.danger),
+        SnackBar(content: Text('🗑 ${ids.length} item${ids.length == 1 ? '' : 's'} deleted forever'), backgroundColor: CRMColors.success),
       );
     }
   }
 
-  Future<void> _emptyBinRequirements() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Empty Recycle Bin (Requirements)'),
-        content: const Text('Are you sure you want to permanently erase ALL deleted requirements in the bin?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Empty Bin', style: TextStyle(color: CRMColors.danger))),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      await _requirementsService.emptyBin();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Requirements recycle bin emptied'), backgroundColor: CRMColors.success),
-      );
-      _fetchBinRequirements();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to empty bin: $e'), backgroundColor: CRMColors.danger),
-      );
+  String get _crumbLabel {
+    if (_kind == 'prop') {
+      return 'Properties · ${_typeFilter == 'All' ? 'All' : _typeFilter}';
     }
+    final kindLabel = switch (_leadKind) {
+      'list' => 'Property listing',
+      'ni' => 'Not Interested',
+      _ => 'Requirement',
+    };
+    return 'Leads · ${_typeFilter == 'All' ? 'All' : _typeFilter} · $kindLabel';
+  }
+
+  String get _listTitle {
+    if (_kind == 'prop') {
+      return 'Deleted properties · ${_typeFilter == 'All' ? 'Rent & re-sale' : _typeFilter}';
+    }
+    final noun = switch (_leadKind) {
+      'list' => 'property listing leads',
+      'ni' => 'not interested leads',
+      _ => 'requirement leads',
+    };
+    return 'Deleted $noun · ${_typeFilter == 'All' ? 'Rent & re-sale' : _typeFilter}';
+  }
+
+  String get _leadListingSubtitle {
+    if (_typeFilter == 'Rent') return 'Owners listing a home for rent';
+    if (_typeFilter == 'Re-sale') return 'Owners selling a property';
+    return 'Owners listing for rent or re-sale';
+  }
+
+  String get _leadRequirementSubtitle {
+    if (_typeFilter == 'Rent') return 'Tenants looking for a home';
+    if (_typeFilter == 'Re-sale') return 'Buyers looking for a property';
+    return 'Tenants and buyers looking for a home';
   }
 
   @override
   Widget build(BuildContext context) {
     final authState = context.watch<AuthBloc>().state;
-    bool isAdmin = false;
+    var isAdmin = false;
+    auth_model.UserModel? currentUser;
     if (authState is Authenticated) {
-      final role = authState.user.role.toLowerCase();
+      currentUser = authState.user;
+      final role = currentUser.role.toLowerCase();
       isAdmin = role == 'admin' || role == 'super admin' || role == 'telecaller';
     }
 
-    final bool hasData = _selectedTab == 'Properties' 
-        ? _binProperties.isNotEmpty 
-        : (_requirementsSubTab == 'Bin' && _binRequirements.isNotEmpty);
-    final bool isMobile = CRMBreakpoints.isPhone(context);
+    final isMobile = CRMBreakpoints.isPhone(context);
+    final wide = CRMBreakpoints.widthOf(context) >= 1200;
+    final hasData = _kind == 'prop' ? _binProperties.isNotEmpty : (_leadKind == 'ni' ? _notInterestedRequirements.isNotEmpty : _binRequirements.isNotEmpty);
 
-    Widget headerControls = Wrap(
-      spacing: CRMSpacing.s,
-      runSpacing: CRMSpacing.s,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          decoration: BoxDecoration(
-            color: CRMColors.cardBgOf(context),
-            borderRadius: BorderRadius.circular(CRMBorderRadius.s),
-            border: Border.all(color: CRMColors.borderOf(context).withOpacity(0.6), width: 0.5),
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                value: _autoDeleteDays,
-                isDense: true,
-                icon: const Icon(Icons.arrow_drop_down),
-                style: CRMTypography.bodyMedium.copyWith(color: CRMColors.textOf(context)),
-                dropdownColor: CRMColors.cardBgOf(context),
-                onChanged: !_can('page.recycle_bin.auto_delete') ? null : (int? newValue) {
-                  if (newValue != null) {
-                    _saveAutoDeleteDays(newValue);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Auto-delete period set to $newValue days'),
-                        backgroundColor: CRMColors.success,
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  }
-                },
-                items: const [
-                  DropdownMenuItem<int>(
-                    value: 15,
-                    child: Text('Auto Delete: 15 days'),
-                  ),
-                  DropdownMenuItem<int>(
-                    value: 30,
-                    child: Text('Auto Delete: 30 days'),
-                  ),
-                  DropdownMenuItem<int>(
-                    value: 60,
-                    child: Text('Auto Delete: 60 days'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (hasData && isAdmin && _can('page.recycle_bin.empty_bin'))
-          CRMButton(
-            label: 'Empty Bin',
-            variant: CRMButtonVariant.danger,
-            prefixIcon: Icons.delete_forever_rounded,
-            onPressed: _selectedTab == 'Properties' ? _emptyBinProperties : _emptyBinRequirements,
-          ),
-      ],
+    final body = _buildPageBody(
+      context: context,
+      isMobile: isMobile,
+      wide: wide,
+      isAdmin: isAdmin,
+      currentUser: currentUser,
+      hasData: hasData,
     );
-
-    Widget pageHeader = isMobile
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Recycle Bin', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
-              const SizedBox(height: 4),
-              Text(
-                _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
-                style: CRMTypography.pageTitle.copyWith(
-                  color: CRMColors.textOf(context),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: CRMSpacing.s),
-              Wrap(
-                spacing: CRMSpacing.s,
-                runSpacing: CRMSpacing.xs,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Properties'),
-                    selected: _selectedTab == 'Properties',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _selectedTab == 'Properties' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _selectedTab == 'Properties' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedTab = 'Properties';
-                        });
-                        _fetchBinData();
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Requirements'),
-                    selected: _selectedTab == 'Requirements',
-                    selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                    labelStyle: TextStyle(
-                      color: _selectedTab == 'Requirements' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                      fontWeight: _selectedTab == 'Requirements' ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedTab = 'Requirements';
-                        });
-                        _fetchBinData();
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
-          )
-        : Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Recycle Bin', style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context))),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: CRMSpacing.m,
-                      runSpacing: CRMSpacing.s,
-                      children: [
-                        Text(
-                          _selectedTab == 'Properties' ? 'Deleted Properties' : 'Deleted Requirements',
-                          style: CRMTypography.pageTitle.copyWith(
-                            color: CRMColors.textOf(context),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        ChoiceChip(
-                          label: const Text('Properties'),
-                          selected: _selectedTab == 'Properties',
-                          selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                          labelStyle: TextStyle(
-                            color: _selectedTab == 'Properties' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                            fontWeight: _selectedTab == 'Properties' ? FontWeight.bold : FontWeight.normal,
-                            fontSize: 13,
-                          ),
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedTab = 'Properties';
-                              });
-                              _fetchBinData();
-                            }
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('Requirements'),
-                          selected: _selectedTab == 'Requirements',
-                          selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                          labelStyle: TextStyle(
-                            color: _selectedTab == 'Requirements' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                            fontWeight: _selectedTab == 'Requirements' ? FontWeight.bold : FontWeight.normal,
-                            fontSize: 13,
-                          ),
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedTab = 'Requirements';
-                              });
-                              _fetchBinData();
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              headerControls,
-            ],
-          );
-
-    final bodyContent = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-            pageHeader,
-            const SizedBox(height: CRMSpacing.m),
-            if (_selectedTab == 'Properties') ...[
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: CRMSpacing.s,
-                runSpacing: CRMSpacing.s,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Rent'),
-                        selected: _propertiesSubTab == 'Rent',
-                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                        labelStyle: TextStyle(
-                          color: _propertiesSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                          fontWeight: _propertiesSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 13,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _propertiesSubTab = 'Rent';
-                              _currentPropertiesPage = 1;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(width: CRMSpacing.s),
-                      ChoiceChip(
-                        label: const Text('Re-sale'),
-                        selected: _propertiesSubTab == 'Re-sale',
-                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                        labelStyle: TextStyle(
-                          color: _propertiesSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                          fontWeight: _propertiesSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 13,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _propertiesSubTab = 'Re-sale';
-                              _currentPropertiesPage = 1;
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  if (isMobile) headerControls,
-                ],
-              ),
-            ] else ...[
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: CRMSpacing.s,
-                runSpacing: CRMSpacing.s,
-                children: [
-                  Wrap(
-                    spacing: CRMSpacing.s,
-                    runSpacing: CRMSpacing.s,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Bin'),
-                        selected: _requirementsSubTab == 'Bin',
-                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                        labelStyle: TextStyle(
-                          color: _requirementsSubTab == 'Bin' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                          fontWeight: _requirementsSubTab == 'Bin' ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 13,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _requirementsSubTab = 'Bin';
-                              _currentRequirementsPage = 1;
-                            });
-                            _fetchBinRequirements();
-                          }
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text('Not Interested'),
-                        selected: _requirementsSubTab == 'Not Interested',
-                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                        labelStyle: TextStyle(
-                          color: _requirementsSubTab == 'Not Interested' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                          fontWeight: _requirementsSubTab == 'Not Interested' ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 13,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _requirementsSubTab = 'Not Interested';
-                              _currentRequirementsPage = 1;
-                            });
-                            _fetchBinRequirements();
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('Rent'),
-                        selected: _requirementsListingSubTab == 'Rent',
-                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                        labelStyle: TextStyle(
-                          color: _requirementsListingSubTab == 'Rent' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                          fontWeight: _requirementsListingSubTab == 'Rent' ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 13,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _requirementsListingSubTab = 'Rent';
-                              _currentRequirementsPage = 1;
-                            });
-                          }
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text('Re-sale'),
-                        selected: _requirementsListingSubTab == 'Re-sale',
-                        selectedColor: CRMColors.primaryOf(context).withValues(alpha: 0.12),
-                        labelStyle: TextStyle(
-                          color: _requirementsListingSubTab == 'Re-sale' ? CRMColors.primaryOf(context) : CRMColors.textOf(context),
-                          fontWeight: _requirementsListingSubTab == 'Re-sale' ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 13,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _requirementsListingSubTab = 'Re-sale';
-                              _currentRequirementsPage = 1;
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  if (isMobile) headerControls,
-                ],
-              ),
-            ],
-            const SizedBox(height: CRMSpacing.m),
-            _buildBinSearchField(isMobile: isMobile),
-            const SizedBox(height: CRMSpacing.l),
-            Builder(
-              builder: (context) {
-                final mainContent = _isLoading
-                    ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
-                    : _selectedTab == 'Properties'
-                        ? _visibleBinProperties.isEmpty
-                            ? _buildEmptyState(_searchQuery.isEmpty
-                                ? 'No deleted ${_propertiesSubTab.toLowerCase()} properties found in bin.'
-                                : 'No properties match your search.')
-                            : Builder(
-                                builder: (context) {
-                                  final authState = context.read<AuthBloc>().state;
-                                  final currentUser = authState is Authenticated ? authState.user : null;
-                                  final isUserAdminOrSuperAdmin = currentUser != null &&
-                                      (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
-                                  final canPermanentlyDelete = currentUser != null &&
-                                      (currentUser.role?.toLowerCase() == 'admin' || currentUser.role?.toLowerCase() == 'super admin') &&
-                                      _can('page.recycle_bin.properties_delete');
-
-                                  final targetProperties = _visibleBinProperties;
-                                  final totalItems = targetProperties.length;
-                                  final totalPages = totalItems <= 0 ? 1 : (totalItems / _propertiesPerPage).ceil();
-                                  final safePage = _currentPropertiesPage.clamp(1, totalPages);
-                                  final startIndex = (safePage - 1) * _propertiesPerPage;
-                                  final endIndex = (startIndex + _propertiesPerPage).clamp(0, totalItems);
-                                  final paginatedProperties = targetProperties.sublist(startIndex, endIndex);
-
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      if (isMobile)
-                                        Column(
-                                          children: paginatedProperties.map((p) => _buildMobilePropertyCard(p, isUserAdminOrSuperAdmin, canPermanentlyDelete)).toList(),
-                                        )
-                                      else
-                                        CRMDataTable(
-                                          showDecoration: false,
-                                          isLoading: false,
-                                          showCheckboxColumn: false,
-                                          dataRowMinHeight: 56.0,
-                                          dataRowMaxHeight: 64.0,
-                                          columnSpacing: 16.0,
-                                          columns: [
-                                            const DataColumn(label: Text('Code')),
-                                            if (isUserAdminOrSuperAdmin)
-                                              const DataColumn(label: Text('Listed By')),
-                                            const DataColumn(label: Text('Property Name')),
-                                            const DataColumn(label: Text('Owner')),
-                                            const DataColumn(label: Text('Area')),
-                                            const DataColumn(label: Text('Price')),
-                                            const DataColumn(label: Text('Actions')),
-                                          ],
-                                          rows: paginatedProperties.map((p) {
-                                            return DataRow(
-                                              cells: [
-                                                DataCell(SizedBox(width: 90, child: Text(p.propertyCode, style: const TextStyle(fontWeight: FontWeight.bold)))),
-                                                if (isUserAdminOrSuperAdmin)
-                                                  DataCell(SizedBox(width: 120, child: Text(p.createdByName, maxLines: 1, overflow: TextOverflow.ellipsis))),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 180,
-                                                    child: _buildCustomTooltip(
-                                                      message: 'Property Title: ${p.title}\nOwner: ${p.ownerName}\nArea: ${p.areaName}',
-                                                      isRent: _isRentProperty(p),
-                                                      child: Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(SizedBox(width: 120, child: Text(p.ownerName, maxLines: 1, overflow: TextOverflow.ellipsis))),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 130,
-                                                    child: _buildCustomTooltip(
-                                                      message: 'Area: ${p.areaName}',
-                                                      isRent: _isRentProperty(p),
-                                                      child: Text(p.areaName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(SizedBox(width: 90, child: Text(CRMCurrencyFormatter.formatShort(p.price), style: const TextStyle(fontWeight: FontWeight.w600)))),
-                                                DataCell(
-                                                  Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      if (_can('page.recycle_bin.properties_restore'))
-                                                      IconButton(
-                                                        icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
-                                                        tooltip: 'Restore Property',
-                                                        onPressed: () => _restoreProperty(p.id),
-                                                      ),
-                                                      if (canPermanentlyDelete) ...[
-                                                        const SizedBox(width: 4),
-                                                        IconButton(
-                                                          icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
-                                                          tooltip: 'Permanently Delete',
-                                                          onPressed: () => _permanentDeleteProperty(p.id),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          }).toList(),
-                                        ),
-                                      const SizedBox(height: CRMSpacing.m),
-                                      _buildPropertiesPagination(
-                                        totalItems,
-                                        totalPages,
-                                        safePage,
-                                      ),
-                                    ],
-                                  );
-                                },
-                              )
-                        : _visibleBinRequirements.isEmpty
-                            ? _buildEmptyState(_searchQuery.isNotEmpty
-                                ? 'No leads match your search.'
-                                : (_requirementsSubTab == 'Bin'
-                                ? 'No deleted ${_requirementsListingSubTab.toLowerCase()} leads found.'
-                                : 'No ${_requirementsListingSubTab.toLowerCase()} leads marked as "Not Interested".'))
-                            : Builder(
-                                builder: (context) {
-                                  final authState = context.read<AuthBloc>().state;
-                                  auth_model.UserModel? currentUser;
-                                  if (authState is Authenticated) {
-                                    currentUser = authState.user;
-                                  }
-                                  final isUserAdminOrSuperAdmin = currentUser != null &&
-                                      (currentUser.role?.toLowerCase() == 'admin' ||
-                                          currentUser.role?.toLowerCase() == 'super admin' ||
-                                          currentUser.role?.toLowerCase() == 'telecaller');
-
-                                  final targetRequirements = _visibleBinRequirements;
-                                  final totalItems = targetRequirements.length;
-                                  final totalPages = totalItems <= 0 ? 1 : (totalItems / _requirementsPerPage).ceil();
-                                  final safePage = _currentRequirementsPage.clamp(1, totalPages);
-                                  final startIndex = (safePage - 1) * _requirementsPerPage;
-                                  final endIndex = (startIndex + _requirementsPerPage).clamp(0, totalItems);
-                                  final paginatedRequirements = targetRequirements.sublist(startIndex, endIndex);
-
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      if (isMobile)
-                                        Column(
-                                          children: paginatedRequirements.map((r) => _buildMobileRequirementCard(r, isUserAdminOrSuperAdmin)).toList(),
-                                        )
-                                      else
-                                        CRMDataTable(
-                                          showDecoration: false,
-                                          isLoading: false,
-                                          showCheckboxColumn: false,
-                                          dataRowMinHeight: 56.0,
-                                          dataRowMaxHeight: 64.0,
-                                          columnSpacing: 16.0,
-                                          columns: [
-                                            const DataColumn(label: Text('Client Name')),
-                                            const DataColumn(label: Text('Specs / Config')),
-                                            const DataColumn(label: Text('Budget Range')),
-                                            const DataColumn(label: Text('Target Area(s)')),
-                                            if (isUserAdminOrSuperAdmin)
-                                              const DataColumn(label: Text('Salesperson')),
-                                            const DataColumn(label: Text('Actions')),
-                                          ],
-                                          rows: paginatedRequirements.map((r) {
-                                            final budgetRange = '${CRMCurrencyFormatter.formatShort(r.minBudget)} - ${CRMCurrencyFormatter.formatShort(r.maxBudget)}';
-                                            return DataRow(
-                                              cells: [
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 130,
-                                                    child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      mainAxisAlignment: MainAxisAlignment.center,
-                                                      children: [
-                                                        Text(r.clientName, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                                        Text(r.clientMobile, style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                                        if (_binDeletedFrom[r.id] != null) _buildDeletedFromBadge(_binDeletedFrom[r.id]!),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 220,
-                                                    child: _buildCustomTooltip(
-                                                      message: 'Property Type(s): ${r.propertyTypeName}\nConfiguration(s): ${r.configurationName ?? "-"}\nListing Type: ${r.listingTypeName ?? "Rent"}',
-                                                      isRent: _isRentRequirement(r),
-                                                      child: Text(
-                                                        '${r.propertyTypeName} (${r.configurationName ?? "-"})',
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: CRMTypography.body.copyWith(fontSize: 13),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 110,
-                                                    child: Text(budgetRange, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  SizedBox(
-                                                    width: 140,
-                                                    child: _buildCustomTooltip(
-                                                      message: 'Target Area(s):\n${r.areaNames.isNotEmpty ? r.areaNames.join(", ") : "Any Area"}',
-                                                      isRent: _isRentRequirement(r),
-                                                      child: Text(
-                                                        r.areaNames.isNotEmpty ? r.areaNames.join(', ') : 'Any Area',
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: TextStyle(color: CRMColors.textSecondaryOf(context), fontSize: 13),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (isUserAdminOrSuperAdmin)
-                                                  DataCell(
-                                                    Builder(
-                                                      builder: (context) {
-                                                        final salespersonName = r.creatorName ?? r.assigneeName ?? 'N/A';
-                                                        final mobile = r.creatorMobile ?? '';
-                                                        final email = r.creatorEmail ?? '';
-                                                        final tooltipMsg = 'Salesperson: $salespersonName${mobile.isNotEmpty ? "\nMobile: $mobile" : ""}${email.isNotEmpty ? "\nEmail: $email" : ""}';
-                                                        return SizedBox(
-                                                          width: 130,
-                                                          child: _buildCustomTooltip(
-                                                            message: tooltipMsg,
-                                                            isRent: _isRentRequirement(r),
-                                                            child: Column(
-                                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                                              mainAxisAlignment: MainAxisAlignment.center,
-                                                              children: [
-                                                                Text(salespersonName, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                                                if (email.isNotEmpty || mobile.isNotEmpty)
-                                                                  Text(
-                                                                    mobile.isNotEmpty ? mobile : email,
-                                                                    style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11),
-                                                                    maxLines: 1,
-                                                                    overflow: TextOverflow.ellipsis,
-                                                                  )
-                                                                else
-                                                                  Text('No contact details',
-                                                                      style: TextStyle(color: CRMColors.textMutedOf(context), fontSize: 11)),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                        );
-                                                      }
-                                                    )
-                                                  ),
-                                                DataCell(
-                                                  Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      if (_can('page.recycle_bin.requirements_restore'))
-                                                      IconButton(
-                                                        icon: Icon(Icons.restore_rounded, color: CRMColors.success, size: 20),
-                                                        tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active / Restore',
-                                                        onPressed: () => _restoreRequirement(r),
-                                                      ),
-                                                      if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')) ...[
-                                                        const SizedBox(width: 4),
-                                                        IconButton(
-                                                          icon: Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 20),
-                                                          tooltip: 'Permanently Delete',
-                                                          onPressed: () => _permanentDeleteRequirement(r.id),
-                                                        ),
-                                                      ]
-                                                      else if (_requirementsSubTab != 'Bin' && _can('page.recycle_bin.requirements_delete')) ...[
-                                                        const SizedBox(width: 4),
-                                                        IconButton(
-                                                          icon: Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 20),
-                                                          tooltip: 'Move to Recycle Bin',
-                                                          onPressed: () => _deleteRequirement(r),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          }).toList(),
-                                        ),
-                                      const SizedBox(height: CRMSpacing.m),
-                                      _buildRequirementsPagination(
-                                        totalItems,
-                                        totalPages,
-                                        safePage,
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
-
-                if (isMobile) {
-                  return mainContent;
-                }
-
-                return CRMCard(child: mainContent);
-              },
-            ),
-          ],
-        );
 
     if (isMobile) {
       return MobileScreenScaffold(
         title: 'Recycle Bin',
-        onRefresh: _fetchBinData,
-        padding: const EdgeInsets.all(CRMSpacing.m),
-        body: bodyContent,
+        onRefresh: _fetchAllBinData,
+        padding: EdgeInsets.all(CRMBreakpoints.pagePadding(context)),
+        body: body,
       );
     }
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(CRMSpacing.l),
-        child: bodyContent,
+      body: RefreshIndicator(
+        onRefresh: _fetchAllBinData,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.all(CRMBreakpoints.pagePadding(context)),
+          child: body,
+        ),
       ),
     );
   }
 
-  Widget _buildCustomTooltip({
-    required String message,
-    required Widget child,
-    bool isRent = true,
-    double maxWidth = 320.0,
+  Widget _buildPageBody({
+    required BuildContext context,
+    required bool isMobile,
+    required bool wide,
+    required bool isAdmin,
+    required auth_model.UserModel? currentUser,
+    required bool hasData,
   }) {
-    return Tooltip(
-      richMessage: WidgetSpan(
-        child: Container(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: Text(
-            message,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12.5,
-              height: 1.4,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+    final listingCount = _binRequirements.where(_isListingLead).where(_matchesTypeRequirement).length;
+    final requirementCount = _binRequirements.where((r) => !_isListingLead(r)).where(_matchesTypeRequirement).length;
+    final niCount = _notInterestedRequirements.where(_matchesTypeRequirement).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildHeader(context, isMobile: isMobile, isAdmin: isAdmin, hasData: hasData),
+        const SizedBox(height: CRMSpacing.m),
+        RbInfoBanner(
+          autoDeleteDays: _autoDeleteDays,
+          countLabel: '${_binProperties.length} properties · ${_binRequirements.length} leads in the bin',
         ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        color: CRMColors.isDark ? const Color(0xFF24211F) : const Color(0xFF292725),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: (isRent ? CRMColors.rentAccent : CRMColors.primary).withValues(alpha: 0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+        const SizedBox(height: CRMSpacing.m),
+        _buildTools(context, isMobile: isMobile),
+        if (_kind == 'lead') ...[
+          const SizedBox(height: CRMSpacing.m),
+          RbLeadKindCards(
+            selected: _leadKind,
+            listingCount: listingCount,
+            requirementCount: requirementCount,
+            notInterestedCount: niCount,
+            listingSubtitle: _leadListingSubtitle,
+            requirementSubtitle: _leadRequirementSubtitle,
+            onChanged: (v) {
+              setState(() {
+                _leadKind = v;
+                _currentPage = 1;
+                _selectedIds.clear();
+              });
+            },
           ),
         ],
-      ),
-      child: child,
+        const SizedBox(height: CRMSpacing.m),
+        if (wide)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildListPanel(context, currentUser: currentUser)),
+              const SizedBox(width: 14),
+              SizedBox(width: 330, child: _buildSidebar(context)),
+            ],
+          )
+        else ...[
+          _buildListPanel(context, currentUser: currentUser),
+          const SizedBox(height: CRMSpacing.m),
+          _buildSidebar(context),
+        ],
+      ],
     );
   }
 
-  Widget _buildMobilePropertyCard(
-    PropertyModel p,
-    bool isUserAdminOrSuperAdmin,
-    bool canPermanentlyDelete,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
-      padding: const EdgeInsets.all(CRMSpacing.m),
-      decoration: BoxDecoration(
-        color: CRMColors.cardBgOf(context),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-        border: Border.all(
-          color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-          width: 1.0,
-        ),
-        boxShadow: CRMShadows.small,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildHeader(BuildContext context, {required bool isMobile, required bool isAdmin, required bool hasData}) {
+    final controls = Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: RbTokens.panelBg(context),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: RbTokens.line(context)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: CRMColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: CRMColors.primary.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  p.propertyCode,
-                  style: CRMTypography.captionBold.copyWith(color: CRMColors.primary),
-                ),
-              ),
-              Text(
-                CRMCurrencyFormatter.formatShort(p.price),
-                style: CRMTypography.sectionTitle.copyWith(
-                  color: CRMColors.primary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+              Icon(Icons.schedule_rounded, size: 16, color: RbTokens.muted(context)),
+              const SizedBox(width: 8),
+              Text('Auto-delete after', style: CRMTypography.caption.copyWith(color: RbTokens.ink2(context))),
+              const SizedBox(width: 6),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: _autoDeleteDays,
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(value: 15, child: Text('15 days')),
+                    DropdownMenuItem(value: 30, child: Text('30 days')),
+                    DropdownMenuItem(value: 60, child: Text('60 days')),
+                  ],
+                  onChanged: !_can('page.recycle_bin.auto_delete')
+                      ? null
+                      : (v) {
+                          if (v == null) return;
+                          _saveAutoDeleteDays(v);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Auto-delete period set to $v days'),
+                              backgroundColor: CRMColors.success,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
                 ),
               ),
             ],
           ),
-          const SizedBox(height: CRMSpacing.s),
-          Text(
-            p.title.isNotEmpty ? p.title : 'Property (${p.propertyCode})',
-            style: CRMTypography.bodyMedium.copyWith(
-              fontWeight: FontWeight.bold,
-              color: CRMColors.textOf(context),
-              fontSize: 15,
+        ),
+        if (hasData && isAdmin && _can('page.recycle_bin.empty_bin'))
+          OutlinedButton.icon(
+            onPressed: _emptyCurrentBin,
+            icon: const Icon(Icons.delete_forever_rounded, size: 16),
+            label: const Text('Empty bin'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: RbTokens.red,
+              backgroundColor: RbTokens.redBgOf(context),
+              side: BorderSide(color: RbTokens.redLineOf(context)),
+              visualDensity: VisualDensity.compact,
             ),
           ),
-          const SizedBox(height: CRMSpacing.s),
-          const Divider(height: 1, thickness: 0.5),
-          const SizedBox(height: CRMSpacing.s),
-          if (p.areaName.isNotEmpty) ...[
-            Row(
-              children: [
-                Icon(Icons.location_on_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    p.areaName,
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-          ],
-          if (p.ownerName.isNotEmpty) ...[
-            Row(
-              children: [
-                Icon(Icons.person_outline, size: 14, color: CRMColors.textSecondaryOf(context)),
-                const SizedBox(width: 4),
-                Text(
-                  'Owner: ${p.ownerName}',
-                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-          ],
-          if (isUserAdminOrSuperAdmin && p.showsAddedBy) ...[
-            Row(
-              children: [
-                Icon(Icons.badge_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
-                const SizedBox(width: 4),
-                Text(
-                  'Listed By: ${p.createdByName}',
-                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-          ],
-          const SizedBox(height: CRMSpacing.s),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+      ],
+    );
+
+    final titleBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text.rich(
+          TextSpan(
+            style: CRMTypography.caption.copyWith(fontSize: 12, fontWeight: FontWeight.w600, color: RbTokens.muted(context)),
             children: [
-              if (_can('page.recycle_bin.properties_restore'))
-              IconButton(
-                icon: const Icon(Icons.restore_rounded, color: CRMColors.success, size: 22),
-                tooltip: 'Restore Property',
-                onPressed: () => _restoreProperty(p.id),
-              ),
-              if (canPermanentlyDelete) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
-                  tooltip: 'Permanently Delete',
-                  onPressed: () => _permanentDeleteProperty(p.id),
-                ),
-              ],
+              const TextSpan(text: 'Recycle Bin / '),
+              TextSpan(text: _crumbLabel, style: TextStyle(color: RbTokens.greenTextOf(context), fontWeight: FontWeight.w700)),
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeletedFromBadge(String source) {
-    final label = RecycleBinSource.label(source);
-    final primary = CRMColors.primaryOf(context);
-    return Tooltip(
-      message: 'Deleted from $label. Restore returns it there.',
-      child: Container(
-        margin: const EdgeInsets.only(top: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-        decoration: BoxDecoration(
-          color: primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(4),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
-        child: Text(
-          label,
+        const SizedBox(height: 4),
+        Text(
+          'Recycle Bin',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: primary),
+          style: CRMTypography.pageTitle.copyWith(
+            color: RbTokens.ink(context),
+            fontWeight: FontWeight.w800,
+            fontSize: isMobile ? 24 : 28,
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          'Deleted properties and leads wait here, so nothing is lost by mistake.',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: CRMTypography.body.copyWith(color: RbTokens.muted(context), fontSize: 13),
+        ),
+      ],
+    );
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          titleBlock,
+          const SizedBox(height: CRMSpacing.s),
+          controls,
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: titleBlock),
+        const SizedBox(width: 12),
+        Flexible(child: Align(alignment: Alignment.topRight, child: controls)),
+      ],
     );
   }
 
-  Widget _buildMobileRequirementCard(
-    RequirementModel r,
-    bool isUserAdminOrSuperAdmin,
-  ) {
-    final budgetRange = '${CRMCurrencyFormatter.formatShort(r.minBudget)} - ${CRMCurrencyFormatter.formatShort(r.maxBudget)}';
-    final configText = '${r.propertyTypeName} (${r.configurationName ?? "-"})';
+  Widget _buildTools(BuildContext context, {required bool isMobile}) {
+    final search = SizedBox(
+      width: isMobile ? double.infinity : 380,
+      height: 40,
+      child: TextField(
+        controller: _searchController,
+        style: CRMTypography.body.copyWith(color: RbTokens.ink(context)),
+        decoration: InputDecoration(
+          hintText: _kind == 'prop'
+              ? 'Search code, property name, owner or area'
+              : 'Search lead ID, client name, owner or area',
+          hintStyle: CRMTypography.caption.copyWith(color: RbTokens.muted(context)),
+          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                      _currentPage = 1;
+                    });
+                    _fetchAllBinData();
+                  },
+                ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          filled: true,
+          fillColor: RbTokens.panelBg(context),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: RbTokens.line(context)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: RbTokens.line(context)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: RbTokens.green),
+          ),
+        ),
+        onChanged: (value) {
+          final next = value.trim().toLowerCase();
+          setState(() {
+            _searchQuery = next;
+            _currentPage = 1;
+          });
+          _binSearchDebounce?.cancel();
+          _binSearchDebounce = Timer(const Duration(milliseconds: 250), () {
+            if (mounted) _fetchAllBinData();
+          });
+        },
+      ),
+    );
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        RbKindSegment(
+          selected: _kind,
+          propertyCount: _binProperties.length,
+          leadCount: _binRequirements.length + _notInterestedRequirements.length,
+          onChanged: (v) {
+            setState(() {
+              _kind = v;
+              _currentPage = 1;
+              _selectedIds.clear();
+            });
+          },
+        ),
+        RbTypeChips(
+          selected: _typeFilter,
+          onChanged: (v) {
+            setState(() {
+              _typeFilter = v;
+              _currentPage = 1;
+              _selectedIds.clear();
+            });
+          },
+        ),
+        search,
+      ],
+    );
+  }
+
+  Widget _buildListPanel(BuildContext context, {required auth_model.UserModel? currentUser}) {
+    final isUserAdminOrSuperAdmin = currentUser != null &&
+        (currentUser.role == 'Admin' || currentUser.role == 'Super Admin' || currentUser.role == 'Telecaller');
+    final canPermanentlyDeleteProps = currentUser != null &&
+        (currentUser.role.toLowerCase() == 'admin' || currentUser.role.toLowerCase() == 'super admin') &&
+        _can('page.recycle_bin.properties_delete');
+
+    final itemsProp = _visibleBinProperties;
+    final itemsLead = _visibleLeads;
+    final totalItems = _kind == 'prop' ? itemsProp.length : itemsLead.length;
+    final totalPages = totalItems <= 0 ? 1 : (totalItems / _perPage).ceil();
+    final safePage = _currentPage.clamp(1, totalPages);
+    final startIndex = (safePage - 1) * _perPage;
+    final endIndex = (startIndex + _perPage).clamp(0, totalItems);
+
+    final pageProp = _kind == 'prop' ? itemsProp.sublist(startIndex, endIndex) : const <PropertyModel>[];
+    final pageLead = _kind == 'lead' ? itemsLead.sublist(startIndex, endIndex) : const <RequirementModel>[];
+
+    final pageIds = _kind == 'prop' ? pageProp.map((e) => e.id).toList() : pageLead.map((e) => e.id).toList();
+    final allSelected = pageIds.isNotEmpty && pageIds.every(_selectedIds.contains);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: CRMSpacing.m),
-      padding: const EdgeInsets.all(CRMSpacing.m),
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: CRMColors.cardBgOf(context),
-        borderRadius: BorderRadius.circular(CRMBorderRadius.card),
-        border: Border.all(
-          color: CRMColors.borderOf(context).withValues(alpha: 0.6),
-          width: 1.0,
-        ),
-        boxShadow: CRMShadows.small,
+        color: RbTokens.panelBg(context),
+        borderRadius: BorderRadius.circular(CRMBorderRadius.m),
+        border: Border.all(color: RbTokens.line(context)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  r.clientName,
-                  style: CRMTypography.sectionTitle.copyWith(
-                    color: CRMColors.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _listTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: CRMTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: RbTokens.ink(context),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Showing ${totalItems == 0 ? 0 : startIndex + 1}–$endIndex of $totalItems',
+                        style: CRMTypography.caption.copyWith(color: RbTokens.muted(context)),
+                      ),
+                    ],
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              if (r.clientMobile.isNotEmpty)
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.phone_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
-                    const SizedBox(width: 4),
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: Checkbox(
+                        value: allSelected,
+                        onChanged: pageIds.isEmpty
+                            ? null
+                            : (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedIds.addAll(pageIds);
+                                  } else {
+                                    _selectedIds.removeAll(pageIds);
+                                  }
+                                });
+                              },
+                        activeColor: RbTokens.green,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
-                      r.clientMobile,
-                      style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
+                      'Select all',
+                      style: CRMTypography.bodyMedium.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
-            ],
-          ),
-          const SizedBox(height: CRMSpacing.xs),
-          Text(
-            configText,
-            style: CRMTypography.bodyMedium.copyWith(
-              color: CRMColors.textOf(context),
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+              ],
             ),
           ),
-          if (_binDeletedFrom[r.id] != null) ...[
-            const SizedBox(height: 4),
-            _buildDeletedFromBadge(_binDeletedFrom[r.id]!),
-          ],
-          const SizedBox(height: CRMSpacing.s),
-          const Divider(height: 1, thickness: 0.5),
-          const SizedBox(height: CRMSpacing.s),
-          Row(
-            children: [
-              Icon(Icons.payments_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
-              const SizedBox(width: 4),
-              Text(
-                'Budget: $budgetRange',
-                style: CRMTypography.caption.copyWith(
-                  color: CRMColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: RbBulkBar(
+              count: _selectedIds.length,
+              onClear: () => setState(_selectedIds.clear),
+              onRestore: (_kind == 'prop' ? _can('page.recycle_bin.properties_restore') : _can('page.recycle_bin.requirements_restore'))
+                  ? _restoreSelected
+                  : null,
+              onDelete: (_kind == 'prop'
+                      ? canPermanentlyDeleteProps
+                      : (isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete') && _leadKind != 'ni'))
+                  ? _deleteSelectedForever
+                  : (_leadKind == 'ni' && _can('page.recycle_bin.requirements_delete')
+                      ? () async {
+                          for (final id in _selectedIds.toList()) {
+                            final r = _visibleLeads.firstWhereOrNull((e) => e.id == id);
+                            if (r != null) await _deleteRequirementToBin(r);
+                          }
+                        }
+                      : null),
+            ),
           ),
-          if (r.areaNames.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.location_on_outlined, size: 14, color: CRMColors.textSecondaryOf(context)),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    'Areas: ${r.areaNames.join(", ")}',
-                    style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                    overflow: TextOverflow.ellipsis,
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (totalItems == 0)
+            RbEmptyState(
+              noun: _kind == 'prop'
+                  ? 'properties'
+                  : (_leadKind == 'list'
+                      ? 'property listing leads'
+                      : (_leadKind == 'ni' ? 'not interested leads' : 'requirement leads')),
+              typeLabel: _typeFilter,
+            )
+          else if (_kind == 'prop')
+            ...pageProp.map((p) {
+              final days = _daysLeft(p.id);
+              final isRent = _isRentProperty(p);
+              return RbItemRow(
+                selected: _selectedIds.contains(p.id),
+                onSelected: (v) {
+                  setState(() {
+                    if (v == true) {
+                      _selectedIds.add(p.id);
+                    } else {
+                      _selectedIds.remove(p.id);
+                    }
+                  });
+                },
+                thumbIcon: Icons.home_rounded,
+                tags: [
+                  RbBadge(label: p.propertyCode.isEmpty ? p.id : p.propertyCode, mono: true),
+                  RbBadge(
+                    label: isRent ? 'RENT' : 'RE-SALE',
+                    background: RbTokens.green,
+                    foreground: Colors.white,
                   ),
-                ),
-              ],
-            ),
-          ],
-          if (isUserAdminOrSuperAdmin) ...[
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.person_outline, size: 14, color: CRMColors.textSecondaryOf(context)),
-                const SizedBox(width: 4),
-                Text(
-                  'Salesperson: ${r.creatorName ?? r.assigneeName ?? "N/A"}',
-                  style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: CRMSpacing.s),
+                  const RbBadge(label: 'Deleted', background: Color(0xFFFEE2E2), foreground: Color(0xFFB91C1C)),
+                  RbBadge(
+                    label: '$days days left',
+                    background: days <= 7 ? RbTokens.amberBg : const Color(0xFFE5E7EB),
+                    foreground: days <= 7 ? RbTokens.amber : RbTokens.ink2(context),
+                  ),
+                ],
+                title: p.title.isNotEmpty ? p.title : 'Property (${p.propertyCode})',
+                metaSpans: _metaSpans(context, [
+                  ('📍 ', p.areaName.isEmpty ? '—' : p.areaName, false),
+                  ('Owner: ', p.ownerName.isEmpty ? '—' : p.ownerName, true),
+                  if (isUserAdminOrSuperAdmin) ('Listed by ', p.createdByName.isEmpty ? '—' : p.createdByName, true),
+                  if ((p.remarks ?? '').isNotEmpty) ('Reason: ', p.remarks!, false),
+                ]),
+                price: CRMCurrencyFormatter.formatShort(p.price),
+                priceHint: isRent ? 'per month' : 'price',
+                canRestore: _can('page.recycle_bin.properties_restore'),
+                canDeleteForever: canPermanentlyDeleteProps,
+                onRestore: () => _restoreProperty(p.id),
+                onDeleteForever: () => _permanentDeleteProperty(p.id),
+              );
+            })
+          else
+            ...pageLead.map((r) {
+              final days = _daysLeft(r.id);
+              final isRent = _isRentRequirement(r);
+              final isListing = _leadKind == 'list' || _isListingLead(r);
+              final salesperson = r.creatorName ?? r.assigneeName ?? '—';
+              final budget = '${CRMCurrencyFormatter.formatShort(r.minBudget)} – ${CRMCurrencyFormatter.formatShort(r.maxBudget)}';
+              final config = '${r.configurationName ?? r.propertyTypeName} · $budget';
+              final source = _binDeletedFrom[r.id];
+              return RbItemRow(
+                selected: _selectedIds.contains(r.id),
+                onSelected: (v) {
+                  setState(() {
+                    if (v == true) {
+                      _selectedIds.add(r.id);
+                    } else {
+                      _selectedIds.remove(r.id);
+                    }
+                  });
+                },
+                thumbIcon: isListing ? Icons.home_rounded : Icons.vpn_key_rounded,
+                tags: [
+                  RbBadge(label: r.id.length > 12 ? r.id.substring(0, 12) : r.id, mono: true),
+                  RbBadge(
+                    label: isRent ? 'RENT' : 'RE-SALE',
+                    background: RbTokens.green,
+                    foreground: Colors.white,
+                  ),
+                  RbBadge(
+                    label: _leadKind == 'ni' ? 'Not Interested' : 'Deleted',
+                    background: const Color(0xFFFEE2E2),
+                    foreground: const Color(0xFFB91C1C),
+                  ),
+                  if (_leadKind != 'ni')
+                    RbBadge(
+                      label: '$days days left',
+                      background: days <= 7 ? RbTokens.amberBg : const Color(0xFFE5E7EB),
+                      foreground: days <= 7 ? RbTokens.amber : RbTokens.ink2(context),
+                    ),
+                  if (source != null) RbBadge(label: RecycleBinSource.label(source)),
+                ],
+                title: r.clientName.isNotEmpty ? r.clientName : 'Lead',
+                metaSpans: _metaSpans(context, [
+                  ('📍 ', r.areaNames.isEmpty ? '—' : r.areaNames.join(', '), false),
+                  if (isUserAdminOrSuperAdmin) ('Salesperson: ', salesperson, true),
+                  ('Source ', (r.leadSource ?? '—'), true),
+                  if ((r.rejectionRemark ?? r.remarks ?? '').isNotEmpty)
+                    ('Reason: ', r.rejectionRemark ?? r.remarks!, false),
+                ]),
+                price: config,
+                priceHint: isListing ? 'listing' : 'requirement',
+                canRestore: _can('page.recycle_bin.requirements_restore'),
+                canDeleteForever: _leadKind == 'ni'
+                    ? _can('page.recycle_bin.requirements_delete')
+                    : (isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')),
+                restoreLabel: _leadKind == 'ni' ? 'Make active' : 'Restore',
+                deleteLabel: _leadKind == 'ni' ? 'Move to bin' : 'Delete forever',
+                onRestore: () => _restoreRequirement(r),
+                onDeleteForever: _leadKind == 'ni'
+                    ? () => _deleteRequirementToBin(r)
+                    : () => _permanentDeleteRequirement(r.id),
+              );
+            }),
+          _buildPager(context, totalItems: totalItems, totalPages: totalPages, currentPage: safePage),
+        ],
+      ),
+    );
+  }
+
+  List<InlineSpan> _metaSpans(BuildContext context, List<(String, String, bool)> parts) {
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < parts.length; i++) {
+      if (i > 0) {
+        spans.add(TextSpan(
+          text: '   ',
+          style: CRMTypography.caption.copyWith(fontSize: 12, color: RbTokens.muted(context)),
+        ));
+      }
+      final (prefix, value, boldValue) = parts[i];
+      spans.add(TextSpan(
+        text: prefix,
+        style: CRMTypography.caption.copyWith(fontSize: 12, color: RbTokens.muted(context)),
+      ));
+      spans.add(TextSpan(
+        text: value,
+        style: CRMTypography.caption.copyWith(
+          fontSize: 12,
+          color: boldValue ? RbTokens.ink(context) : RbTokens.muted(context),
+          fontWeight: boldValue ? FontWeight.w600 : FontWeight.w400,
+        ),
+      ));
+    }
+    return spans;
+  }
+
+  Widget _buildPager(BuildContext context, {required int totalItems, required int totalPages, required int currentPage}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        color: RbTokens.pageBg(context),
+        border: Border(top: BorderSide(color: RbTokens.line(context))),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          Text(
+            'Page $currentPage of $totalPages · $totalItems items',
+            style: CRMTypography.caption.copyWith(fontSize: 12.5, color: RbTokens.muted(context)),
+          ),
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              if (_can('page.recycle_bin.requirements_restore'))
-              IconButton(
-                icon: const Icon(Icons.restore_rounded, color: CRMColors.success, size: 22),
-                tooltip: _requirementsSubTab == 'Bin' ? 'Restore Requirement' : 'Make Active',
-                onPressed: () => _restoreRequirement(r),
+              Text('Rows', style: CRMTypography.caption.copyWith(color: RbTokens.muted(context))),
+              const SizedBox(width: 6),
+              DropdownButton<int>(
+                value: _perPage,
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(value: 15, child: Text('15')),
+                  DropdownMenuItem(value: 30, child: Text('30')),
+                  DropdownMenuItem(value: 50, child: Text('50')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() {
+                    _perPage = v;
+                    _currentPage = 1;
+                  });
+                },
               ),
-              if (_requirementsSubTab == 'Bin' && isUserAdminOrSuperAdmin && _can('page.recycle_bin.requirements_delete')) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.delete_forever_rounded, color: CRMColors.danger, size: 22),
-                  tooltip: 'Permanently Delete',
-                  onPressed: () => _permanentDeleteRequirement(r.id),
-                ),
-              ] else if (_requirementsSubTab != 'Bin' && _can('page.recycle_bin.requirements_delete')) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, color: CRMColors.danger, size: 22),
-                  tooltip: 'Move to Recycle Bin',
-                  onPressed: () => _deleteRequirement(r),
-                ),
-              ],
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: currentPage > 1 ? () => setState(() => _currentPage--) : null,
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: currentPage < totalPages ? () => setState(() => _currentPage++) : null,
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
             ],
           ),
         ],
@@ -1684,168 +1448,178 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     );
   }
 
-  Widget _buildEmptyState(String description) {
-    return Padding(
-      padding: const EdgeInsets.all(48.0),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.delete_sweep_outlined, size: 64, color: CRMColors.textSecondaryOf(context)),
-            const SizedBox(height: CRMSpacing.m),
-            Text(
-              'Recycle Bin is Empty',
-              style: CRMTypography.sectionTitle.copyWith(color: CRMColors.textOf(context)),
+  Widget _buildSidebar(BuildContext context) {
+    final rentProps = _binProperties.where(_isRentProperty).length;
+    final saleProps = _binProperties.length - rentProps;
+    final listingLeads = _binRequirements.where(_isListingLead).length;
+    final reqLeads = _binRequirements.length - listingLeads;
+    final deletingSoon = [..._binProperties.map((p) => p.id), ..._binRequirements.map((r) => r.id)]
+        .where((id) => _daysLeft(id) <= 7)
+        .length;
+
+    return Column(
+      children: [
+        RbSidePanel(
+          title: 'Restored this session',
+          trailing: Text(
+            '${_restoredSession.length} item${_restoredSession.length == 1 ? '' : 's'}',
+            style: CRMTypography.caption.copyWith(color: RbTokens.muted(context)),
+          ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: RbTokens.pageBg(context),
+              borderRadius: BorderRadius.circular(9),
             ),
-            const SizedBox(height: CRMSpacing.xs),
-            Text(
-              description,
-              style: CRMTypography.body.copyWith(color: CRMColors.textSecondaryOf(context)),
-              textAlign: TextAlign.center,
-            ),
-          ],
+            child: _restoredSession.isEmpty
+                ? Text.rich(
+                    TextSpan(
+                      style: CRMTypography.caption.copyWith(fontSize: 12.5, color: RbTokens.ink2(context), height: 1.4),
+                      children: [
+                        const TextSpan(text: 'Nothing restored yet. Click '),
+                        TextSpan(
+                          text: 'Restore',
+                          style: TextStyle(color: RbTokens.greenTextOf(context), fontWeight: FontWeight.w700),
+                        ),
+                        const TextSpan(text: ' on any item.'),
+                      ],
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _restoredSession.take(8).map((x) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text.rich(
+                          TextSpan(
+                            style: CRMTypography.caption.copyWith(fontSize: 12.5, color: RbTokens.ink2(context)),
+                            children: [
+                              const TextSpan(text: '✓ '),
+                              TextSpan(text: x.id, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              TextSpan(text: ' ${x.name} → back in ${x.kind == 'prop' ? 'Properties' : 'Leads'}'),
+                            ],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
         ),
+        const SizedBox(height: 14),
+        RbSidePanel(
+          title: 'Bin settings',
+          child: Column(
+            children: [
+              _settingRow(
+                context,
+                icon: Icons.schedule_rounded,
+                iconBg: RbTokens.violetBg,
+                iconColor: RbTokens.violet,
+                title: 'Auto-delete after $_autoDeleteDays days',
+                subtitle: 'Change it from the menu at the top',
+              ),
+              const SizedBox(height: 12),
+              _settingRow(
+                context,
+                icon: Icons.replay_rounded,
+                iconBg: RbTokens.greenBg,
+                iconColor: RbTokens.green,
+                title: 'Restore returns it to its list',
+                subtitle: 'Find it again under Properties or Leads',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        RbSidePanel(
+          title: 'In the bin',
+          child: Column(
+            children: [
+              _sumRow(context, '🏠 Properties · Rent', rentProps),
+              _sumRow(context, '🏠 Properties · Re-sale', saleProps),
+              _sumRow(context, '🏠 Property listing leads', listingLeads),
+              _sumRow(context, '🔑 Requirement leads', reqLeads),
+              _sumRow(context, '⏳ Deleting within 7 days', deletingSoon, last: true),
+              const SizedBox(height: 8),
+              Text(
+                'To remove everything now, use Empty bin at the top of the page.',
+                style: CRMTypography.caption.copyWith(fontSize: 11.5, color: RbTokens.muted(context)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _settingRow(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+          child: Icon(icon, size: 16, color: iconColor),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: CRMTypography.bodyMedium.copyWith(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: CRMTypography.caption.copyWith(fontSize: 12, color: RbTokens.muted(context)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sumRow(BuildContext context, String label, int value, {bool last = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : Border(bottom: BorderSide(color: RbTokens.line(context), style: BorderStyle.solid)),
       ),
-    );
-  }
-
-  Widget _buildPropertiesPagination(int totalItems, int totalPages, int currentPage) {
-    final from = totalItems == 0 ? 0 : (currentPage - 1) * _propertiesPerPage + 1;
-    final to = (currentPage * _propertiesPerPage).clamp(0, totalItems);
-    final isMobile = CRMBreakpoints.isPhone(context);
-
-    final infoText = Text(
-      'Showing $from–$to of $totalItems',
-      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-    );
-
-    final controls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('Rows:',
-            style:
-                CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-        const SizedBox(width: CRMSpacing.xs),
-        DropdownButton<int>(
-          value: _propertiesPerPage,
-          underline: const SizedBox.shrink(),
-          items: const [
-            DropdownMenuItem(value: 15, child: Text('15')),
-            DropdownMenuItem(value: 30, child: Text('30')),
-            DropdownMenuItem(value: 50, child: Text('50')),
-          ],
-          onChanged: (val) {
-            if (val == null) return;
-            setState(() {
-              _propertiesPerPage = val;
-              _currentPropertiesPage = 1;
-            });
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_left_rounded),
-          onPressed:
-              currentPage > 1 ? () => setState(() => _currentPropertiesPage--) : null,
-        ),
-        Text(
-          '$currentPage / $totalPages',
-          style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right_rounded),
-          onPressed: currentPage < totalPages
-              ? () => setState(() => _currentPropertiesPage++)
-              : null,
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
+      child: Row(
         children: [
-          infoText,
-          const SizedBox(height: CRMSpacing.s),
-          controls,
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: CRMTypography.caption.copyWith(fontSize: 12.5, color: RbTokens.ink2(context)),
+            ),
+          ),
+          Text(
+            '$value',
+            style: CRMTypography.captionBold.copyWith(fontSize: 12.5, color: RbTokens.ink(context)),
+          ),
         ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        infoText,
-        controls,
-      ],
-    );
-  }
-
-  Widget _buildRequirementsPagination(int totalItems, int totalPages, int currentPage) {
-    final from = totalItems == 0 ? 0 : (currentPage - 1) * _requirementsPerPage + 1;
-    final to = (currentPage * _requirementsPerPage).clamp(0, totalItems);
-    final isMobile = CRMBreakpoints.isPhone(context);
-
-    final infoText = Text(
-      'Showing $from–$to of $totalItems',
-      style: CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context)),
-    );
-
-    final controls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('Rows:',
-            style:
-                CRMTypography.caption.copyWith(color: CRMColors.textSecondaryOf(context))),
-        const SizedBox(width: CRMSpacing.xs),
-        DropdownButton<int>(
-          value: _requirementsPerPage,
-          underline: const SizedBox.shrink(),
-          items: const [
-            DropdownMenuItem(value: 15, child: Text('15')),
-            DropdownMenuItem(value: 30, child: Text('30')),
-            DropdownMenuItem(value: 50, child: Text('50')),
-          ],
-          onChanged: (val) {
-            if (val == null) return;
-            setState(() {
-              _requirementsPerPage = val;
-              _currentRequirementsPage = 1;
-            });
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_left_rounded),
-          onPressed:
-              currentPage > 1 ? () => setState(() => _currentRequirementsPage--) : null,
-        ),
-        Text(
-          '$currentPage / $totalPages',
-          style: CRMTypography.captionBold.copyWith(color: CRMColors.textOf(context)),
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right_rounded),
-          onPressed: currentPage < totalPages
-              ? () => setState(() => _currentRequirementsPage++)
-              : null,
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
-        children: [
-          infoText,
-          const SizedBox(height: CRMSpacing.s),
-          controls,
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        infoText,
-        controls,
-      ],
+      ),
     );
   }
 }
